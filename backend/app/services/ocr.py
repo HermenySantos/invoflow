@@ -1,15 +1,16 @@
 """
-OCR service using Azure Document Intelligence.
-Includes mock mode for development without Azure credentials.
+OCR service using Mindee for receipt/invoice processing.
+Includes mock mode for development without API credentials.
 """
 
+import io
 import json
 import random
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from dataclasses import dataclass
-import httpx
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -35,13 +36,20 @@ class OCRResult:
 class OCRService:
     """
     Handles OCR processing for receipts and invoices.
-    Uses Azure Document Intelligence in production, mock data in development.
+    Uses Mindee in production, mock data in development.
     """
     
     def __init__(self):
         self.mock_mode = settings.ocr_mock_mode
-        self.endpoint = settings.azure_doc_endpoint
-        self.api_key = settings.azure_doc_key
+        self.api_key = settings.mindee_api_key
+        self._client = None
+    
+    def _get_client(self):
+        """Lazy initialization of Mindee client."""
+        if self._client is None and not self.mock_mode:
+            from mindee import Client
+            self._client = Client(api_key=self.api_key)
+        return self._client
     
     async def process_document(self, file_content: bytes, mime_type: str) -> OCRResult:
         """
@@ -50,7 +58,7 @@ class OCRService:
         if self.mock_mode:
             return self._generate_mock_result(mime_type)
         
-        return await self._process_with_azure(file_content, mime_type)
+        return await self._process_with_mindee(file_content, mime_type)
     
     def _generate_mock_result(self, mime_type: str) -> OCRResult:
         """Generate realistic mock OCR data for testing."""
@@ -106,64 +114,31 @@ class OCRService:
             needs_review=needs_review,
         )
     
-    async def _process_with_azure(self, file_content: bytes, mime_type: str) -> OCRResult:
-        """Process document using Azure Document Intelligence."""
+    async def _process_with_mindee(self, file_content: bytes, mime_type: str) -> OCRResult:
+        """Process document using Mindee Receipt API."""
         
         try:
-            # Determine which model to use based on content
-            # For V0, we'll use the prebuilt-receipt model for everything
-            model_id = "prebuilt-receipt"
+            from mindee import Client, product
             
-            # Call Azure Document Intelligence
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                # Start analysis
-                response = await client.post(
-                    f"{self.endpoint}/documentintelligence/documentModels/{model_id}:analyze?api-version=2024-02-29-preview",
-                    headers={
-                        "Ocp-Apim-Subscription-Key": self.api_key,
-                        "Content-Type": mime_type,
-                    },
-                    content=file_content,
-                )
-                
-                if response.status_code != 202:
-                    return OCRResult(
-                        error=f"Azure API error: {response.status_code}",
-                        confidence=0,
-                        needs_review=True,
-                    )
-                
-                # Get the operation location for polling
-                operation_location = response.headers.get("Operation-Location")
-                
-                # Poll for results
-                for _ in range(30):  # Max 30 attempts
-                    await __import__("asyncio").sleep(1)
-                    
-                    result_response = await client.get(
-                        operation_location,
-                        headers={"Ocp-Apim-Subscription-Key": self.api_key},
-                    )
-                    
-                    result_data = result_response.json()
-                    status = result_data.get("status")
-                    
-                    if status == "succeeded":
-                        return self._parse_azure_result(result_data)
-                    elif status == "failed":
-                        return OCRResult(
-                            error="Azure processing failed",
-                            confidence=0,
-                            needs_review=True,
-                            raw_response=json.dumps(result_data),
-                        )
-                
-                return OCRResult(
-                    error="Azure processing timeout",
-                    confidence=0,
-                    needs_review=True,
-                )
-                
+            client = self._get_client()
+            
+            # Determine filename extension from mime type
+            ext_map = {
+                "image/jpeg": "receipt.jpg",
+                "image/png": "receipt.png",
+                "image/heic": "receipt.heic",
+                "application/pdf": "receipt.pdf",
+            }
+            filename = ext_map.get(mime_type, "receipt.jpg")
+            
+            # Create input source from bytes using the new SDK API
+            input_source = Client.source_from_bytes(file_content, filename)
+            
+            # Parse with Mindee Receipt API
+            result = client.parse(product.ReceiptV5, input_source)
+            
+            return self._parse_mindee_result(result)
+            
         except Exception as e:
             return OCRResult(
                 error=f"OCR processing error: {str(e)}",
@@ -171,97 +146,117 @@ class OCRService:
                 needs_review=True,
             )
     
-    def _parse_azure_result(self, result_data: dict) -> OCRResult:
-        """Parse Azure Document Intelligence response."""
+    def _parse_mindee_result(self, result) -> OCRResult:
+        """Parse Mindee Receipt response."""
         
         try:
-            analyze_result = result_data.get("analyzeResult", {})
-            documents = analyze_result.get("documents", [])
+            prediction = result.document.inference.prediction
             
-            if not documents:
-                return OCRResult(
-                    error="No document found in response",
-                    confidence=0,
-                    needs_review=True,
-                    raw_response=json.dumps(result_data),
-                )
+            # Extract vendor name
+            vendor_name = None
+            if prediction.supplier_name.value:
+                vendor_name = prediction.supplier_name.value
             
-            doc = documents[0]
-            fields = doc.get("fields", {})
-            confidence = doc.get("confidence", 0) * 100
-            
-            # Extract fields
-            vendor_name = self._get_field_value(fields, "MerchantName")
-            vendor_nif = self._get_field_value(fields, "MerchantPhoneNumber")  # Often contains NIF
-            invoice_number = self._get_field_value(fields, "TransactionId")
-            
-            # Parse date
+            # Extract date
             doc_date = None
-            date_str = self._get_field_value(fields, "TransactionDate")
-            if date_str:
-                try:
-                    doc_date = datetime.fromisoformat(date_str.replace("Z", "")).date()
-                except ValueError:
-                    pass
+            if prediction.date.value:
+                doc_date = prediction.date.value
             
-            # Parse amounts
-            gross_amount = self._get_currency_value(fields, "Total")
-            vat_amount = self._get_currency_value(fields, "TotalTax")
+            # Extract amounts
+            gross_amount = None
+            if prediction.total_amount.value is not None:
+                gross_amount = Decimal(str(prediction.total_amount.value))
+            
             net_amount = None
+            if prediction.total_net.value is not None:
+                net_amount = Decimal(str(prediction.total_net.value))
             
-            if gross_amount and vat_amount:
+            vat_amount = None
+            if prediction.total_tax.value is not None:
+                vat_amount = Decimal(str(prediction.total_tax.value))
+            
+            # Calculate net if we have gross and VAT but no net
+            if net_amount is None and gross_amount and vat_amount:
                 net_amount = gross_amount - vat_amount
             
-            # Calculate VAT rate if possible
+            # Extract VAT rate from taxes array
             vat_rate = None
-            if net_amount and vat_amount and net_amount > 0:
-                vat_rate = (vat_amount / net_amount * 100).quantize(Decimal("0.01"))
+            if prediction.taxes and len(prediction.taxes) > 0:
+                first_tax = prediction.taxes[0]
+                if hasattr(first_tax, 'rate') and first_tax.rate is not None:
+                    vat_rate = Decimal(str(first_tax.rate))
             
-            needs_review = confidence < 85 or not vendor_name or not gross_amount
+            # Try to extract Portuguese NIF from raw text
+            vendor_nif = self._extract_portuguese_nif(str(result.document))
+            
+            # Calculate confidence based on available fields
+            confidence_factors = []
+            if vendor_name:
+                confidence_factors.append(0.9)
+            if gross_amount:
+                confidence_factors.append(0.95)
+            if doc_date:
+                confidence_factors.append(0.9)
+            if vat_amount:
+                confidence_factors.append(0.85)
+            
+            if confidence_factors:
+                confidence = (sum(confidence_factors) / len(confidence_factors)) * 100
+            else:
+                confidence = 30.0
+            
+            # Determine if review is needed
+            needs_review = (
+                confidence < 75 or
+                not vendor_name or
+                not gross_amount or
+                not doc_date
+            )
             
             return OCRResult(
                 vendor_name=vendor_name,
                 vendor_nif=vendor_nif,
-                invoice_number=invoice_number,
+                invoice_number=None,  # Mindee Receipt doesn't extract invoice numbers
                 document_date=doc_date,
                 net_amount=net_amount,
                 vat_amount=vat_amount,
                 gross_amount=gross_amount,
                 vat_rate=vat_rate,
                 confidence=confidence,
-                raw_response=json.dumps(result_data),
+                raw_response=str(result.document),
                 needs_review=needs_review,
             )
             
         except Exception as e:
             return OCRResult(
-                error=f"Error parsing Azure response: {str(e)}",
+                error=f"Error parsing Mindee response: {str(e)}",
                 confidence=0,
                 needs_review=True,
-                raw_response=json.dumps(result_data),
+                raw_response=str(result) if result else None,
             )
     
-    def _get_field_value(self, fields: dict, field_name: str) -> Optional[str]:
-        """Extract string value from Azure field."""
-        field = fields.get(field_name, {})
-        return field.get("valueString") or field.get("content")
-    
-    def _get_currency_value(self, fields: dict, field_name: str) -> Optional[Decimal]:
-        """Extract currency value from Azure field."""
-        field = fields.get(field_name, {})
-        value = field.get("valueCurrency", {}).get("amount")
-        if value is not None:
-            return Decimal(str(value))
-        # Try parsing from content
-        content = field.get("content", "")
-        if content:
-            try:
-                # Remove currency symbols and parse
-                cleaned = "".join(c for c in content if c.isdigit() or c in ".,")
-                cleaned = cleaned.replace(",", ".")
-                return Decimal(cleaned)
-            except Exception:
-                pass
+    def _extract_portuguese_nif(self, text: str) -> Optional[str]:
+        """
+        Extract Portuguese NIF (Número de Identificação Fiscal) from text.
+        NIFs are 9-digit numbers, often prefixed with 'NIF', 'NIPC', or 'Contribuinte'.
+        """
+        if not text:
+            return None
+        
+        # Patterns to look for NIF
+        patterns = [
+            r'(?:NIF|NIPC|N\.I\.F\.|Contribuinte)[:\s]*(\d{9})',  # With label
+            r'(?:PT)?(\d{9})(?:\s|$)',  # Just 9 digits (possibly with PT prefix)
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                nif = match.group(1)
+                # Basic validation: Portuguese NIFs start with 1,2,3,5,6,7,8,9
+                if nif[0] in '123456789':
+                    return nif
+        
         return None
 
 
