@@ -8,3 +8,4 @@ python-multipart==0.0.6
 httpx==0.26.0
 pillow==10.2.0
 reportlab==4.0.8
+psycopg2-binary==2.9.11
