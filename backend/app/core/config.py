@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     r2_public_url: str = ""
     storage_mock_mode: bool = True  # Set to False when R2 is configured
     
-    # Mindee OCR (mock mode if not set)
-    mindee_api_key: str = ""
-    ocr_mock_mode: bool = True  # Set to False when Mindee is configured
+    # Azure Document Intelligence (mock mode if not set)
+    azure_doc_endpoint: str = ""
+    azure_doc_key: str = ""
+    ocr_mock_mode: bool = True  # Set to False when Azure is configured
     
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
