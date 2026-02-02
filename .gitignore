@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.egg-info/
+
+# Database
+*.db
+*.sqlite
+
+# Mock storage (development only)
+mock_storage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+.coverage
+
+# PWA generated files
+public/sw.js
+public/workbox-*.js

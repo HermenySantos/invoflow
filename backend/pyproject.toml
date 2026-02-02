@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "invoflow-backend"
+version = "0.1.0"
+description = "InvoFlow API - Invoice/Receipt management for Portuguese SMBs"
+authors = ["InvoFlow Team"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+sqlalchemy = "^2.0.25"
+alembic = "^1.13.1"
+pydantic = "^2.5.3"
+pydantic-settings = "^2.1.0"
+python-multipart = "^0.0.6"
+httpx = "^0.26.0"
+pillow = "^10.2.0"
+reportlab = "^4.0.8"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.4"
+pytest-asyncio = "^0.23.3"
+httpx = "^0.26.0"
+black = "^24.1.0"
+ruff = "^0.1.13"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
