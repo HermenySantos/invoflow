@@ -70,7 +70,7 @@ export default function ReceiptsPage() {
   };
 
   return (
-    <AppLayout title="Receipts">
+    <AppLayout title="Recibos">
       <div className="p-4">
         {isLoading ? (
           <div className="space-y-3">
@@ -101,13 +101,13 @@ export default function ReceiptsPage() {
           <div className="card p-8 text-center">
             <Receipt className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-1">
-              No receipts yet
+              Ainda sem recibos
             </h3>
             <p className="text-gray-500 mb-4">
-              Scan your first receipt to get started
+              Carregue um PDF ou uma foto para estimar o IVA
             </p>
-            <Link href="/scan" className="btn-primary btn-md">
-              Scan Receipt
+            <Link href="/upload" className="btn-primary btn-md">
+              Carregar recibo
             </Link>
           </div>
         ) : (
@@ -151,7 +151,7 @@ export default function ReceiptsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-900 truncate">
-                        {doc.vendor_name || 'Unknown Vendor'}
+                        {doc.vendor_name || 'Fornecedor por preencher'}
                       </span>
                       {getStatusIcon(doc.status)}
                     </div>

@@ -10,17 +10,17 @@ const config: Config = {
     extend: {
       colors: {
         primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
-          950: '#082f49',
+          50: '#f3f6f5',
+          100: '#e2ebe7',
+          200: '#c4d6ce',
+          300: '#8fb3a4',
+          400: '#4d7f6c',
+          500: '#1B4D3E',
+          600: '#1B4D3E',
+          700: '#143D32',
+          800: '#0f2e26',
+          900: '#0b211b',
+          950: '#061410',
         },
         success: {
           500: '#22c55e',
@@ -31,12 +31,16 @@ const config: Config = {
           600: '#d97706',
         },
         danger: {
-          500: '#ef4444',
-          600: '#dc2626',
+          500: '#8B2E2E',
+          600: '#8B2E2E',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-plex)', 'var(--font-inter)', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: {
+        lg: '6px',
+        xl: '6px',
       },
     },
   },

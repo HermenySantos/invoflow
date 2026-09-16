@@ -1,0 +1,10 @@
+**/node_modules
+**/.next
+**/__pycache__
+**/.venv
+**/venv
+**/.pytest_cache
+**/*.pyc
+**/mock_storage
+**/.env
+.git

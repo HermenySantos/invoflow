@@ -26,6 +26,33 @@ from app.services.ocr import get_ocr_service
 router = APIRouter()
 
 
+def document_to_response(document: Document, file_url: str) -> DocumentResponse:
+    return DocumentResponse(
+        id=document.id,
+        user_id=document.user_id,
+        status=document.status,
+        storage_key=document.storage_key,
+        original_filename=document.original_filename,
+        mime_type=document.mime_type,
+        file_size=document.file_size,
+        vendor_name=document.vendor_name,
+        vendor_nif=document.vendor_nif,
+        invoice_number=document.invoice_number,
+        document_date=document.document_date,
+        net_amount=document.net_amount,
+        vat_amount=document.vat_amount,
+        gross_amount=document.gross_amount,
+        vat_rate=document.vat_rate,
+        ocr_confidence=document.ocr_confidence,
+        period_tag=document.period_tag,
+        quarter_tag=document.quarter_tag,
+        file_url=file_url,
+        thumbnail_url=None,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
+
 def get_or_create_user(db: Session, current_user: CurrentUser) -> User:
     """Get existing user or create new one from auth data."""
     user = db.query(User).filter(User.clerk_id == current_user.user_id).first()
@@ -87,18 +114,13 @@ async def create_document(
     db.commit()
     db.refresh(document)
     
-    # Get file content for OCR
-    file_content = None
-    if storage.mock_mode:
-        file_content = storage.get_file_mock(doc_create.storage_key)
-    
-    # Process OCR (synchronous for V0)
-    if file_content or storage.mock_mode:
+    file_content = storage.get_file(doc_create.storage_key)
+
+    if file_content or ocr.backend == "mock":
         try:
-            # In mock mode, we don't need actual file content
             ocr_result = await ocr.process_document(
                 file_content or b"mock_content",
-                doc_create.mime_type
+                doc_create.mime_type,
             )
             
             # Update document with OCR results
@@ -130,15 +152,8 @@ async def create_document(
     db.commit()
     db.refresh(document)
     
-    # Generate file URL
     file_url = storage.get_download_url(document.storage_key)
-    
-    return DocumentResponse(
-        **document.__dict__,
-        period_tag=document.period_tag,
-        quarter_tag=document.quarter_tag,
-        file_url=file_url,
-    )
+    return document_to_response(document, file_url)
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -178,12 +193,7 @@ async def list_documents(
     doc_responses = []
     for doc in documents:
         file_url = storage.get_download_url(doc.storage_key)
-        doc_responses.append(DocumentResponse(
-            **doc.__dict__,
-            period_tag=doc.period_tag,
-            quarter_tag=doc.quarter_tag,
-            file_url=file_url,
-        ))
+        doc_responses.append(document_to_response(doc, file_url))
     
     return DocumentListResponse(
         documents=doc_responses,
@@ -217,13 +227,7 @@ async def get_document(
         )
     
     file_url = storage.get_download_url(document.storage_key)
-    
-    return DocumentResponse(
-        **document.__dict__,
-        period_tag=document.period_tag,
-        quarter_tag=document.quarter_tag,
-        file_url=file_url,
-    )
+    return document_to_response(document, file_url)
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
@@ -258,13 +262,7 @@ async def update_document(
     db.refresh(document)
     
     file_url = storage.get_download_url(document.storage_key)
-    
-    return DocumentResponse(
-        **document.__dict__,
-        period_tag=document.period_tag,
-        quarter_tag=document.quarter_tag,
-        file_url=file_url,
-    )
+    return document_to_response(document, file_url)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
