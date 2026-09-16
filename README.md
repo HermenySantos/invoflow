@@ -32,6 +32,12 @@ Stop with `Ctrl+C`, then `docker compose down`.
 
 Needs Python 3.11+ and Node 18+. Tesseract is optional.
 
+On Debian/Ubuntu, install the venv module first if `python3 -m venv` fails:
+
+```bash
+sudo apt-get install -y python3.12-venv python3-pip tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+```
+
 ```bash
 # API
 cd backend
@@ -110,6 +116,8 @@ cd backend
 source .venv/bin/activate
 pytest
 ```
+
+Verified in the cloud agent VM (no Docker on PATH): `pytest` 4 passed; API `/health` → `ocr_backend=tesseract`; Next `/` serves the Eggbot landing; upload of a PT receipt image extracted vendor, NIF, date, IVA 23%, and built a Q1 accountant ZIP (`summary.csv`, `summary.pdf`, original PNG).
 
 ## License
 

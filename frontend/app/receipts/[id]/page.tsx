@@ -89,15 +89,6 @@ export default function ReceiptDetailPage() {
     }
   };
 
-  const formatCurrency = (value: string | null) => {
-    if (!value) return '-';
-    const num = parseFloat(value);
-    return new Intl.NumberFormat('pt-PT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(num);
-  };
-
   return (
     <AppLayout>
       {/* Custom header with back button */}
