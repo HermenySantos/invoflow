@@ -1,39 +1,54 @@
-# InvoFlow
+# FaturaFlow
 
-Simple invoice and receipt management for Portuguese small businesses.
+Product name: **FaturaFlow**. Repository name remains `invoflow`.
 
-## Overview
+Upload a Portuguese receipt or invoice → IVA estimate → accountant pack.
 
-InvoFlow helps business owners:
-- **Capture** receipts via mobile camera or file upload
-- **Extract** key data automatically using OCR
-- **Track** estimated IVA (VAT) in real-time
-- **Export** accountant-ready packages
+This is a personal MIT product. It does not include Dorier / employer IP.
 
-## Quick Start
+The public landing at `/` follows the Eggbot FaturaFlow landing spec (CVO integrate). Do not replace it with a second marketing design.
 
-### Prerequisites
+## One path: Docker Compose
 
-- Docker & Docker Compose
-- Node.js 18+
-- Python 3.11+
-- Poetry (Python package manager)
-
-### 1. Start the Database
+Needs Docker Desktop or Engine + Compose.
 
 ```bash
-docker-compose up -d
+git clone https://github.com/HermenySantos/invoflow.git
+cd invoflow
+docker compose up --build
 ```
 
-### 2. Start the Backend
+Then open:
+
+- App / landing: http://localhost:3000
+- Upload (live demo): http://localhost:3000/upload
+- API health: http://localhost:8000/health
+
+Sign in with any email (mock auth). No Azure, Clerk, or R2 keys.
+
+Stop with `Ctrl+C`, then `docker compose down`.
+
+## Path without Docker (pip + npm)
+
+Needs Python 3.11+ and Node 18+. Tesseract is optional.
+
+On Debian/Ubuntu, install the venv module first if `python3 -m venv` fails:
 
 ```bash
+sudo apt-get install -y python3.12-venv python3-pip tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+```
+
+```bash
+# API
 cd backend
-poetry install
-poetry run uvicorn app.main:app --reload --port 8000
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# optional: cp .env.example .env
+uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Start the Frontend
+In another terminal:
 
 ```bash
 cd frontend
@@ -41,106 +56,68 @@ npm install
 npm run dev
 ```
 
-### 4. Open the App
+Open http://localhost:3000
 
-Visit [http://localhost:3000](http://localhost:3000)
+This path uses SQLite (`backend/invoflow.db`) and local files (`backend/mock_storage/`). If Tesseract is not installed, OCR falls back to mock data.
 
-## Project Structure
+Optional system OCR (Debian/Ubuntu):
+
+```bash
+sudo apt-get install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+```
+
+Poetry is optional: `cd backend && poetry install && poetry run uvicorn app.main:app --reload --port 8000`.
+
+## What is real vs mock
+
+| Piece | Default | Paid optional |
+| --- | --- | --- |
+| Auth | Mock (any email) | Clerk |
+| Storage | Local `mock_storage/` | Cloudflare R2 (+ boto3) |
+| OCR | **Tesseract** if installed, else mock | Azure Document Intelligence |
+| LLM polish | Off | Local Ollama (`OLLAMA_BASE_URL`) |
+| Database | SQLite (no-Docker) or Compose Postgres | Neon / any Postgres |
+| Export ZIP | Real (CSV + PDF + originals when on disk) | — |
+
+IVA is an **estimate for review**, not a filing. Sales VAT is not entered in this version.
+
+## Landing (Eggbot spec)
+
+`/` is the FaturaFlow marketing page: PT first, boring SMB tone, single scroll, tokens from the Eggbot spec. Primary CTA goes to `/upload` (live in this repo). There is no waitlist, no fake counts, no “AI-powered” headline.
+
+`/privacy` is a stub. CVO: replace with real legal copy when hosting.
+
+## OCR backends
+
+`OCR_BACKEND=auto|tesseract|mock|azure`
+
+- `auto` (default): Tesseract when the binary is present, otherwise mock.
+- `tesseract`: open-source OCR + Portuguese field extractor (NIF, dates, IVA 6/13/23).
+- `mock`: demo vendors/amounts, no image reading.
+- `azure`: optional paid Document Intelligence. Ignored unless endpoint + key are set.
+
+Field extraction ideas (schema after OCR text) were adapted from the TaxHacker OSS pipeline. No proprietary blobs were copied.
+
+## Project layout
 
 ```
 invoflow/
-├── backend/          # FastAPI Python backend
-│   ├── app/
-│   │   ├── api/      # API endpoints
-│   │   ├── core/     # Config, auth, database
-│   │   ├── models/   # SQLAlchemy models
-│   │   ├── schemas/  # Pydantic schemas
-│   │   └── services/ # Business logic (OCR, storage, export)
-│   └── alembic/      # Database migrations
-├── frontend/         # Next.js React frontend
-│   ├── app/          # Pages (App Router)
-│   ├── components/   # React components
-│   └── lib/          # Utilities, API client
+├── backend/          FastAPI + SQLAlchemy
+├── frontend/         Next.js 14 (landing + app)
 └── docker-compose.yml
 ```
 
-## Development Mode
+App routes: `/upload` (also `/scan`), `/receipts`, `/summary`.
 
-The app runs in **mock mode** by default:
+## Tests
 
-- **Auth**: No real authentication needed - just enter any email
-- **Storage**: Files stored locally in `backend/mock_storage/`
-- **OCR**: Returns realistic mock data (Portuguese vendors, amounts, dates)
-
-This allows you to test the full flow without external service credentials.
-
-## Configuration
-
-### Backend Environment Variables
-
-Copy `backend/.env.example` to `backend/.env`:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Local Docker DB |
-| `AUTH_MOCK_MODE` | Use mock authentication | `true` |
-| `STORAGE_MOCK_MODE` | Use local file storage | `true` |
-| `OCR_MOCK_MODE` | Use mock OCR data | `true` |
-
-### Enabling Real Services
-
-To use real external services, set the mock mode to `false` and provide credentials:
-
-**Clerk (Authentication)**
-```env
-AUTH_MOCK_MODE=false
-CLERK_SECRET_KEY=sk_...
-CLERK_PUBLISHABLE_KEY=pk_...
-CLERK_JWKS_URL=https://...clerk.accounts.dev/.well-known/jwks.json
+```bash
+cd backend
+source .venv/bin/activate
+pytest
 ```
 
-**Cloudflare R2 (Storage)**
-```env
-STORAGE_MOCK_MODE=false
-R2_ACCOUNT_ID=...
-R2_ACCESS_KEY_ID=...
-R2_SECRET_ACCESS_KEY=...
-R2_BUCKET_NAME=invoflow-documents
-```
-
-**Azure Document Intelligence (OCR)**
-```env
-OCR_MOCK_MODE=false
-AZURE_DOC_ENDPOINT=https://....cognitiveservices.azure.com/
-AZURE_DOC_KEY=...
-```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/documents/upload-url` | Get presigned upload URL |
-| `POST` | `/api/documents` | Create document + trigger OCR |
-| `GET` | `/api/documents` | List all documents |
-| `GET` | `/api/documents/{id}` | Get document details |
-| `PATCH` | `/api/documents/{id}` | Update document fields |
-| `DELETE` | `/api/documents/{id}` | Delete document |
-| `GET` | `/api/summary` | Get IVA summary for period |
-| `GET` | `/api/export` | Download export ZIP |
-
-## Tech Stack
-
-**Backend**
-- FastAPI (Python)
-- PostgreSQL + SQLAlchemy
-- Azure Document Intelligence (OCR)
-- Cloudflare R2 (Storage)
-
-**Frontend**
-- Next.js 14 (React)
-- Tailwind CSS
-- PWA (Progressive Web App)
-- Clerk (Authentication)
+Verified in the cloud agent VM (no Docker on PATH): `pytest` 4 passed; API `/health` → `ocr_backend=tesseract`; Next `/` serves the Eggbot landing; upload of a PT receipt image extracted vendor, NIF, date, IVA 23%, and built a Q1 accountant ZIP (`summary.csv`, `summary.pdf`, original PNG).
 
 ## License
 

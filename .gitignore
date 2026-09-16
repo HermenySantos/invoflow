@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 venv/
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -12,6 +13,7 @@ __pycache__/
 
 # Build outputs
 .next/
+tsconfig.tsbuildinfo
 out/
 dist/
 build/

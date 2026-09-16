@@ -124,8 +124,7 @@ class ApiClient {
     return this.request<Summary>(`/summary${query ? `?${query}` : ''}`);
   }
 
-  // Export
-  async getExportUrl(params?: {
+  async downloadExport(params?: {
     period_type?: 'month' | 'quarter';
     year?: number;
     month?: number;
@@ -136,9 +135,16 @@ class ApiClient {
     if (params?.year) searchParams.set('year', params.year.toString());
     if (params?.month) searchParams.set('month', params.month.toString());
     if (params?.quarter) searchParams.set('quarter', params.quarter.toString());
-    
+
     const query = searchParams.toString();
-    return `${API_BASE}/export${query ? `?${query}` : ''}`;
+    const response = await fetch(`${API_BASE}/export${query ? `?${query}` : ''}`);
+    if (!response.ok) {
+      throw new Error('Export failed');
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    return { blob, filename: match?.[1] || 'FaturaFlow_Export.zip' };
   }
 
   // File upload helper

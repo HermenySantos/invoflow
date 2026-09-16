@@ -3,11 +3,10 @@ File serving endpoints for mock mode.
 In production, files are served directly from R2 via presigned URLs.
 """
 
-from pathlib import Path
-from fastapi import APIRouter, HTTPException, status, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
+
 from app.services.storage import get_storage_service
-from app.core.security import get_current_user, CurrentUser
 
 router = APIRouter()
 
@@ -15,7 +14,6 @@ router = APIRouter()
 @router.get("/{storage_key:path}")
 async def get_file(
     storage_key: str,
-    current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Serve files from mock storage.

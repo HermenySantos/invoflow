@@ -23,6 +23,8 @@ export default function ReceiptDetailPage() {
   
   // Editable fields
   const [vendorName, setVendorName] = useState('');
+  const [vendorNif, setVendorNif] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [grossAmount, setGrossAmount] = useState('');
   const [vatAmount, setVatAmount] = useState('');
   const [documentDate, setDocumentDate] = useState('');
@@ -36,6 +38,8 @@ export default function ReceiptDetailPage() {
       
       // Populate form fields
       setVendorName(data.vendor_name || '');
+      setVendorNif(data.vendor_nif || '');
+      setInvoiceNumber(data.invoice_number || '');
       setGrossAmount(data.gross_amount || '');
       setVatAmount(data.vat_amount || '');
       setDocumentDate(data.document_date || '');
@@ -58,10 +62,12 @@ export default function ReceiptDetailPage() {
       setIsSaving(true);
       await api.updateDocument(document.id, {
         vendor_name: vendorName || null,
+        vendor_nif: vendorNif || null,
+        invoice_number: invoiceNumber || null,
         gross_amount: grossAmount || null,
         vat_amount: vatAmount || null,
         document_date: documentDate || null,
-        status: 'ready', // Mark as reviewed
+        status: 'ready',
       });
       router.push('/receipts');
     } catch (err) {
@@ -83,15 +89,6 @@ export default function ReceiptDetailPage() {
     }
   };
 
-  const formatCurrency = (value: string | null) => {
-    if (!value) return '-';
-    const num = parseFloat(value);
-    return new Intl.NumberFormat('pt-PT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(num);
-  };
-
   return (
     <AppLayout>
       {/* Custom header with back button */}
@@ -100,7 +97,7 @@ export default function ReceiptDetailPage() {
           <Link href="/receipts" className="p-2 -ml-2">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </Link>
-          <h1 className="text-lg font-semibold text-gray-900">Receipt Details</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Recibo</h1>
           <button
             onClick={handleDelete}
             className="p-2 -mr-2 text-danger-500"
@@ -142,7 +139,7 @@ export default function ReceiptDetailPage() {
               <div className="card p-3 bg-amber-50 border-amber-200 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-amber-600" />
                 <span className="text-sm text-amber-800">
-                  This receipt needs review. Please verify the extracted data.
+                  Reveja os dados extraídos antes de marcar como pronto.
                 </span>
               </div>
             )}
@@ -151,20 +148,46 @@ export default function ReceiptDetailPage() {
             <div className="card p-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Vendor Name
+                  Fornecedor
                 </label>
                 <input
                   type="text"
                   value={vendorName}
                   onChange={(e) => setVendorName(e.target.value)}
-                  placeholder="Enter vendor name"
+                  placeholder="Fornecedor"
                   className="input"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date
+                  NIF
+                </label>
+                <input
+                  type="text"
+                  value={vendorNif}
+                  onChange={(e) => setVendorNif(e.target.value)}
+                  placeholder="123456789"
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nº documento
+                </label>
+                <input
+                  type="text"
+                  value={invoiceNumber}
+                  onChange={(e) => setInvoiceNumber(e.target.value)}
+                  placeholder="FT 2026/0001"
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Data
                 </label>
                 <input
                   type="date"
@@ -190,7 +213,7 @@ export default function ReceiptDetailPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    VAT (€)
+                    IVA (€)
                   </label>
                   <input
                     type="number"
@@ -225,12 +248,12 @@ export default function ReceiptDetailPage() {
               {document.status === 'needs_review' ? (
                 <>
                   <CheckCircle className="w-5 h-5" />
-                  {isSaving ? 'Saving...' : 'Mark as Reviewed'}
+                  {isSaving ? 'A guardar…' : 'Marcar como revisto'}
                 </>
               ) : (
                 <>
                   <Save className="w-5 h-5" />
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving ? 'A guardar…' : 'Guardar'}
                 </>
               )}
             </button>

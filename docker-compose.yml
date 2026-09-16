@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: invoflow-db
+    container_name: faturaflow-db
     environment:
       POSTGRES_USER: invoflow
       POSTGRES_PASSWORD: invoflow_dev
@@ -16,7 +14,36 @@ services:
       test: ["CMD-SHELL", "pg_isready -U invoflow"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 8
+
+  backend:
+    build: ./backend
+    container_name: faturaflow-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://invoflow:invoflow_dev@postgres:5432/invoflow
+      AUTH_MOCK_MODE: "true"
+      STORAGE_MOCK_MODE: "true"
+      OCR_BACKEND: tesseract
+      TESSERACT_LANG: por+eng
+      CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
+    volumes:
+      - mock_storage:/app/mock_storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: faturaflow-web
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
+  mock_storage:
