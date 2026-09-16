@@ -13,6 +13,7 @@ __pycache__/
 
 # Build outputs
 .next/
+tsconfig.tsbuildinfo
 out/
 dist/
 build/
