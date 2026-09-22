@@ -36,6 +36,7 @@ export function LandingPage() {
             {t.wordmark}
           </a>
           <nav className="landing-nav-links" aria-label="Secções">
+            <a href="#problema">{t.navProblema}</a>
             <a href="#como-funciona">{t.navComo}</a>
             <a href="#preco">{t.navPreco}</a>
             <Link href="/sign-in">{t.navEntrar}</Link>
@@ -59,6 +60,24 @@ export function LandingPage() {
             </a>
           </div>
           <FlowDiagram receipt={t.diagramReceipt} iva={t.diagramIva} pack={t.diagramPack} />
+        </section>
+
+        <section id="problema" className="landing-section landing-section-wide">
+          <h2>{t.problemTitle}</h2>
+          <div className="landing-cards">
+            <article className="landing-card">
+              <h3>{t.problem1Title}</h3>
+              <p>{t.problem1Body}</p>
+            </article>
+            <article className="landing-card">
+              <h3>{t.problem2Title}</h3>
+              <p>{t.problem2Body}</p>
+            </article>
+            <article className="landing-card">
+              <h3>{t.problem3Title}</h3>
+              <p>{t.problem3Body}</p>
+            </article>
+          </div>
         </section>
 
         <section id="como-funciona" className="landing-section">
