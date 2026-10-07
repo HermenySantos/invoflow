@@ -9,6 +9,8 @@ httpx==0.26.0
 pillow==10.2.0
 reportlab==4.0.8
 psycopg2-binary==2.9.11
+boto3==1.35.36
+sentry-sdk[fastapi]==2.18.0
 pytesseract==0.3.13
 pypdf==4.3.1
 zxing-cpp==3.1.1
