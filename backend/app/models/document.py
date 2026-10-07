@@ -15,7 +15,7 @@ class Document(Base):
     __tablename__ = "documents"
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Status: pending, processing, ready, needs_review, failed
     status = Column(String(50), default="pending", nullable=False, index=True)
