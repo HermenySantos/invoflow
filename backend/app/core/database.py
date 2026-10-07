@@ -34,3 +34,28 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def add_missing_nullable_columns(bind) -> list[str]:
+    """Development helper: add nullable model columns an existing local table lacks.
+
+    create_all() skips tables that already exist, so a local demo database made
+    before a new column would otherwise fail on every query. Real databases are
+    migrated with Alembic instead.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(bind)
+    added: list[str] = []
+    with bind.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {column["name"] for column in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing or not column.nullable:
+                    continue
+                column_type = column.type.compile(dialect=bind.dialect)
+                connection.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {column.name} {column_type}'))
+                added.append(f"{table.name}.{column.name}")
+    return added

@@ -101,6 +101,7 @@ async def get_summary(
     # ── Query documents for the period ──
     query = (
         db.query(Document)
+        .filter(Document.deleted_at.is_(None))
         .filter(Document.user_id == user.id)
         .filter(
             (

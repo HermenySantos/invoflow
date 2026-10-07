@@ -255,7 +255,7 @@ export default function ReceiptDetailPage() {
       console.error('Failed to delete:', err);
       setIsDeleting(false);
       setShowDeleteModal(false);
-      setError('Failed to delete. Please try again.');
+      setError('Não foi possível remover. Tente novamente.');
     }
   };
 
@@ -308,6 +308,7 @@ export default function ReceiptDetailPage() {
           <button
             onClick={handleDeleteClick}
             disabled={isDeleting}
+            aria-label="Remover recibo"
             className="p-2 -mr-2 text-danger-500 touch-manipulation disabled:opacity-50"
           >
             {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
@@ -753,14 +754,15 @@ export default function ReceiptDetailPage() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
           <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in slide-in-from-bottom sm:zoom-in duration-200">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Delete Receipt</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Remover recibo</h2>
               <button onClick={handleDeleteCancel} className="p-1 text-gray-400 touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <p className="text-gray-600 mb-6">
-              Are you sure? This cannot be undone.
+              O recibo deixa de aparecer na lista, no resumo e na exportação. O original
+              fica guardado, como a lei exige para faturas.
             </p>
             
             <div className="flex gap-3">
@@ -769,7 +771,7 @@ export default function ReceiptDetailPage() {
                 disabled={isDeleting}
                 className="flex-1 btn-secondary btn-md"
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 onClick={handleDeleteConfirm}
@@ -777,7 +779,7 @@ export default function ReceiptDetailPage() {
                 className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Delete
+                Remover
               </button>
             </div>
           </div>

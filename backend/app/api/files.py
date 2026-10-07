@@ -120,6 +120,11 @@ async def mock_upload(
     # Save to mock storage (storage key is validated inside this function)
     try:
         storage.save_file_mock(storage_key, content)
+    except FileExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A file already exists at this key; originals can't be replaced",
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
