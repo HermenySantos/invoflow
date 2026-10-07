@@ -1,42 +1,73 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document } from '@/lib/api';
-import { 
-  Receipt, 
-  AlertCircle, 
-  CheckCircle, 
-  Clock, 
+import {
+  getExpenseCategoryInfo,
+  EXPENSE_CATEGORY_LIST,
+} from "@/lib/categories";
+import {
+  Receipt,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
   XCircle,
   ChevronRight,
-  RefreshCw
-} from 'lucide-react';
+  RefreshCw,
+  Tag,
+  UtensilsCrossed,
+  Car,
+  Zap,
+  Fuel,
+  Heart,
+  GraduationCap,
+  Home,
+  Briefcase,
+  Megaphone,
+  Wrench,
+  Monitor,
+} from "lucide-react";
 import { clsx } from 'clsx';
 import Link from 'next/link';
+
+// Map icon name strings to Lucide components
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  UtensilsCrossed, Car, Zap, Fuel, Heart, GraduationCap, Home,
+  Briefcase, Megaphone, Wrench, Monitor, Tag,
+};
 
 export default function ReceiptsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async (category?: string | null) => {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await api.getDocuments({ page_size: 50 });
+      const data = await api.getDocuments({
+        page_size: 50,
+        expense_category: category || undefined,
+      });
       setDocuments(data.documents);
     } catch (err) {
-      setError('Failed to load receipts');
+      setError("Failed to load receipts");
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchDocuments();
-  }, []);
+    fetchDocuments(activeCategory);
+  }, [activeCategory, fetchDocuments]);
+
+  const handleCategoryFilter = (key: string | null) => {
+    setActiveCategory(key);
+  };
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'No date';
@@ -55,27 +86,68 @@ export default function ReceiptsPage() {
     }).format(num);
   };
 
-  const getStatusIcon = (status: Document['status']) => {
+  const getStatusInfo = (
+    status: Document["status"],
+  ): { icon: React.ReactNode; label: string } => {
     switch (status) {
-      case 'ready':
-        return <CheckCircle className="w-4 h-4 text-success-500" />;
-      case 'needs_review':
-        return <AlertCircle className="w-4 h-4 text-warning-500" />;
-      case 'processing':
-      case 'pending':
-        return <Clock className="w-4 h-4 text-gray-400 animate-pulse" />;
-      case 'failed':
-        return <XCircle className="w-4 h-4 text-danger-500" />;
+      case "ready":
+        return {
+          icon: (
+            <CheckCircle
+              className="w-4 h-4 text-success-500"
+              aria-hidden="true"
+            />
+          ),
+          label: "Ready",
+        };
+      case "needs_review":
+        return {
+          icon: (
+            <AlertCircle
+              className="w-4 h-4 text-warning-500"
+              aria-hidden="true"
+            />
+          ),
+          label: "Needs review",
+        };
+      case "processing":
+      case "pending":
+        return {
+          icon: (
+            <Clock
+              className="w-4 h-4 text-gray-400 animate-pulse"
+              aria-hidden="true"
+            />
+          ),
+          label: "Processing",
+        };
+      case "failed":
+        return {
+          icon: (
+            <XCircle className="w-4 h-4 text-danger-500" aria-hidden="true" />
+          ),
+          label: "Failed",
+        };
+      default:
+        return { icon: null, label: "Unknown" };
     }
   };
 
   return (
     <AppLayout title="Recibos">
-      <div className="p-4">
+      <section className="p-4" aria-label="Receipts list">
         {isLoading ? (
-          <div className="space-y-3">
+          <div
+            className="space-y-3"
+            role="status"
+            aria-label="Loading receipts"
+          >
             {[1, 2, 3].map((i) => (
-              <div key={i} className="card p-4 animate-pulse">
+              <div
+                key={i}
+                className="card p-4 animate-pulse"
+                aria-hidden="true"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-gray-200 rounded-lg" />
                   <div className="flex-1">
@@ -85,24 +157,32 @@ export default function ReceiptsPage() {
                 </div>
               </div>
             ))}
+            <span className="sr-only">Loading receipts...</span>
           </div>
         ) : error ? (
-          <div className="card p-6 text-center">
-            <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-3" />
+          <div className="card p-6 text-center" role="alert">
+            <AlertCircle
+              className="w-12 h-12 text-danger-500 mx-auto mb-3"
+              aria-hidden="true"
+            />
             <p className="text-gray-600">{error}</p>
             <button
-              onClick={fetchDocuments}
+              onClick={() => fetchDocuments(activeCategory)}
               className="btn-secondary btn-md mt-4"
+              aria-label="Retry loading receipts"
             >
               Retry
             </button>
           </div>
-        ) : documents.length === 0 ? (
+        ) : documents.length === 0 && activeCategory === null ? (
           <div className="card p-8 text-center">
-            <Receipt className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-1">
+            <Receipt
+              className="w-16 h-16 text-gray-300 mx-auto mb-4"
+              aria-hidden="true"
+            />
+            <h2 className="text-lg font-medium text-gray-900 mb-1">
               Ainda sem recibos
-            </h3>
+            </h2>
             <p className="text-gray-500 mb-4">
               Carregue um PDF ou uma foto para estimar o IVA
             </p>
@@ -112,65 +192,153 @@ export default function ReceiptsPage() {
           </div>
         ) : (
           <>
+            {/* Category filter chips */}
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide mb-1">
+              <button
+                onClick={() => handleCategoryFilter(null)}
+                className={clsx(
+                  "flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors touch-manipulation",
+                  activeCategory === null
+                    ? "bg-gray-900 text-white"
+                    : "bg-gray-100 text-gray-600",
+                )}
+              >
+                All
+              </button>
+              {EXPENSE_CATEGORY_LIST.map((cat) => {
+                const IconComp = ICON_MAP[cat.icon] || Tag;
+                const isActive = activeCategory === cat.key;
+                return (
+                  <button
+                    key={cat.key}
+                    onClick={() => handleCategoryFilter(cat.key)}
+                    className={clsx(
+                      "flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors touch-manipulation",
+                      isActive
+                        ? `${cat.color} ${cat.textColor} ring-1 ring-current`
+                        : "bg-gray-100 text-gray-600",
+                    )}
+                  >
+                    <IconComp className="w-3.5 h-3.5" aria-hidden="true" />
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Refresh button */}
             <div className="flex justify-end mb-3">
               <button
-                onClick={fetchDocuments}
+                onClick={() => fetchDocuments(activeCategory)}
                 className="btn-secondary btn-sm flex items-center gap-1"
+                aria-label="Refresh receipts list"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
                 Refresh
               </button>
             </div>
 
-            {/* Document list */}
-            <div className="space-y-2">
-              {documents.map((doc) => (
-                <Link
-                  key={doc.id}
-                  href={`/receipts/${doc.id}`}
-                  className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
+            {/* Empty filtered state */}
+            {documents.length === 0 && activeCategory !== null ? (
+              <div className="card p-6 text-center">
+                <Receipt
+                  className="w-12 h-12 text-gray-300 mx-auto mb-3"
+                  aria-hidden="true"
+                />
+                <p className="text-gray-500">No receipts in this category</p>
+                <button
+                  onClick={() => handleCategoryFilter(null)}
+                  className="btn-secondary btn-sm mt-3"
                 >
-                  {/* Thumbnail or icon */}
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {doc.file_url ? (
-                      <img
-                        src={doc.file_url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
+                  Show all receipts
+                </button>
+              </div>
+            ) : null}
+
+            {/* Document list */}
+            <ul
+              className="space-y-2 list-none p-0 m-0"
+              role="list"
+              aria-label="Your receipts"
+            >
+              {documents.map((doc) => {
+                const statusInfo = getStatusInfo(doc.status);
+                const vendorName =
+                  doc.vendor_name || "Fornecedor por preencher";
+                const date = formatDate(doc.document_date || doc.created_at);
+                const amount = formatCurrency(doc.gross_amount);
+                const catInfo = getExpenseCategoryInfo(doc.expense_category);
+                const CatIcon = ICON_MAP[catInfo.icon] || Tag;
+                const hasError = doc.validation_warnings?.some(
+                  (w) => w.severity === "error",
+                );
+                const hasWarning =
+                  !hasError &&
+                  doc.validation_warnings?.some(
+                    (w) => w.severity === "warning",
+                  );
+
+                return (
+                  <li key={doc.id}>
+                    <Link
+                      href={`/receipts/${doc.id}`}
+                      className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
+                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Status: ${statusInfo.label}`}
+                    >
+                      {/* Category icon */}
+                      <div
+                        className={`w-10 h-10 rounded-lg ${catInfo.color} flex items-center justify-center flex-shrink-0`}
+                        aria-hidden="true"
+                      >
+                        <CatIcon className={`w-5 h-5 ${catInfo.textColor}`} />
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900 truncate">
+                            {vendorName}
+                          </span>
+                          {statusInfo.icon}
+                          <span className="sr-only">{statusInfo.label}</span>
+                          {hasError && (
+                            <AlertTriangle
+                              className="w-4 h-4 text-red-500 flex-shrink-0"
+                              aria-label="Erro de validação"
+                            />
+                          )}
+                          {hasWarning && (
+                            <AlertTriangle
+                              className="w-4 h-4 text-amber-500 flex-shrink-0"
+                              aria-label="Aviso de validação"
+                            />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <span>{date}</span>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-medium text-gray-700">
+                            {amount}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <span className={`${catInfo.textColor} text-xs`}>
+                            {catInfo.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      <ChevronRight
+                        className="w-5 h-5 text-gray-400"
+                        aria-hidden="true"
                       />
-                    ) : (
-                      <Receipt className="w-6 h-6 text-gray-400" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900 truncate">
-                        {doc.vendor_name || 'Fornecedor por preencher'}
-                      </span>
-                      {getStatusIcon(doc.status)}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span>{formatDate(doc.document_date || doc.created_at)}</span>
-                      <span>•</span>
-                      <span className="font-medium text-gray-700">
-                        {formatCurrency(doc.gross_amount)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
-                </Link>
-              ))}
-            </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           </>
         )}
-      </div>
+      </section>
     </AppLayout>
   );
 }
