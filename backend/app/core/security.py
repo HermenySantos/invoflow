@@ -6,6 +6,7 @@ Supports both Clerk JWT validation and mock mode for development.
 import logging
 import time
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
@@ -15,20 +16,6 @@ settings = get_settings()
 security = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
-# JWT validation imports (only load if not in mock mode)
-jwt = None
-JWTError = None
-if not settings.auth_mock_mode:
-    try:
-        from jose import jwt as jose_jwt, JWTError as JoseJWTError
-        jwt = jose_jwt
-        JWTError = JoseJWTError
-        logger.info("JWT validation enabled with python-jose")
-    except ImportError:
-        logger.warning(
-            "python-jose not installed. JWT validation will fail. "
-            "Install with: pip install python-jose[cryptography]"
-        )
 
 # JWKS cache
 _jwks_cache: Optional[dict] = None
@@ -114,13 +101,6 @@ async def get_current_user(
         mock_email = request.headers.get("X-Mock-User-Email", "dev@invoflow.test")
         return CurrentUser(user_id=mock_user_id, email=mock_email, is_mock=True)
     
-    # Real JWT validation
-    if jwt is None:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="JWT validation not available. Install python-jose[cryptography].",
-        )
-    
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -147,7 +127,7 @@ async def get_current_user(
         # Verify and decode the token using the public key from JWKS
         payload = jwt.decode(
             token,
-            signing_key,
+            jwt.PyJWK(signing_key).key,
             algorithms=["RS256"],
             options={
                 "verify_aud": False,  # Clerk doesn't set audience by default
@@ -165,7 +145,7 @@ async def get_current_user(
         
         return CurrentUser(user_id=user_id, email="", is_mock=False)
         
-    except JWTError as e:
+    except jwt.PyJWTError as e:
         # Expired or badly signed tokens say nothing about key rotation, so
         # the JWKS cache is kept (unknown key ids refetch in _find_signing_key).
         logger.warning(f"JWT validation failed: {e}")
