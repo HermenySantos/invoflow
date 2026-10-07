@@ -24,7 +24,11 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        role="status"
+        aria-label="A carregar"
+      >
         <div className="text-sm text-gray-500">A carregar…</div>
       </div>
     );
@@ -36,6 +40,13 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen pb-20">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-[100] focus:p-4 focus:bg-white focus:text-primary-600 focus:underline"
+      >
+        Saltar para o conteúdo
+      </a>
+
       {title && (
         <header className="sticky top-0 z-40 bg-[var(--ff-bg)] border-b border-[var(--ff-border)]">
           <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
@@ -53,7 +64,11 @@ export function AppLayout({ children, title }: AppLayoutProps) {
           </div>
         </header>
       )}
-      <main className="max-w-lg mx-auto">{children}</main>
+
+      <main id="main-content" className="max-w-lg mx-auto" tabIndex={-1}>
+        {children}
+      </main>
+
       <BottomNav />
     </div>
   );

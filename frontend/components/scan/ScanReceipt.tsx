@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Camera, Check, ImagePlus, Loader2, Upload, X } from 'lucide-react';
@@ -18,6 +18,14 @@ export function ScanReceipt() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -34,6 +42,10 @@ export function ScanReceipt() {
 
     setSelectedFile(file);
     setError(null);
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
 
     if (file.type.startsWith('image/')) {
       setPreviewUrl(URL.createObjectURL(file));
