@@ -100,6 +100,20 @@ def validate_document(doc: Document) -> list[dict]:
     return warnings
 
 
+def _same_receipt(a: Document, b: Document, tolerance: Decimal) -> bool:
+    """Same vendor NIF + invoice number, or same vendor + date + amount (within tolerance)."""
+    if a.vendor_nif and a.invoice_number and a.vendor_nif == b.vendor_nif:
+        return (b.invoice_number or "").strip().lower() == a.invoice_number.strip().lower()
+    if not (a.vendor_name and b.vendor_name and a.document_date and a.gross_amount is not None):
+        return False
+    return (
+        a.vendor_name.strip().lower() == b.vendor_name.strip().lower()
+        and a.document_date == b.document_date
+        and b.gross_amount is not None
+        and abs(a.gross_amount - b.gross_amount) <= tolerance
+    )
+
+
 def detect_duplicates(
     db: Session,
     user_id: str,
@@ -107,39 +121,42 @@ def detect_duplicates(
     tolerance: Decimal = Decimal("0.50"),
 ) -> list[dict]:
     """
-    Find potential duplicates for *doc* among the same user's documents.
+    Find possible duplicates of *doc* among the same user's documents.
 
-    Criteria: same vendor name (case-insensitive) + same date + gross_amount within tolerance.
-    Returns a list of warning dicts pointing to the duplicate document IDs.
+    A match is the same vendor NIF + invoice number, or (when there is no
+    invoice number) the same vendor name + date + gross amount within tolerance.
     """
-    if not doc.vendor_name or not doc.document_date or not doc.gross_amount:
+    if not ((doc.vendor_nif and doc.invoice_number) or (doc.vendor_name and doc.document_date)):
         return []
 
-    potential = (
-        db.query(Document)
-        .filter(
-            Document.user_id == user_id,
-            Document.id != doc.id,
-            Document.document_date == doc.document_date,
-            Document.vendor_name.ilike(doc.vendor_name),
-        )
-        .all()
-    )
+    candidates = db.query(Document).filter(Document.user_id == user_id, Document.id != doc.id)
+    if doc.vendor_nif and doc.invoice_number:
+        candidates = candidates.filter(Document.vendor_nif == doc.vendor_nif)
+    else:
+        candidates = candidates.filter(Document.document_date == doc.document_date)
 
     warnings: list[dict] = []
-    for other in potential:
-        if other.gross_amount is not None:
-            diff = abs(other.gross_amount - doc.gross_amount)
-            if diff <= tolerance:
-                warnings.append({
-                    "code": "possible_duplicate",
-                    "message": f"Possível duplicado: {other.vendor_name} {other.document_date} ({other.gross_amount}€) — id {other.id[:8]}…",
-                    "severity": WARNING_SEVERITY_WARNING,
-                    "field": None,
-                    "duplicate_id": other.id,
-                })
-
+    for other in candidates.all():
+        if not _same_receipt(doc, other, tolerance):
+            continue
+        when = other.document_date.strftime("%d/%m/%Y") if other.document_date else "sem data"
+        warnings.append({
+            "code": "possible_duplicate",
+            "message": f"Possível duplicado de {other.vendor_name or other.original_filename} ({when})",
+            "severity": WARNING_SEVERITY_WARNING,
+            "field": None,
+            "duplicate_id": other.id,
+        })
     return warnings
+
+
+def count_duplicates(documents: list[Document], tolerance: Decimal = Decimal("0.50")) -> int:
+    """Number of documents in the list that repeat an earlier one."""
+    repeats = 0
+    for index, doc in enumerate(documents):
+        if any(_same_receipt(doc, earlier, tolerance) for earlier in documents[:index]):
+            repeats += 1
+    return repeats
 
 
 def validate_period_documents(
@@ -200,6 +217,14 @@ def validate_period_documents(
         warnings.append({
             "code": "missing_dates",
             "message": f"{len(missing_date)} documento(s) sem data",
+            "severity": WARNING_SEVERITY_WARNING,
+        })
+
+    duplicates = count_duplicates(valid)
+    if duplicates:
+        warnings.append({
+            "code": "possible_duplicates",
+            "message": f"{duplicates} possível(is) recibo(s) duplicado(s) — confirme antes de enviar",
             "severity": WARNING_SEVERITY_WARNING,
         })
 

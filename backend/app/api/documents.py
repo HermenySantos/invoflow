@@ -111,7 +111,11 @@ def parse_field_confidence(ocr_raw_response: Optional[str], overall_confidence: 
         return None
 
 
-def build_document_response(document: Document, file_url: Optional[str] = None) -> DocumentResponse:
+def build_document_response(
+    document: Document,
+    file_url: Optional[str] = None,
+    db: Optional[Session] = None,
+) -> DocumentResponse:
     """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings."""
     field_confidence = parse_field_confidence(
         document.ocr_raw_response, 
@@ -120,6 +124,8 @@ def build_document_response(document: Document, file_url: Optional[str] = None) 
 
     # Run validation
     warnings = validate_document(document)
+    if db is not None:
+        warnings += detect_duplicates(db, document.user_id, document)
 
     return DocumentResponse(
         id=document.id,
@@ -322,7 +328,7 @@ async def create_document(
         )
     
     file_url = storage.get_download_url(document.storage_key)
-    return build_document_response(document, file_url)
+    return build_document_response(document, file_url, db)
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -402,7 +408,7 @@ async def get_document(
         )
     
     file_url = storage.get_download_url(document.storage_key)
-    return build_document_response(document, file_url)
+    return build_document_response(document, file_url, db)
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
@@ -458,7 +464,7 @@ async def update_document(
         )
     
     file_url = storage.get_download_url(document.storage_key)
-    return build_document_response(document, file_url)
+    return build_document_response(document, file_url, db)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
