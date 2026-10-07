@@ -3,6 +3,8 @@
  * Handles all HTTP requests with Clerk authentication.
  */
 
+import { readDemoUser } from './demoUser';
+
 const API_BASE = '/api';
 
 interface ApiError {
@@ -33,6 +35,14 @@ class ApiClient {
     return null;
   }
 
+  /** Clerk bearer token when signed in with Clerk; otherwise the demo user's id. */
+  private async authHeaders(): Promise<Record<string, string>> {
+    const token = await this.getAuthToken();
+    if (token) return { Authorization: `Bearer ${token}` };
+    const demoUser = typeof window !== 'undefined' ? readDemoUser() : null;
+    return demoUser ? { 'X-Mock-User-Id': demoUser.id } : {};
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -44,11 +54,7 @@ class ApiClient {
       ...(options.headers as Record<string, string> || {}),
     };
 
-    // Attach auth token if available
-    const token = await this.getAuthToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    Object.assign(headers, await this.authHeaders());
 
     const response = await fetch(url, {
       ...options,
@@ -179,9 +185,8 @@ class ApiClient {
     if (params?.quarter) searchParams.set('quarter', params.quarter.toString());
 
     const query = searchParams.toString();
-    const token = await this.getAuthToken();
     const response = await fetch(`${API_BASE}/export${query ? `?${query}` : ''}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: await this.authHeaders(),
     });
     if (!response.ok) {
       throw new Error('Export failed');
