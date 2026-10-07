@@ -27,6 +27,22 @@ from app.services.categorization import (
 )
 
 
+# A cell starting with one of these runs as a formula in Excel/LibreOffice.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_text(value: Optional[str]) -> str:
+    """OCR'd text, neutralised so it can't run as a spreadsheet formula."""
+    if not value:
+        return ""
+    return f"'{value}" if value.startswith(_FORMULA_PREFIXES) else value
+
+
+def _csv_amount(value: Optional[Decimal]) -> str:
+    """12.50 -> "12,50" so pt-PT spreadsheets read it as a number."""
+    return "" if value is None else f"{value:.2f}".replace(".", ",")
+
+
 class ExportService:
     """
     Generates export packages for accountants.
@@ -84,22 +100,18 @@ class ExportService:
         return zip_bytes, filename
     
     def _get_file_content(self, storage_key: str) -> Optional[bytes]:
-        """Get file content from storage."""
-        if self.storage.mock_mode:
-            return self.storage.get_file_mock(storage_key)
-        
-        # For R2, we'd need to download the file
-        # This is a simplified version - in production you'd use boto3
-        return None
+        """Get file content from storage (local files in mock mode, R2 otherwise)."""
+        return self.storage.get_file(storage_key)
     
     def _safe_filename(self, name: str) -> str:
         """Convert string to safe filename."""
         return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:50]
     
     def _generate_csv(self, documents: list[Document]) -> str:
-        """Generate CSV summary."""
+        """CSV summary for Portuguese Excel: ';' separated, comma decimals, UTF-8 BOM."""
         output = io.StringIO()
-        writer = csv.writer(output)
+        output.write("\ufeff")
+        writer = csv.writer(output, delimiter=";")
         
         # Header
         writer.writerow([
@@ -129,19 +141,19 @@ class ExportService:
             writer.writerow([
                 str(doc.id),
                 doc.document_date.isoformat() if doc.document_date else "",
-                doc.vendor_name or "",
-                doc.vendor_nif or "",
-                doc.invoice_number or "",
-                str(doc.net_amount) if doc.net_amount else "",
-                str(doc.vat_amount) if doc.vat_amount else "",
-                str(doc.gross_amount) if doc.gross_amount else "",
-                str(doc.vat_rate) if doc.vat_rate else "",
+                _csv_text(doc.vendor_name),
+                _csv_text(doc.vendor_nif),
+                _csv_text(doc.invoice_number),
+                _csv_amount(doc.net_amount),
+                _csv_amount(doc.vat_amount),
+                _csv_amount(doc.gross_amount),
+                _csv_amount(doc.vat_rate),
                 get_expense_category_label(cat),
                 get_irs_sector_label(doc.irs_sector or "geral"),
                 f"{pct}%",
-                str(deductible),
+                _csv_amount(deductible),
                 doc.status,
-                doc.original_filename,
+                _csv_text(doc.original_filename),
             ])
         
         return output.getvalue()
