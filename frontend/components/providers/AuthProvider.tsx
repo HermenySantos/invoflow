@@ -8,6 +8,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useUser, useClerk } from '@clerk/nextjs';
+import { DEMO_AUTH_KEY, demoUserId, readDemoUser } from '@/lib/demoUser';
 
 interface User {
   id: string;
@@ -24,8 +25,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const MOCK_AUTH_KEY = 'invoflow_mock_auth';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
   if (clerkEnabled) {
@@ -39,29 +38,20 @@ function MockAuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(MOCK_AUTH_KEY);
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem(MOCK_AUTH_KEY);
-      }
-    }
+    setUser(readDemoUser());
     setIsLoading(false);
   }, []);
 
   const signIn = (email: string) => {
-    const mockUser: User = {
-      id: 'mock-user-001',
-      email: email || 'dev@invoflow.test',
-    };
-    setUser(mockUser);
-    localStorage.setItem(MOCK_AUTH_KEY, JSON.stringify(mockUser));
+    const demoEmail = email.trim() || 'demo@faturaflow.test';
+    const demoUser: User = { id: demoUserId(demoEmail), email: demoEmail };
+    setUser(demoUser);
+    localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoUser));
   };
 
   const signOut = () => {
     setUser(null);
-    localStorage.removeItem(MOCK_AUTH_KEY);
+    localStorage.removeItem(DEMO_AUTH_KEY);
   };
 
   return (
