@@ -12,6 +12,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
+from app.services.categorization import detect_fuel_type, receipt_text
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,19 @@ def validate_document(doc: Document) -> list[dict]:
             "message": f"Confiança OCR baixa ({doc.ocr_confidence}%)",
             "severity": WARNING_SEVERITY_WARNING,
             "field": None,
+        })
+
+    # Fuel: gasoline is 0% deductible, diesel/LPG 50% (CIVA art. 21(1)(b))
+    if (
+        doc.expense_category == "fuel"
+        and doc.deductible_pct_override is None
+        and detect_fuel_type(receipt_text(doc)) is None
+    ):
+        warnings.append({
+            "code": "fuel_type_unknown",
+            "message": "Tipo de combustível não identificado — a gasolina não é dedutível; confirme a % dedutível",
+            "severity": WARNING_SEVERITY_WARNING,
+            "field": "deductible_pct_override",
         })
 
     # Uncategorized

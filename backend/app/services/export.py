@@ -24,6 +24,7 @@ from app.services.categorization import (
     get_irs_sector_label,
     get_deductible_pct,
     deductible_vat_split,
+    effective_deductible_pct,
 )
 
 
@@ -135,7 +136,7 @@ class ExportService:
         # Data rows
         for doc in documents:
             cat = doc.expense_category or "other"
-            pct = get_deductible_pct(cat)
+            pct = effective_deductible_pct(doc)
             vat = doc.vat_amount or Decimal(0)
             deductible = (vat * pct / 100).quantize(Decimal("0.01"))
             writer.writerow([

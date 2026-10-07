@@ -296,6 +296,22 @@ export default function ReceiptDetailPage() {
     }
   };
 
+  const handleDeductibleChange = async (value: string) => {
+    if (!document) return;
+    try {
+      setIsSavingCategory(true);
+      const updated = await api.updateDocument(document.id, {
+        deductible_pct_override: value === '' ? null : Number(value),
+      } as Partial<Document>);
+      setDocument(updated);
+    } catch (err) {
+      console.error('Failed to update deductible %:', err);
+      setError('Não foi possível guardar a % dedutível.');
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
+
   return (
     <AppLayout>
       {/* Header */}
@@ -525,6 +541,26 @@ export default function ReceiptDetailPage() {
                     </button>
                   );
                 })()}
+
+                {/* VAT deductible % (CIVA art. 21) */}
+                <label className="flex items-center justify-between gap-3 px-1 text-sm text-gray-600">
+                  <span>IVA dedutível</span>
+                  <select
+                    value={document.deductible_pct_override ?? ''}
+                    onChange={(e) => handleDeductibleChange(e.target.value)}
+                    disabled={isSavingCategory}
+                    className="input w-auto py-1.5"
+                  >
+                    <option value="">
+                      Regra da categoria
+                      {document.deductible_pct_override == null ? ` (${document.deductible_pct}%)` : ''}
+                    </option>
+                    <option value="100">100%</option>
+                    <option value="50">50% (gasóleo, GPL)</option>
+                    <option value="25">25%</option>
+                    <option value="0">0% (gasolina, viatura ligeira)</option>
+                  </select>
+                </label>
 
                 {/* Confidence indicator */}
                 {document.ocr_confidence && (

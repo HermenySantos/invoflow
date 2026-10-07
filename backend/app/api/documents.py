@@ -30,7 +30,7 @@ from app.schemas.document import (
 )
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.ocr import get_ocr_service
-from app.services.categorization import categorize_document
+from app.services.categorization import categorize_document, effective_deductible_pct
 from app.services.audit import (
     log_document_create,
     log_ocr_extraction,
@@ -150,6 +150,8 @@ def build_document_response(
         review_notes=getattr(document, 'review_notes', None),
         expense_category=getattr(document, 'expense_category', None),
         irs_sector=getattr(document, 'irs_sector', None),
+        deductible_pct=effective_deductible_pct(document),
+        deductible_pct_override=document.deductible_pct_override,
         validation_warnings=warnings,
         period_tag=document.period_tag,
         quarter_tag=document.quarter_tag,

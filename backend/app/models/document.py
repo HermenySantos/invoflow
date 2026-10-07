@@ -48,6 +48,9 @@ class Document(Base):
     # Categorization
     expense_category = Column(String(50), nullable=True, index=True)  # Business: food, travel, utilities...
     irs_sector = Column(String(50), nullable=True, index=True)  # Tax: saude, educacao, geral...
+    # User-set VAT deductible % (0-100), e.g. 0 for a passenger-car repair
+    # (CIVA art. 21(1)(a)). None means use the category rule.
+    deductible_pct_override = Column(Integer, nullable=True)
     
     # Timestamps
     # Set instead of deleting: invoices must be kept (10 years in Portugal), so

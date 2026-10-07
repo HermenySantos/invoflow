@@ -26,6 +26,7 @@ from app.services.categorization import (
     get_irs_sector_label,
     get_deductible_pct,
     deductible_vat_split,
+    effective_deductible_pct,
 )
 from app.services.validation import validate_period_documents
 
@@ -184,7 +185,7 @@ async def get_summary(
         sect = d.irs_sector or "geral"
         amount = d.gross_amount or Decimal(0)
         vat = d.vat_amount or Decimal(0)
-        pct = get_deductible_pct(cat)
+        pct = effective_deductible_pct(d)
         
         expense_totals[cat]["count"] += 1
         expense_totals[cat]["total"] += amount

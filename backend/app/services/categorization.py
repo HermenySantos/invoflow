@@ -3,6 +3,7 @@ Auto-categorization service for receipts.
 Maps vendor names and NIFs to business expense categories and IRS deduction sectors.
 """
 
+import json
 import re
 from decimal import Decimal
 from typing import Optional, Tuple
@@ -298,6 +299,47 @@ def get_deductible_pct(expense_category: str | None) -> int:
     return EXPENSE_DEDUCTIBLE_PCT.get(expense_category, 0)
 
 
+# Art. 21(1)(b): gasoline is never deductible; diesel, LPG, natural gas and
+# biofuels are 50%. Matched against the receipt's OCR text.
+_GASOLINE = re.compile(r"\b(?:gasolina|sem\s+chumbo|s/chumbo|benzina|unleaded|e10|95\s*oct|98\s*oct)\b", re.IGNORECASE)
+_HALF_DEDUCTIBLE_FUEL = re.compile(r"\b(?:gas[oó]leo|diesel|gpl|autog[aá]s|gnv|gás\s+natural|biodiesel)\b", re.IGNORECASE)
+
+
+def detect_fuel_type(text: str | None) -> str | None:
+    """'gasoline', 'diesel' (any 50% fuel) or None when the receipt doesn't say."""
+    if not text:
+        return None
+    if _HALF_DEDUCTIBLE_FUEL.search(text):
+        return "diesel"
+    if _GASOLINE.search(text):
+        return "gasoline"
+    return None
+
+
+def receipt_text(document) -> str | None:
+    raw = getattr(document, "ocr_raw_response", None)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw).get("text")
+    except (ValueError, AttributeError):
+        return None
+
+
+def effective_deductible_pct(document) -> int:
+    """
+    Deductible % for one receipt: the user's override if set, otherwise the
+    category rule, with fuel narrowed by fuel type (gasoline 0%).
+    """
+    override = getattr(document, "deductible_pct_override", None)
+    if override is not None:
+        return override
+    category = document.expense_category
+    if category == "fuel" and detect_fuel_type(receipt_text(document)) == "gasoline":
+        return 0
+    return get_deductible_pct(category)
+
+
 # Statuses whose amounts a person has checked; needs_review is still raw OCR.
 CONFIRMED_STATUSES = ("ready", "accountant_review")
 
@@ -308,7 +350,7 @@ def deductible_vat_split(documents) -> tuple[Decimal, Decimal]:
     pending = Decimal("0")
     for document in documents:
         vat = document.vat_amount or Decimal("0")
-        deductible = vat * get_deductible_pct(document.expense_category) / 100
+        deductible = vat * effective_deductible_pct(document) / 100
         if document.status in CONFIRMED_STATUSES:
             confirmed += deductible
         elif document.status == "needs_review":

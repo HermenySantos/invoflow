@@ -39,6 +39,8 @@ class DocumentUpdate(BaseModel):
     review_notes: Optional[str] = Field(None, max_length=1000)
     expense_category: Optional[str] = Field(None, max_length=50)
     irs_sector: Optional[str] = Field(None, max_length=50)
+    # 0-100; send null to go back to the category rule.
+    deductible_pct_override: Optional[int] = Field(None, ge=0, le=100)
 
 
 class FieldConfidence(BaseModel):
@@ -83,6 +85,8 @@ class DocumentResponse(BaseModel):
     # Categorization
     expense_category: Optional[str] = None
     irs_sector: Optional[str] = None
+    deductible_pct: int = 0                         # what the estimate uses
+    deductible_pct_override: Optional[int] = None   # user-set, if any
     
     # Validation warnings (populated per-request)
     validation_warnings: list[dict] = []
