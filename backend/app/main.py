@@ -95,7 +95,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_startup_checks()
-    Base.metadata.create_all(bind=engine)
+    # Local convenience only; real databases are built with `alembic upgrade head`.
+    if settings.app_env == "development":
+        Base.metadata.create_all(bind=engine)
     backend = resolve_ocr_backend()
     logger.info("FaturaFlow API starting...")
     logger.info(
