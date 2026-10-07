@@ -1,6 +1,6 @@
 /**
  * API client for InvoFlow backend.
- * Handles all HTTP requests with proper error handling.
+ * Handles all HTTP requests with Clerk authentication.
  */
 
 const API_BASE = '/api';
@@ -11,16 +11,44 @@ interface ApiError {
 }
 
 class ApiClient {
+  /**
+   * Get the auth token from Clerk.
+   * Returns null if not authenticated (e.g., during SSR or before sign-in).
+   */
+  private async getAuthToken(): Promise<string | null> {
+    // In browser, get token from Clerk's client-side session
+    if (typeof window !== 'undefined') {
+      try {
+        // @clerk/nextjs exposes the session token via __clerk_session cookie
+        // but the proper way is to use the useAuth hook. Since we're in a
+        // non-React context, we use the global Clerk instance.
+        const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string | null> } } }).Clerk;
+        if (clerk?.session) {
+          return await clerk.session.getToken();
+        }
+      } catch {
+        // Fall through to null
+      }
+    }
+    return null;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
     
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string> || {}),
     };
+
+    // Attach auth token if available
+    const token = await this.getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
     const response = await fetch(url, {
       ...options,
@@ -41,13 +69,18 @@ class ApiClient {
       throw error;
     }
 
-    // Handle empty responses
+    // Handle 204 No Content and other empty responses
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return undefined as T;
+    }
+
+    // Handle JSON responses
     const contentType = response.headers.get('content-type');
     if (contentType?.includes('application/json')) {
       return response.json();
     }
     
-    return response as unknown as T;
+    return undefined as T;
   }
 
   // Documents
@@ -78,11 +111,15 @@ class ApiClient {
     page?: number;
     page_size?: number;
     status?: string;
+    expense_category?: string;
+    irs_sector?: string;
   }) {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
     if (params?.status) searchParams.set('status', params.status);
+    if (params?.expense_category) searchParams.set('expense_category', params.expense_category);
+    if (params?.irs_sector) searchParams.set('irs_sector', params.irs_sector);
     
     const query = searchParams.toString();
     return this.request<DocumentListResponse>(
@@ -105,6 +142,11 @@ class ApiClient {
     return this.request<void>(`/documents/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // Audit Trail
+  async getDocumentAuditTrail(documentId: string): Promise<AuditTrailResponse> {
+    return this.request<AuditTrailResponse>(`/audit/documents/${documentId}`);
   }
 
   // Summary
@@ -137,7 +179,10 @@ class ApiClient {
     if (params?.quarter) searchParams.set('quarter', params.quarter.toString());
 
     const query = searchParams.toString();
-    const response = await fetch(`${API_BASE}/export${query ? `?${query}` : ''}`);
+    const token = await this.getAuthToken();
+    const response = await fetch(`${API_BASE}/export${query ? `?${query}` : ''}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
     if (!response.ok) {
       throw new Error('Export failed');
     }
@@ -145,6 +190,34 @@ class ApiClient {
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
     return { blob, filename: match?.[1] || 'FaturaFlow_Export.zip' };
+  }
+
+  // VAT on Sales
+  async upsertVatSales(data: {
+    period_type: 'month' | 'quarter';
+    year: number;
+    period_value: number;
+    vat_amount: string;
+    notes?: string;
+  }) {
+    return this.request<VatSalesEntry>('/vat-sales', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getVatSales(params?: {
+    year?: number;
+    period_type?: 'month' | 'quarter';
+  }) {
+    const searchParams = new URLSearchParams();
+    if (params?.year) searchParams.set('year', params.year.toString());
+    if (params?.period_type) searchParams.set('period_type', params.period_type);
+
+    const query = searchParams.toString();
+    return this.request<VatSalesEntry[]>(
+      `/vat-sales${query ? `?${query}` : ''}`
+    );
   }
 
   // File upload helper
@@ -179,10 +252,46 @@ class ApiClient {
 }
 
 // Types
+export interface ValidationWarning {
+  code: string;
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+  field: string | null;
+}
+
+export interface AuditEntry {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  user_id: string;
+  action: string;
+  source: string;
+  changes_json: string | null;
+  created_at: string;
+}
+
+export interface AuditTrailResponse {
+  entity_type: string;
+  entity_id: string;
+  entries: AuditEntry[];
+  total: number;
+}
+
+export interface FieldConfidence {
+  vendor_name?: number | null;
+  vendor_nif?: number | null;
+  invoice_number?: number | null;
+  document_date?: number | null;
+  net_amount?: number | null;
+  vat_amount?: number | null;
+  gross_amount?: number | null;
+  vat_rate?: number | null;
+}
+
 export interface Document {
   id: string;
   user_id: string;
-  status: 'pending' | 'processing' | 'ready' | 'needs_review' | 'failed';
+  status: 'pending' | 'processing' | 'ready' | 'needs_review' | 'accountant_review' | 'failed';
   storage_key: string;
   original_filename: string;
   mime_type: string;
@@ -196,6 +305,11 @@ export interface Document {
   gross_amount: string | null;
   vat_rate: string | null;
   ocr_confidence: string | null;
+  field_confidence: FieldConfidence | null;
+  validation_warnings: ValidationWarning[];
+  review_notes: string | null;
+  expense_category: string | null;
+  irs_sector: string | null;
   period_tag: string;
   quarter_tag: string;
   file_url: string | null;
@@ -212,9 +326,21 @@ export interface DocumentListResponse {
   has_more: boolean;
 }
 
+export interface CategoryBreakdown {
+  category: string;
+  label: string;
+  count: number;
+  total: string;
+  vat_total?: string;
+  deductible_vat?: string;
+  deductible_pct?: number;
+}
+
 export interface Summary {
   period: string;
   period_type: string;
+  year: number;
+  period_value: number;
   total_documents: number;
   ready_count: number;
   needs_review_count: number;
@@ -226,8 +352,21 @@ export interface Summary {
   deductible_vat: string;
   vat_on_sales: string;
   estimated_iva_payable: string;
+  expense_breakdown: CategoryBreakdown[];
+  irs_breakdown: CategoryBreakdown[];
   confidence_percent: number;
   warnings: string[];
+}
+
+export interface VatSalesEntry {
+  id?: string;
+  period_type: 'month' | 'quarter';
+  year: number;
+  period_value: number;
+  vat_amount: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export const api = new ApiClient();

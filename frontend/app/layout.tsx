@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Sans, Inter } from 'next/font/google';
+import { ClerkProvider } from '@clerk/nextjs';
 import './globals.css';
 import { AuthProvider } from '@/components/providers/AuthProvider';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const plex = IBM_Plex_Sans({
   subsets: ['latin'],
@@ -13,6 +15,8 @@ const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
 });
+
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export const metadata: Metadata = {
   title: 'FaturaFlow — IVA dos recibos para o contabilista',
@@ -41,10 +45,16 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const app = (
+    <ErrorBoundary>
+      <AuthProvider>{children}</AuthProvider>
+    </ErrorBoundary>
+  );
+
   return (
     <html lang="pt" className={`${plex.variable} ${inter.variable}`}>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        {clerkEnabled ? <ClerkProvider>{app}</ClerkProvider> : app}
       </body>
     </html>
   );
