@@ -30,7 +30,7 @@ describe('ConfidenceBadge', () => {
   it('shows unknown label when showLabel is true and confidence is null', () => {
     render(<ConfidenceBadge confidence={null} showLabel />);
     
-    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.getByText('Desconhecida')).toBeInTheDocument();
   });
 
   it('shows tooltip on hover', async () => {

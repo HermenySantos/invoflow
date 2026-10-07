@@ -64,8 +64,8 @@ const AUDIT_ACTION_CONFIG: Record<string, { icon: React.ComponentType<{ classNam
 
 const AUDIT_SOURCE_BADGE: Record<string, { label: string; className: string }> = {
   ocr: { label: 'OCR', className: 'bg-blue-100 text-blue-700' },
-  user: { label: 'User', className: 'bg-green-100 text-green-700' },
-  system: { label: 'System', className: 'bg-gray-100 text-gray-600' },
+  user: { label: 'Utilizador', className: 'bg-green-100 text-green-700' },
+  system: { label: 'Sistema', className: 'bg-gray-100 text-gray-600' },
 };
 
 /** Relative timestamp in Portuguese */
@@ -127,7 +127,7 @@ export default function ReceiptDetailPage() {
         vat_amount: data.vat_amount || '',
       });
     } catch (err) {
-      setError('Failed to load receipt');
+      setError('Não foi possível carregar o recibo.');
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -211,7 +211,7 @@ export default function ReceiptDetailPage() {
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to confirm:', err);
-      setError('Failed to save. Please try again.');
+      setError('Não foi possível guardar. Tente novamente.');
     } finally {
       setIsSaving(false);
     }
@@ -234,7 +234,7 @@ export default function ReceiptDetailPage() {
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
-      setError('Failed to save. Please try again.');
+      setError('Não foi possível guardar. Tente novamente.');
     } finally {
       setIsSaving(false);
     }
@@ -262,7 +262,9 @@ export default function ReceiptDetailPage() {
   const formatCurrency = (value: string | null) => {
     if (!value) return '—';
     const num = parseFloat(value);
-    return isNaN(num) ? '—' : `€${num.toFixed(2)}`;
+    return isNaN(num)
+      ? '—'
+      : new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(num);
   };
 
   const formatDate = (value: string | null) => {
@@ -290,7 +292,7 @@ export default function ReceiptDetailPage() {
       setDocument(updated);
     } catch (err) {
       console.error('Failed to update category:', err);
-      setError('Failed to update category.');
+      setError('Não foi possível mudar a categoria.');
     } finally {
       setIsSavingCategory(false);
     }
@@ -320,7 +322,7 @@ export default function ReceiptDetailPage() {
           <Link href="/receipts" className="p-2 -ml-2 touch-manipulation">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </Link>
-          <h1 className="text-lg font-semibold text-gray-900">Receipt</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Recibo</h1>
           <button
             onClick={handleDeleteClick}
             disabled={isDeleting}
@@ -348,7 +350,7 @@ export default function ReceiptDetailPage() {
             <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-3" />
             <p className="text-gray-600 mb-4">{error}</p>
             <button onClick={fetchDocument} className="btn-secondary btn-md">
-              Try Again
+              Tentar de novo
             </button>
           </div>
         ) : document ? (
@@ -395,17 +397,17 @@ export default function ReceiptDetailPage() {
               /* ========== EDIT MODE ========== */
               <div className="card p-4 space-y-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h2 className="font-semibold text-gray-900">Edit Details</h2>
+                  <h2 className="font-semibold text-gray-900">Editar dados</h2>
                   <button 
                     onClick={() => setIsEditing(false)}
                     className="text-sm text-gray-500 touch-manipulation"
                   >
-                    Cancel
+                    Cancelar
                   </button>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
                   <input
                     type="text"
                     value={editData.vendor_name}
@@ -416,7 +418,7 @@ export default function ReceiptDetailPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
                   <input
                     type="date"
                     value={editData.document_date}
@@ -441,7 +443,7 @@ export default function ReceiptDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">VAT (€)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">IVA (€)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -476,9 +478,9 @@ export default function ReceiptDetailPage() {
                       <Building2 className="w-5 h-5 text-gray-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-500">Vendor</p>
+                      <p className="text-sm text-gray-500">Fornecedor</p>
                       <p className="font-semibold text-gray-900 truncate">
-                        {document.vendor_name || <span className="text-gray-400">Not detected</span>}
+                        {document.vendor_name || <span className="text-gray-400">Não detetado</span>}
                       </p>
                     </div>
                   </div>
@@ -489,9 +491,9 @@ export default function ReceiptDetailPage() {
                       <Calendar className="w-5 h-5 text-gray-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-500">Date</p>
+                      <p className="text-sm text-gray-500">Data</p>
                       <p className="font-semibold text-gray-900">
-                        {document.document_date ? formatDate(document.document_date) : <span className="text-gray-400">Not detected</span>}
+                        {document.document_date ? formatDate(document.document_date) : <span className="text-gray-400">Não detetado</span>}
                       </p>
                     </div>
                   </div>
@@ -566,13 +568,13 @@ export default function ReceiptDetailPage() {
                 {document.ocr_confidence && (
                   <div className="flex items-center justify-between px-1">
                     <span className="text-xs text-gray-500">
-                      Auto-extracted
+                      Lido automaticamente
                     </span>
                     <span className={`text-xs font-medium ${
                       getConfidenceLevel() === 'high' ? 'text-green-600' :
                       getConfidenceLevel() === 'medium' ? 'text-amber-600' : 'text-red-600'
                     }`}>
-                      {parseFloat(document.ocr_confidence).toFixed(0)}% confidence
+                      {parseFloat(document.ocr_confidence).toFixed(0)}% de confiança
                     </span>
                   </div>
                 )}
@@ -702,6 +704,19 @@ export default function ReceiptDetailPage() {
       {document && !isLoading && (
         <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200 safe-area-inset-bottom z-40">
           <div className="max-w-lg mx-auto">
+            {/* Keep the amounts in view next to the action that confirms them */}
+            {!isEditing && (
+              <dl className="flex justify-between text-sm mb-3" aria-label="Valores do recibo">
+                <div className="flex gap-1.5">
+                  <dt className="text-gray-500">Total</dt>
+                  <dd className="font-semibold text-gray-900">{formatCurrency(document.gross_amount)}</dd>
+                </div>
+                <div className="flex gap-1.5">
+                  <dt className="text-gray-500">IVA</dt>
+                  <dd className="font-semibold text-gray-900">{formatCurrency(document.vat_amount)}</dd>
+                </div>
+              </dl>
+            )}
             {isEditing ? (
               <button
                 onClick={handleSaveEdit}
@@ -711,12 +726,12 @@ export default function ReceiptDetailPage() {
                 {isSaving ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Saving...
+                    A guardar...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5" />
-                    Save & Confirm
+                    Guardar e confirmar
                   </>
                 )}
               </button>
@@ -729,12 +744,12 @@ export default function ReceiptDetailPage() {
                 {isSaving ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Saving...
+                    A guardar...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5" />
-                    Looks Good
+                    Está correto
                   </>
                 )}
               </button>
@@ -751,7 +766,7 @@ export default function ReceiptDetailPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Category</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Categoria</h2>
               <button onClick={() => setShowCategoryPicker(false)} className="p-1 text-gray-400 touch-manipulation">
                 <X className="w-5 h-5" />
               </button>

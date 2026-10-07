@@ -281,7 +281,7 @@ export default function SummaryPage() {
   // ── Render ──
 
   return (
-    <AppLayout title="Summary">
+    <AppLayout title="IVA">
       <div className="p-4 space-y-4 pb-8">
         {/* ─── 1. Period Selector ─── */}
         <PeriodSelector

@@ -27,22 +27,22 @@ describe('ImageViewer', () => {
     );
     
     expect(screen.getByText('invoice.pdf')).toBeInTheDocument();
-    expect(screen.getByText('PDF preview not available')).toBeInTheDocument();
-    expect(screen.getByText('Open PDF')).toBeInTheDocument();
+    expect(screen.getByText('Pré-visualização de PDF indisponível')).toBeInTheDocument();
+    expect(screen.getByText('Abrir PDF')).toBeInTheDocument();
   });
 
   it('displays zoom controls', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
-    expect(screen.getByLabelText('Zoom out')).toBeInTheDocument();
-    expect(screen.getByLabelText('Zoom in')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reduzir')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ampliar')).toBeInTheDocument();
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
 
   it('zooms in when zoom in button is clicked', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
-    const zoomInButton = screen.getByLabelText('Zoom in');
+    const zoomInButton = screen.getByLabelText('Ampliar');
     fireEvent.click(zoomInButton);
     
     expect(screen.getByText('150%')).toBeInTheDocument();
@@ -52,12 +52,12 @@ describe('ImageViewer', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
     // First zoom in
-    const zoomInButton = screen.getByLabelText('Zoom in');
+    const zoomInButton = screen.getByLabelText('Ampliar');
     fireEvent.click(zoomInButton);
     expect(screen.getByText('150%')).toBeInTheDocument();
     
     // Then zoom out
-    const zoomOutButton = screen.getByLabelText('Zoom out');
+    const zoomOutButton = screen.getByLabelText('Reduzir');
     fireEvent.click(zoomOutButton);
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
@@ -65,14 +65,14 @@ describe('ImageViewer', () => {
   it('disables zoom out at minimum zoom', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
-    const zoomOutButton = screen.getByLabelText('Zoom out');
+    const zoomOutButton = screen.getByLabelText('Reduzir');
     expect(zoomOutButton).toBeDisabled();
   });
 
   it('has fullscreen toggle button', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
-    expect(screen.getByLabelText('View fullscreen')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ver em ecrã inteiro')).toBeInTheDocument();
   });
 
   it('shows loading skeleton initially', () => {
