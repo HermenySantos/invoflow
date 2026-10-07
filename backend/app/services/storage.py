@@ -138,6 +138,9 @@ class StorageService:
             raise RuntimeError("save_file_mock called in non-mock mode")
 
         file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
+        if file_path.exists():
+            # Originals are write-once, like R2 with object lock.
+            raise FileExistsError(f"{storage_key} already exists")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(content)
         return str(file_path)

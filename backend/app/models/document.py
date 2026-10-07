@@ -50,6 +50,10 @@ class Document(Base):
     irs_sector = Column(String(50), nullable=True, index=True)  # Tax: saude, educacao, geral...
     
     # Timestamps
+    # Set instead of deleting: invoices must be kept (10 years in Portugal), so
+    # a "deleted" receipt is only hidden and its original file stays in storage.
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     

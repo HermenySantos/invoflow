@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import router as api_router
 from app.core.config import get_settings
-from app.core.database import Base, engine
+from app.core.database import Base, add_missing_nullable_columns, engine
 from app.core.rate_limit import limiter
 from app.core.startup import get_environment_status, run_startup_checks
 from app.services.ocr import resolve_ocr_backend, tesseract_available
@@ -99,6 +99,8 @@ async def lifespan(app: FastAPI):
     # Local convenience only; real databases are built with `alembic upgrade head`.
     if settings.app_env == "development":
         Base.metadata.create_all(bind=engine)
+        for column in add_missing_nullable_columns(engine):
+            logger.info(f"Added missing local column {column}")
     backend = resolve_ocr_backend()
     logger.info("FaturaFlow API starting...")
     logger.info(

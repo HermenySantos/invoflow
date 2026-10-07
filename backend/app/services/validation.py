@@ -129,7 +129,11 @@ def detect_duplicates(
     if not ((doc.vendor_nif and doc.invoice_number) or (doc.vendor_name and doc.document_date)):
         return []
 
-    candidates = db.query(Document).filter(Document.user_id == user_id, Document.id != doc.id)
+    candidates = db.query(Document).filter(
+        Document.user_id == user_id,
+        Document.id != doc.id,
+        Document.deleted_at.is_(None),
+    )
     if doc.vendor_nif and doc.invoice_number:
         candidates = candidates.filter(Document.vendor_nif == doc.vendor_nif)
     else:

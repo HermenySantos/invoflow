@@ -4,6 +4,7 @@ Handles upload, listing, and management of receipts/invoices.
 """
 
 import json
+from datetime import datetime
 import logging
 import random
 from typing import Optional, Dict, Any
@@ -349,7 +350,7 @@ async def list_documents(
     storage = get_storage_service()
     
     # Build query
-    query = db.query(Document).filter(Document.user_id == user.id)
+    query = db.query(Document).filter(Document.user_id == user.id, Document.deleted_at.is_(None))
     
     if status_filter:
         query = query.filter(Document.status == status_filter)
@@ -397,7 +398,11 @@ async def get_document(
     
     document = (
         db.query(Document)
-        .filter(Document.id == document_id, Document.user_id == user.id)
+        .filter(
+            Document.id == document_id,
+            Document.user_id == user.id,
+            Document.deleted_at.is_(None),
+        )
         .first()
     )
     
@@ -424,7 +429,11 @@ async def update_document(
     
     document = (
         db.query(Document)
-        .filter(Document.id == document_id, Document.user_id == user.id)
+        .filter(
+            Document.id == document_id,
+            Document.user_id == user.id,
+            Document.deleted_at.is_(None),
+        )
         .first()
     )
     
@@ -473,13 +482,16 @@ async def delete_document(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Delete a document."""
+    """Hide a document. The row and the original file are kept (invoice retention)."""
     user = get_or_create_user(db, current_user)
-    storage = get_storage_service()
     
     document = (
         db.query(Document)
-        .filter(Document.id == document_id, Document.user_id == user.id)
+        .filter(
+            Document.id == document_id,
+            Document.user_id == user.id,
+            Document.deleted_at.is_(None),
+        )
         .first()
     )
     
@@ -489,19 +501,11 @@ async def delete_document(
             detail="Document not found",
         )
     
-    storage_key = document.storage_key  # Save before deletion
-    
     try:
-        # Audit log (before deletion)
         log_document_delete(db, document_id=document.id, user_id=user.id)
-
-        # Delete from database first (can be rolled back)
-        db.delete(document)
+        document.deleted_at = datetime.utcnow()
         db.commit()
-        
-        # Then delete from storage (cannot be rolled back, but document is already gone)
-        storage.delete_file(storage_key)
-        
+
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error deleting document: {e}")
