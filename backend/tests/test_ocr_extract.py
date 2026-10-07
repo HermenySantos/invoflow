@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.services.ocr_extract import extract_fields, extract_portuguese_nif, parse_pt_amount
 
 
@@ -105,3 +107,32 @@ def test_contoso_invoice_total_not_balance_due():
 def test_unlabeled_noise_does_not_invent_a_total():
     fields = extract_fields("in | ht\n3 Heinen Pint\nTerie no 40. 18\n")
     assert fields.gross_amount is None
+
+
+def test_receipt_with_two_vat_rates_sums_both():
+    fields = extract_fields(
+        "Pingo Doce\nNIF 503504564\n01/10/2026\n"
+        "IVA 6% 10,00 0,60\nIVA 23% 20,00 4,60\nTOTAL 35,20"
+    )
+    assert fields.vat_amount == Decimal("5.20")
+    assert fields.net_amount == Decimal("30.00")
+    assert fields.vat_rate is None
+    assert [entry["rate"] for entry in fields.vat_breakdown] == ["6.00", "23.00"]
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("1.234,56", "1234.56"), ("1.234", "1234.00"), ("1,234.56", "1234.56"), ("12,5", "12.50")],
+)
+def test_amounts_with_thousands_separators(raw, expected):
+    assert parse_pt_amount(raw) == Decimal(expected)
+
+
+def test_nif_must_pass_check_digit():
+    assert extract_portuguese_nif("NIF 123456780") is None
+    assert extract_portuguese_nif("NIF 503504564") == "503504564"
+
+
+def test_vendor_nif_preferred_over_customer_nif():
+    text = "Cliente NIF 123456789 / Fornecedor NIF 503504564"
+    assert extract_portuguese_nif(text) == "503504564"
