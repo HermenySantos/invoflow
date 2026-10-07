@@ -30,6 +30,21 @@ from app.services.ocr_extract import ExtractedFields, extract_fields, extracted_
 
 settings = get_settings()
 
+AZURE_SUPPORTED_FORMATS = {
+    "image/jpeg",
+    "image/png",
+    "image/bmp",
+    "image/tiff",
+    "application/pdf",
+}
+
+CONVERTIBLE_FORMATS = {
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/gif",
+}
+
 
 @dataclass
 class OCRResult:
@@ -207,8 +222,31 @@ class OCRService:
         except Exception:
             return None
 
+    def _convert_image_to_jpeg(self, file_content: bytes, mime_type: str) -> tuple[bytes, str]:
+        """Convert WebP, HEIC, and GIF to JPEG for Azure Document Intelligence."""
+        if mime_type in AZURE_SUPPORTED_FORMATS or mime_type not in CONVERTIBLE_FORMATS:
+            return file_content, mime_type
+
+        try:
+            img = Image.open(BytesIO(file_content))
+            if img.mode in ("RGBA", "LA", "P"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+            output = BytesIO()
+            img.save(output, format="JPEG", quality=95)
+            return output.getvalue(), "image/jpeg"
+        except Exception as exc:
+            print(f"Image conversion failed: {exc}")
+            return file_content, mime_type
+
     async def _process_with_azure(self, file_content: bytes, mime_type: str) -> OCRResult:
         try:
+            file_content, mime_type = self._convert_image_to_jpeg(file_content, mime_type)
             model_id = "prebuilt-receipt"
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(

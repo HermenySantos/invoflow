@@ -5,13 +5,14 @@ Generates accountant-ready ZIP packages.
 
 from typing import Optional
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 
 from app.core.database import get_db
 from app.core.security import get_current_user, CurrentUser
+from app.core.rate_limit import limiter, RATE_LIMITS
 from app.models.document import Document
 from app.schemas.export import ExportResponse
 from app.services.export import get_export_service
@@ -21,7 +22,9 @@ router = APIRouter()
 
 
 @router.get("")
+@limiter.limit(RATE_LIMITS["export"])
 async def generate_export(
+    request: Request,
     period_type: str = Query("quarter", pattern="^(month|quarter)$"),
     year: Optional[int] = None,
     month: Optional[int] = Query(None, ge=1, le=12),
@@ -58,7 +61,7 @@ async def generate_export(
     query = (
         db.query(Document)
         .filter(Document.user_id == user.id)
-        .filter(Document.status.in_(["ready", "needs_review"]))
+        .filter(Document.status.in_(["ready", "needs_review", "accountant_review"]))
         .filter(
             (
                 (extract('year', Document.document_date) == year) &

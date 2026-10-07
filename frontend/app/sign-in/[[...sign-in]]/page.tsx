@@ -1,10 +1,12 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { SignIn } from "@clerk/nextjs";
 import { useAuth } from '@/components/providers/AuthProvider';
-import { Suspense } from 'react';
+
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 function SignInForm() {
   const [email, setEmail] = useState('');
@@ -30,14 +32,16 @@ function SignInForm() {
           Modo de demonstração: não é pedida palavra-passe. Introduza qualquer email.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm mb-1">
               Email
             </label>
             <input
               id="email"
-              type="email"
+              type="text"
+              inputMode="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="voce@empresa.pt"
@@ -54,6 +58,14 @@ function SignInForm() {
 }
 
 export default function SignInPage() {
+  if (clerkEnabled) {
+    return (
+      <div className="landing min-h-screen flex items-center justify-center px-4">
+        <SignIn fallbackRedirectUrl="/upload" signUpUrl="/sign-up" />
+      </div>
+    );
+  }
+
   return (
     <Suspense fallback={<div className="landing min-h-screen" />}>
       <SignInForm />

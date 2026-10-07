@@ -35,7 +35,22 @@ class DocumentUpdate(BaseModel):
     vat_amount: Optional[Decimal] = Field(None, ge=0)
     gross_amount: Optional[Decimal] = Field(None, ge=0)
     vat_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    status: Optional[str] = Field(None, pattern=r"^(pending|processing|ready|needs_review|failed)$")
+    status: Optional[str] = Field(None, pattern=r"^(pending|processing|ready|needs_review|accountant_review|failed)$")
+    review_notes: Optional[str] = Field(None, max_length=1000)
+    expense_category: Optional[str] = Field(None, max_length=50)
+    irs_sector: Optional[str] = Field(None, max_length=50)
+
+
+class FieldConfidence(BaseModel):
+    """Per-field OCR confidence scores."""
+    vendor_name: Optional[float] = None
+    vendor_nif: Optional[float] = None
+    invoice_number: Optional[float] = None
+    document_date: Optional[float] = None
+    net_amount: Optional[float] = None
+    vat_amount: Optional[float] = None
+    gross_amount: Optional[float] = None
+    vat_rate: Optional[float] = None
 
 
 class DocumentResponse(BaseModel):
@@ -58,6 +73,19 @@ class DocumentResponse(BaseModel):
     gross_amount: Optional[Decimal]
     vat_rate: Optional[Decimal]
     ocr_confidence: Optional[Decimal]
+    
+    # Per-field confidence (parsed from ocr_raw_response)
+    field_confidence: Optional[FieldConfidence] = None
+    
+    # Review workflow
+    review_notes: Optional[str] = None
+    
+    # Categorization
+    expense_category: Optional[str] = None
+    irs_sector: Optional[str] = None
+    
+    # Validation warnings (populated per-request)
+    validation_warnings: list[dict] = []
     
     # Computed
     period_tag: str

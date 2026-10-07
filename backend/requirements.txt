@@ -11,4 +11,8 @@ reportlab==4.0.8
 psycopg2-binary==2.9.11
 pytesseract==0.3.13
 pypdf==4.3.1
-pytest==7.4.4
+slowapi==0.1.9
+python-jose[cryptography]==3.3.0
+pytest==8.0.0
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0

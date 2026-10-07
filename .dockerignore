@@ -7,4 +7,6 @@
 **/*.pyc
 **/mock_storage
 **/.env
+**/.env.local
+**/.env*.local
 .git

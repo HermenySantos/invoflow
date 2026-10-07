@@ -36,11 +36,11 @@ export function LandingPage() {
             {t.wordmark}
           </a>
           <nav className="landing-nav-links" aria-label="Secções">
-            <a href="#problema">{t.navProblema}</a>
-            <a href="#como-funciona">{t.navComo}</a>
-            <a href="#preco">{t.navPreco}</a>
             <Link href="/sign-in">{t.navEntrar}</Link>
-            <Link href={startHref} className="landing-btn landing-btn-primary landing-btn-sm">
+            <Link
+              href={startHref}
+              className="landing-btn landing-btn-primary landing-btn-sm"
+            >
               {t.navComecar}
             </Link>
           </nav>
@@ -55,80 +55,58 @@ export function LandingPage() {
             <Link href={startHref} className="landing-btn landing-btn-primary">
               {t.ctaPrimary}
             </Link>
-            <a href="#como-funciona" className="landing-btn landing-btn-quiet">
-              {t.ctaSecondary}
-            </a>
           </div>
-          <FlowDiagram receipt={t.diagramReceipt} iva={t.diagramIva} pack={t.diagramPack} />
-        </section>
 
-        <section id="problema" className="landing-section landing-section-wide">
-          <h2>{t.problemTitle}</h2>
-          <div className="landing-cards">
-            <article className="landing-card">
-              <h3>{t.problem1Title}</h3>
-              <p>{t.problem1Body}</p>
-            </article>
-            <article className="landing-card">
-              <h3>{t.problem2Title}</h3>
-              <p>{t.problem2Body}</p>
-            </article>
-            <article className="landing-card">
-              <h3>{t.problem3Title}</h3>
-              <p>{t.problem3Body}</p>
-            </article>
+          <FlowDiagram
+            receipt={t.diagramReceipt}
+            iva={t.diagramIva}
+            pack={t.diagramPack}
+          />
+
+          <div id="exemplo" className="landing-example">
+            <p className="landing-example-kicker">{t.exampleKicker}</p>
+            <div className="landing-example-grid">
+              <article className="landing-receipt" aria-label={t.receiptKicker}>
+                <p className="landing-kicker">{t.receiptKicker}</p>
+                <p className="landing-receipt-name">{t.receiptName}</p>
+                <p className="landing-receipt-meta">{t.receiptMeta}</p>
+                <p className="landing-receipt-meta">{t.receiptDate}</p>
+                <hr className="landing-receipt-rule" />
+                <p className="landing-receipt-row">
+                  <span>{t.receiptBase}</span>
+                  <span>{t.receiptBaseVal}</span>
+                </p>
+                <p className="landing-receipt-row">
+                  <span>{t.receiptVat}</span>
+                  <span>{t.receiptVatVal}</span>
+                </p>
+                <p className="landing-receipt-row landing-receipt-total">
+                  <span>{t.receiptTotal}</span>
+                  <span>{t.receiptTotalVal}</span>
+                </p>
+              </article>
+
+              <article className="landing-iva" aria-label={t.ivaLabel}>
+                <p className="landing-kicker">{t.ivaKicker}</p>
+                <p className="landing-iva-label">{t.ivaLabel}</p>
+                <p className="landing-iva-amount">{t.ivaAmount}</p>
+                <p className="landing-iva-due">{t.ivaDue}</p>
+                <p className="landing-iva-detail">{t.ivaDetail}</p>
+              </article>
+
+              <article className="landing-pack" aria-label={t.packKicker}>
+                <p className="landing-kicker">{t.packKicker}</p>
+                <p className="landing-pack-title">{t.packTitle}</p>
+                <ul>
+                  <li>{t.packFile1}</li>
+                  <li>{t.packFile2}</li>
+                  <li>{t.packFile3}</li>
+                </ul>
+                <p className="landing-pack-note">{t.packNote}</p>
+              </article>
+            </div>
+            <p className="landing-example-note">{t.ivaCaveat}</p>
           </div>
-        </section>
-
-        <section id="como-funciona" className="landing-section">
-          <h2>{t.howTitle}</h2>
-          <ol className="landing-steps">
-            <li>
-              <span className="landing-step-n">1</span>
-              <div>
-                <strong>{t.how1Title}</strong>
-                <p>{t.how1Body}</p>
-              </div>
-            </li>
-            <li>
-              <span className="landing-step-n">2</span>
-              <div>
-                <strong>{t.how2Title}</strong>
-                <p>{t.how2Body}</p>
-              </div>
-            </li>
-            <li>
-              <span className="landing-step-n">3</span>
-              <div>
-                <strong>{t.how3Title}</strong>
-                <p>{t.how3Body}</p>
-              </div>
-            </li>
-          </ol>
-        </section>
-
-        <section className="landing-section">
-          <h2>{t.receiveTitle}</h2>
-          <ul className="landing-list">
-            <li>{t.receive1}</li>
-            <li>{t.receive2}</li>
-            <li>{t.receive3}</li>
-          </ul>
-        </section>
-
-        <section className="landing-section">
-          <h2>{t.whoTitle}</h2>
-          <p>{t.whoBody}</p>
-        </section>
-
-        <section className="landing-section">
-          <h2>{t.trustTitle}</h2>
-          <p>{t.trustBody}</p>
-        </section>
-
-        <section id="preco" className="landing-section">
-          <h2>{t.priceTitle}</h2>
-          <p>{t.priceBody}</p>
         </section>
 
         <section className="landing-cta-band">
@@ -143,7 +121,6 @@ export function LandingPage() {
       <footer className="landing-footer">
         <p>{t.footerNote}</p>
         <div className="landing-footer-links">
-          <span>{t.footerContact}</span>
           <Link href="/privacy">{t.footerPrivacy}</Link>
           <button type="button" onClick={toggleLang} className="landing-lang">
             {t.langLabel}

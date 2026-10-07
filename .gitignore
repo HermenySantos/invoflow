@@ -47,3 +47,8 @@ coverage/
 # PWA generated files
 public/sw.js
 public/workbox-*.js
+
+# Local-only
+*.tgz
+.held-back/
+MARKET_ANALYSIS.md

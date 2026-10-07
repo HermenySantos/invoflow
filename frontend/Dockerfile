@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 ENV BACKEND_URL=http://backend:8000
