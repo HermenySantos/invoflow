@@ -14,5 +14,4 @@ pypdf==4.3.1
 slowapi==0.1.9
 python-jose[cryptography]==3.3.0
 pytest==8.0.0
-pytest-asyncio==0.23.3
 pytest-cov==4.1.0
