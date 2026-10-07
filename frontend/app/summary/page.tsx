@@ -363,6 +363,16 @@ export default function SummaryPage() {
                   {formatCurrency(summary.deductible_vat)}
                 </span>
               </div>
+              {parseFloat(summary.deductible_vat_pending) > 0 && (
+                <div className="flex items-center justify-between py-2.5">
+                  <span className="text-sm text-gray-500">
+                    Em recibos por rever (fora da estimativa)
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    {formatCurrency(summary.deductible_vat_pending)}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-gray-600">
                   IVA cobrado (vendas)

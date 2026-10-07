@@ -23,6 +23,7 @@ from app.services.categorization import (
     get_expense_category_label,
     get_irs_sector_label,
     get_deductible_pct,
+    deductible_vat_split,
 )
 
 
@@ -176,12 +177,7 @@ class ExportService:
         total_gross = sum(d.gross_amount or Decimal(0) for d in documents)
         total_vat = sum(d.vat_amount or Decimal(0) for d in documents)
         total_net = sum(d.net_amount or Decimal(0) for d in documents)
-        deductible_vat = Decimal(0)
-        for d in documents:
-            vat = d.vat_amount or Decimal(0)
-            pct = get_deductible_pct(d.expense_category)
-            deductible_vat += vat * pct / 100
-        deductible_vat = deductible_vat.quantize(Decimal("0.01"))
+        deductible_vat, deductible_vat_pending = deductible_vat_split(documents)
         
         # Summary table
         elements.append(Paragraph("Summary", styles['Heading2']))
@@ -190,7 +186,8 @@ class ExportService:
             ["Total Gross", f"€{total_gross:,.2f}"],
             ["Total Net", f"€{total_net:,.2f}"],
             ["Total VAT", f"€{total_vat:,.2f}"],
-            ["Deductible VAT", f"€{deductible_vat:,.2f}"],
+            ["Deductible VAT (reviewed receipts)", f"€{deductible_vat:,.2f}"],
+            ["Deductible VAT (receipts still to review)", f"€{deductible_vat_pending:,.2f}"],
         ]
         
         summary_table = Table(summary_data, colWidths=[10*cm, 5*cm])
