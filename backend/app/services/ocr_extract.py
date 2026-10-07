@@ -31,21 +31,31 @@ DATE_YMD = re.compile(
     r"\b(\d{4})[./-](\d{1,2})[./-](\d{1,2})\b"
 )
 INVOICE_NO = re.compile(
-    r"(?:FT|FR|FS|NC|ND|Fatura|Factura|Recibo|Invoice)[:\s#º°]*([A-Z0-9][A-Z0-9/.\-]{2,20})",
+    r"(?<![A-Za-z])(?:FT|FR|FS|NC|ND|Fatura|Factura|Recibo|Invoice)"
+    r"[:\s#º°]+(?=\S*\d)([A-Z0-9][A-Z0-9/.\-]{1,30})",
     re.IGNORECASE,
 )
 MONEY = re.compile(
-    r"(?<!\d)(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\d+,\d{2}|\d+\.\d{2})(?!\d)"
+    r"(?<!\d)\$?\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})(?!\d)"
 )
-VAT_LINE = re.compile(
-    r"(?:IVA|I\.V\.A\.|VAT)\s*(?:\(?(6|13|23|0)\s*%?\)?)?[:\s]*"
-    r"(?:EUR|€)?\s*(\d{1,3}(?:[.\s]\d{3})*,\d{2}|\d+[.,]\d{2})",
+DATE_BROKEN_YEAR = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2})\s+(\d{2})(?!\d|:)")
+VAT_LABEL = re.compile(
+    r"\b(?:IVA|I\.V\.A\.|VAT|MwSt\.?|Sales\s+tax|Imposta)\b",
     re.IGNORECASE,
 )
-TOTAL_LINE = re.compile(
-    r"(?:Total(?:\s+(?:a\s+pagar|geral|il[ií]quido|l[ií]quido))?|Valor\s+total|"
-    r"Gross|Amount\s+due)[:\s]*(?:EUR|€)?\s*"
-    r"(\d{1,3}(?:[.\s]\d{3})*,\d{2}|\d+[.,]\d{2})",
+VAT_SKIP = re.compile(r"senkung|reduction", re.IGNORECASE)
+RATE_IN_LINE = re.compile(r"\b(\d{1,2})(?:[.,]\d+)?\s*%")
+SKIP_TOTAL_LINE = re.compile(
+    r"r[uüú]ckgeld|troco|previous\s+balance|total\s+due|amount\s+due|"
+    r"\bbar\b|numer[aá]rio|subtotal|senkung",
+    re.IGNORECASE,
+)
+STRONG_TOTAL = re.compile(
+    r"\b(?:total(?:e)?|summe|somma|valor\s+total)\b",
+    re.IGNORECASE,
+)
+PAYMENT_TOTAL = re.compile(
+    r"\b(?:importo\s+pagato|pagamento|to\s*pay)\b",
     re.IGNORECASE,
 )
 NET_LINE = re.compile(
@@ -120,6 +130,69 @@ def _looks_like_nif(nif: str) -> bool:
     return len(nif) == 9 and nif[0] in "12356789"
 
 
+def _money_amounts(line: str) -> list[Decimal]:
+    """Money tokens on one line. A number followed by % is a rate, not an amount."""
+    amounts: list[Decimal] = []
+    for match in MONEY.finditer(line):
+        if line[match.end() :].lstrip().startswith("%"):
+            continue
+        amount = parse_pt_amount(match.group(1))
+        if amount is not None and amount > 0:
+            amounts.append(amount)
+    return amounts
+
+
+def _last_labeled_amount(lines: list[str], label: re.Pattern[str]) -> Optional[Decimal]:
+    found: Optional[Decimal] = None
+    for line in lines:
+        if SKIP_TOTAL_LINE.search(line):
+            continue
+        if not label.search(line):
+            continue
+        amounts = _money_amounts(line)
+        if amounts:
+            found = amounts[-1]
+    return found
+
+
+def _largest_labeled_amount(lines: list[str], label: re.Pattern[str]) -> Optional[Decimal]:
+    found: list[Decimal] = []
+    for line in lines:
+        if SKIP_TOTAL_LINE.search(line):
+            continue
+        if not label.search(line):
+            continue
+        amounts = _money_amounts(line)
+        if amounts:
+            found.append(amounts[-1])
+    return max(found) if found else None
+
+
+def _extract_vat(
+    lines: list[str],
+) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
+    """Return (rate, vat amount, net) from the last tax summary line."""
+    rate: Optional[Decimal] = None
+    vat_amount: Optional[Decimal] = None
+    net_amount: Optional[Decimal] = None
+    for line in lines:
+        if VAT_SKIP.search(line) or not VAT_LABEL.search(line):
+            continue
+        amounts = _money_amounts(line)
+        rate_match = RATE_IN_LINE.search(line)
+        if not amounts and not rate_match:
+            continue
+        if rate_match:
+            rate = Decimal(rate_match.group(1)).quantize(Decimal("0.01"))
+        if rate_match and len(amounts) >= 2:
+            net_amount = amounts[-2]
+            vat_amount = amounts[-1]
+        elif amounts:
+            vat_amount = amounts[-1]
+            net_amount = None
+    return rate, vat_amount, net_amount
+
+
 def _parse_date(text: str) -> Optional[date]:
     for match in DATE_YMD.finditer(text):
         year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
@@ -127,10 +200,19 @@ def _parse_date(text: str) -> Optional[date]:
         if parsed:
             return parsed
     for match in DATE_DMY.finditer(text):
-        day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        # "11/15/20 19" is a year split by the PDF reader, not 2020.
+        if match.group(3).__len__() == 2 and DATE_BROKEN_YEAR.match(text, match.start()):
+            continue
+        first, second, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
         if year < 100:
             year += 2000
-        parsed = _safe_date(year, month, day)
+        parsed = _safe_date(year, second, first) or _safe_date(year, first, second)
+        if parsed:
+            return parsed
+    for match in DATE_BROKEN_YEAR.finditer(text):
+        first, second = int(match.group(1)), int(match.group(2))
+        year = int(match.group(3) + match.group(4))
+        parsed = _safe_date(year, second, first) or _safe_date(year, first, second)
         if parsed:
             return parsed
     return None
@@ -183,27 +265,22 @@ def extract_fields(text: str) -> ExtractedFields:
 
     invoice = INVOICE_NO.search(text)
     if invoice:
-        result.invoice_number = invoice.group(0).strip()[:100]
+        result.invoice_number = invoice.group(1).strip()[:100]
 
-    vat_match = VAT_LINE.search(text)
-    if vat_match:
-        if vat_match.group(1):
-            result.vat_rate = Decimal(vat_match.group(1)).quantize(Decimal("0.01"))
-        result.vat_amount = parse_pt_amount(vat_match.group(2))
+    vat_rate, vat_amount, vat_net = _extract_vat(lines)
+    result.vat_rate = vat_rate
+    result.vat_amount = vat_amount
+    result.net_amount = vat_net
 
-    total_match = TOTAL_LINE.search(text)
-    if total_match:
-        result.gross_amount = parse_pt_amount(total_match.group(1))
+    result.gross_amount = _last_labeled_amount(lines, STRONG_TOTAL)
+    if result.gross_amount is None:
+        result.gross_amount = _largest_labeled_amount(lines, PAYMENT_TOTAL)
 
     net_match = NET_LINE.search(text)
     if net_match:
-        result.net_amount = parse_pt_amount(net_match.group(1))
-
-    if result.gross_amount is None:
-        amounts = [parse_pt_amount(m.group(1)) for m in MONEY.finditer(text)]
-        amounts = [a for a in amounts if a and a >= Decimal("0.50")]
-        if amounts:
-            result.gross_amount = max(amounts)
+        labeled_net = parse_pt_amount(net_match.group(1))
+        if labeled_net is not None:
+            result.net_amount = labeled_net
 
     if result.gross_amount and result.vat_amount and result.net_amount is None:
         result.net_amount = result.gross_amount - result.vat_amount

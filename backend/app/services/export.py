@@ -19,6 +19,11 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.services.storage import get_storage_service
+from app.services.categorization import (
+    get_expense_category_label,
+    get_irs_sector_label,
+    get_deductible_pct,
+)
 
 
 class ExportService:
@@ -106,12 +111,20 @@ class ExportService:
             "VAT (EUR)",
             "Gross (EUR)",
             "VAT %",
+            "Category",
+            "IRS Sector",
+            "Deductible %",
+            "Deductible VAT (EUR)",
             "Status",
             "Filename",
         ])
         
         # Data rows
         for doc in documents:
+            cat = doc.expense_category or "other"
+            pct = get_deductible_pct(cat)
+            vat = doc.vat_amount or Decimal(0)
+            deductible = (vat * pct / 100).quantize(Decimal("0.01"))
             writer.writerow([
                 str(doc.id),
                 doc.document_date.isoformat() if doc.document_date else "",
@@ -122,6 +135,10 @@ class ExportService:
                 str(doc.vat_amount) if doc.vat_amount else "",
                 str(doc.gross_amount) if doc.gross_amount else "",
                 str(doc.vat_rate) if doc.vat_rate else "",
+                get_expense_category_label(cat),
+                get_irs_sector_label(doc.irs_sector or "geral"),
+                f"{pct}%",
+                str(deductible),
                 doc.status,
                 doc.original_filename,
             ])
@@ -155,10 +172,16 @@ class ExportService:
         elements.append(Paragraph(f"Total documents: {len(documents)}", styles['Normal']))
         elements.append(Spacer(1, 20))
         
-        # Calculate totals
+        # Calculate totals with per-category deductible
         total_gross = sum(d.gross_amount or Decimal(0) for d in documents)
         total_vat = sum(d.vat_amount or Decimal(0) for d in documents)
         total_net = sum(d.net_amount or Decimal(0) for d in documents)
+        deductible_vat = Decimal(0)
+        for d in documents:
+            vat = d.vat_amount or Decimal(0)
+            pct = get_deductible_pct(d.expense_category)
+            deductible_vat += vat * pct / 100
+        deductible_vat = deductible_vat.quantize(Decimal("0.01"))
         
         # Summary table
         elements.append(Paragraph("Summary", styles['Heading2']))
@@ -167,7 +190,7 @@ class ExportService:
             ["Total Gross", f"€{total_gross:,.2f}"],
             ["Total Net", f"€{total_net:,.2f}"],
             ["Total VAT", f"€{total_vat:,.2f}"],
-            ["Deductible VAT (100%)", f"€{total_vat:,.2f}"],
+            ["Deductible VAT", f"€{deductible_vat:,.2f}"],
         ]
         
         summary_table = Table(summary_data, colWidths=[10*cm, 5*cm])
@@ -188,20 +211,21 @@ class ExportService:
         # Document list (truncated if too many)
         elements.append(Paragraph("Documents", styles['Heading2']))
         
-        doc_data = [["Date", "Vendor", "Gross", "VAT", "Status"]]
+        doc_data = [["Date", "Vendor", "Category", "Gross", "VAT", "Status"]]
         for d in documents[:50]:  # Limit to 50 for PDF readability
             doc_data.append([
                 d.document_date.strftime("%Y-%m-%d") if d.document_date else "-",
-                (d.vendor_name or "Unknown")[:30],
+                (d.vendor_name or "Unknown")[:25],
+                get_expense_category_label(d.expense_category or "other")[:15],
                 f"€{d.gross_amount:,.2f}" if d.gross_amount else "-",
                 f"€{d.vat_amount:,.2f}" if d.vat_amount else "-",
                 d.status,
             ])
         
         if len(documents) > 50:
-            doc_data.append(["...", f"+ {len(documents) - 50} more", "", "", ""])
+            doc_data.append(["...", f"+ {len(documents) - 50} more", "", "", "", ""])
         
-        doc_table = Table(doc_data, colWidths=[2.5*cm, 6*cm, 2.5*cm, 2.5*cm, 2.5*cm])
+        doc_table = Table(doc_data, colWidths=[2*cm, 5*cm, 2.5*cm, 2*cm, 2*cm, 2*cm])
         doc_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
