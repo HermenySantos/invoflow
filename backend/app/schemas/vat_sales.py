@@ -1,6 +1,6 @@
 """Pydantic schemas for the VAT-on-sales CRUD endpoints."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from decimal import Decimal
 from datetime import datetime
@@ -13,6 +13,12 @@ class VatSalesCreate(BaseModel):
     period_value: int = Field(..., ge=1, le=12)
     vat_amount: Decimal = Field(..., ge=0)
     notes: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def quarter_is_one_to_four(self) -> "VatSalesCreate":
+        if self.period_type == "quarter" and self.period_value > 4:
+            raise ValueError("period_value must be 1-4 for a quarter")
+        return self
 
 
 class VatSalesUpdate(BaseModel):

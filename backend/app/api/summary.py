@@ -37,8 +37,8 @@ def _get_vat_on_sales(
     period_type: str,
     year: int,
     period_value: int,
-) -> Decimal:
-    """Look up the user's manually-entered VAT on sales for this period."""
+) -> Optional[Decimal]:
+    """The user's VAT on sales for this period, or None if they haven't entered it."""
     entry = (
         db.query(VatSalesEntry)
         .filter(
@@ -49,7 +49,7 @@ def _get_vat_on_sales(
         )
         .first()
     )
-    return entry.vat_amount if entry else Decimal("0.00")
+    return entry.vat_amount if entry else None
 
 
 @router.get("", response_model=SummaryResponse)
@@ -138,7 +138,11 @@ async def get_summary(
     vat_on_sales = _get_vat_on_sales(db, user.id, period_type, year, period_value)
     
     # ── Estimated IVA payable ──
-    estimated_iva_payable = vat_on_sales - deductible_vat
+    # Without VAT on sales the difference is just -deductible_vat, which reads
+    # as a refund; leave it empty until the user has entered their sales.
+    estimated_iva_payable = (
+        vat_on_sales - deductible_vat if vat_on_sales is not None else None
+    )
     
     # ── Confidence ──
     confidence_percent = 0
@@ -148,10 +152,10 @@ async def get_summary(
     # ── Warnings (from validation service) ──
     warning_objects = validate_period_documents(db, user.id, documents)
     # Also add a warning if VAT on sales is not set
-    if vat_on_sales == 0 and total_documents > 0:
+    if vat_on_sales is None:
         warning_objects.append({
             "code": "no_vat_on_sales",
-            "message": "IVA sobre vendas não introduzido — a estimativa pode estar incompleta",
+            "message": "Introduza o IVA das vendas para calcular o IVA a pagar",
             "severity": "info",
         })
     # Flatten to string list for the response (keep simple for V1)

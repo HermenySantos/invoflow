@@ -40,8 +40,8 @@ class SummaryResponse(BaseModel):
     
     # IVA calculation
     deductible_vat: Decimal        # VAT that can be reclaimed (after deductible %)
-    vat_on_sales: Decimal          # Manually entered by user
-    estimated_iva_payable: Decimal  # vat_on_sales - deductible_vat (negative = refund)
+    vat_on_sales: Optional[Decimal]           # Entered by the user; None until they do
+    estimated_iva_payable: Optional[Decimal]  # vat_on_sales - deductible_vat (negative = refund); None without vat_on_sales
     
     # Category breakdowns
     expense_breakdown: list[CategoryBreakdown] = []

@@ -215,7 +215,7 @@ class ApiClient {
     if (params?.period_type) searchParams.set('period_type', params.period_type);
 
     const query = searchParams.toString();
-    return this.request<VatSalesEntry[]>(
+    return this.request<{ entries: VatSalesEntry[]; total: number }>(
       `/vat-sales${query ? `?${query}` : ''}`
     );
   }
@@ -350,8 +350,10 @@ export interface Summary {
   total_net: string;
   total_vat: string;
   deductible_vat: string;
-  vat_on_sales: string;
-  estimated_iva_payable: string;
+  /** null until the user enters VAT on sales for the period */
+  vat_on_sales: string | null;
+  /** null while vat_on_sales is null */
+  estimated_iva_payable: string | null;
   expense_breakdown: CategoryBreakdown[];
   irs_breakdown: CategoryBreakdown[];
   confidence_percent: number;
