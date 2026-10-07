@@ -119,6 +119,11 @@ class ApiClient {
     status?: string;
     expense_category?: string;
     irs_sector?: string;
+    q?: string;
+    date_from?: string;
+    date_to?: string;
+    min_amount?: string;
+    max_amount?: string;
   }) {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', params.page.toString());
@@ -126,6 +131,11 @@ class ApiClient {
     if (params?.status) searchParams.set('status', params.status);
     if (params?.expense_category) searchParams.set('expense_category', params.expense_category);
     if (params?.irs_sector) searchParams.set('irs_sector', params.irs_sector);
+    if (params?.q) searchParams.set('q', params.q);
+    if (params?.date_from) searchParams.set('date_from', params.date_from);
+    if (params?.date_to) searchParams.set('date_to', params.date_to);
+    if (params?.min_amount) searchParams.set('min_amount', params.min_amount);
+    if (params?.max_amount) searchParams.set('max_amount', params.max_amount);
     
     const query = searchParams.toString();
     return this.request<DocumentListResponse>(

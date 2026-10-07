@@ -16,6 +16,7 @@ import {
   XCircle,
   ChevronRight,
   RefreshCw,
+  Search,
   Tag,
   UtensilsCrossed,
   Car,
@@ -43,6 +44,17 @@ export default function ReceiptsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const hasFilters = Boolean(activeCategory || search || dateFrom || dateTo);
+
+  // Search after the user pauses typing, not on every key.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const fetchDocuments = useCallback(async (category?: string | null) => {
     try {
@@ -51,6 +63,9 @@ export default function ReceiptsPage() {
       const data = await api.getDocuments({
         page_size: 50,
         expense_category: category || undefined,
+        q: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
       });
       setDocuments(data.documents);
     } catch (err) {
@@ -59,7 +74,7 @@ export default function ReceiptsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [search, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchDocuments(activeCategory);
@@ -136,6 +151,42 @@ export default function ReceiptsPage() {
   return (
     <AppLayout title="Recibos">
       <section className="p-4" aria-label="Receipts list">
+        <div className="mb-3 space-y-2">
+          <label className="relative block">
+            <span className="sr-only">Procurar recibos</span>
+            <Search
+              className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Fornecedor, NIF ou nº da fatura"
+              className="input pl-9"
+            />
+          </label>
+          <div className="flex gap-2">
+            <label className="flex-1 text-xs text-gray-500">
+              De
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="input mt-1"
+              />
+            </label>
+            <label className="flex-1 text-xs text-gray-500">
+              Até
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="input mt-1"
+              />
+            </label>
+          </div>
+        </div>
         {isLoading ? (
           <div
             className="space-y-3"
@@ -174,7 +225,7 @@ export default function ReceiptsPage() {
               Retry
             </button>
           </div>
-        ) : documents.length === 0 && activeCategory === null ? (
+        ) : documents.length === 0 && !hasFilters ? (
           <div className="card p-8 text-center">
             <Receipt
               className="w-16 h-16 text-gray-300 mx-auto mb-4"
@@ -239,18 +290,23 @@ export default function ReceiptsPage() {
             </div>
 
             {/* Empty filtered state */}
-            {documents.length === 0 && activeCategory !== null ? (
+            {documents.length === 0 && hasFilters ? (
               <div className="card p-6 text-center">
                 <Receipt
                   className="w-12 h-12 text-gray-300 mx-auto mb-3"
                   aria-hidden="true"
                 />
-                <p className="text-gray-500">No receipts in this category</p>
+                <p className="text-gray-500">Nenhum recibo corresponde aos filtros</p>
                 <button
-                  onClick={() => handleCategoryFilter(null)}
+                  onClick={() => {
+                    handleCategoryFilter(null);
+                    setSearchInput("");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
                   className="btn-secondary btn-sm mt-3"
                 >
-                  Show all receipts
+                  Limpar filtros
                 </button>
               </div>
             ) : null}
