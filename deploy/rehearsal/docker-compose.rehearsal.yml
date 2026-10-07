@@ -1,0 +1,32 @@
+# Local dress rehearsal of the production stack (no accounts needed).
+# Same Caddy, images, Postgres and backup container as production, with S3Mock
+# standing in for R2 and the demo sign-in instead of Clerk.
+#   cd deploy/rehearsal && ./rehearse.sh
+
+services:
+  caddy:
+    environment:
+      DOMAIN: localhost
+  web:
+    image: invoflow-web:rehearsal
+    build:
+      context: ../frontend
+  api:
+    image: invoflow-api:rehearsal
+    build:
+      context: ../backend
+    environment:
+      APP_ENV: development  # the only env that allows demo sign-in
+      AUTH_MOCK_MODE: "true"
+      CORS_ORIGINS: https://localhost
+    depends_on:
+      - s3
+  backup:
+    depends_on:
+      - s3
+
+  s3:
+    # S3-compatible stand-in for Cloudflare R2.
+    image: adobe/s3mock:latest
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: invoflow-documents,invoflow-backups

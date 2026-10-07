@@ -1,0 +1,79 @@
+# Invoflow production stack: one server, everything behind Caddy.
+# Usage (on the server, in /opt/invoflow):  docker compose -f docker-compose.prod.yml --env-file .env up -d
+# Images are built by GitHub Actions and pulled from GHCR; IMAGE_TAG picks the release.
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+
+  web:
+    image: ghcr.io/hermenysantos/invoflow-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+
+  api:
+    image: ghcr.io/hermenysantos/invoflow-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql://invoflow:${POSTGRES_PASSWORD}@db:5432/invoflow
+      CORS_ORIGINS: https://${DOMAIN}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: invoflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: invoflow
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    # No published port: only api and backup reach it, on the compose network.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invoflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGUSER: invoflow
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: invoflow
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pg_data:
