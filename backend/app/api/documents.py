@@ -4,13 +4,14 @@ Handles upload, listing, and management of receipts/invoices.
 """
 
 import json
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 import logging
 import random
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.database import get_db
@@ -339,12 +340,17 @@ async def list_documents(
     status_filter: Optional[str] = Query(None, alias="status"),
     expense_category: Optional[str] = Query(None),
     irs_sector: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, max_length=100, description="Vendor, NIF, invoice number or filename"),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    min_amount: Optional[Decimal] = Query(None, ge=0),
+    max_amount: Optional[Decimal] = Query(None, ge=0),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     List all documents for the current user.
-    Supports pagination, status, and category filtering.
+    Supports pagination, status/category filters, text search and date/amount ranges.
     """
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
@@ -358,6 +364,23 @@ async def list_documents(
         query = query.filter(Document.expense_category == expense_category)
     if irs_sector:
         query = query.filter(Document.irs_sector == irs_sector)
+    if q and q.strip():
+        escaped = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        query = query.filter(or_(
+            Document.vendor_name.ilike(pattern, escape="\\"),
+            Document.vendor_nif.ilike(pattern, escape="\\"),
+            Document.invoice_number.ilike(pattern, escape="\\"),
+            Document.original_filename.ilike(pattern, escape="\\"),
+        ))
+    if date_from:
+        query = query.filter(Document.document_date >= date_from)
+    if date_to:
+        query = query.filter(Document.document_date <= date_to)
+    if min_amount is not None:
+        query = query.filter(Document.gross_amount >= min_amount)
+    if max_amount is not None:
+        query = query.filter(Document.gross_amount <= max_amount)
     
     # Get total count
     total = query.count()
