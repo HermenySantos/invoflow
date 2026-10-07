@@ -68,7 +68,9 @@ class ApiClient {
       };
       try {
         const data = await response.json();
-        error.message = data.detail || data.message || error.message;
+        // HTTPException sends {detail}; the global handlers also nest {error: {message}}.
+        const detail = typeof data.detail === 'string' ? data.detail : undefined;
+        error.message = detail || data.error?.message || data.message || error.message;
       } catch {
         // Ignore JSON parse errors
       }

@@ -5,6 +5,7 @@ Includes mock mode for development without R2 credentials.
 
 import hashlib
 import hmac
+import logging
 import secrets
 import time
 import uuid
@@ -13,6 +14,8 @@ from pathlib import Path
 from typing import Optional
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -91,7 +94,7 @@ class StorageService:
                 )
                 self.bucket_name = settings.r2_bucket_name
             except ImportError:
-                print("Warning: boto3 not installed. Falling back to mock mode.")
+                logger.warning("boto3 not installed. Falling back to mock storage.")
                 self.mock_mode = True
 
         if self.mock_mode:

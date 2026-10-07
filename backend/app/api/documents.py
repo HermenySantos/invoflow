@@ -60,15 +60,17 @@ def parse_field_confidence(ocr_raw_response: Optional[str], overall_confidence: 
         if data.get("mock"):
             # Generate mock field confidence based on overall confidence
             base_conf = overall_confidence if overall_confidence else 85.0
+            # Seeded by the response so a document shows the same values on every load.
+            rng = random.Random(ocr_raw_response)
             return FieldConfidence(
-                vendor_name=min(100, base_conf + random.uniform(-5, 10)),
-                vendor_nif=min(100, base_conf + random.uniform(-15, 5)) if random.random() > 0.2 else None,
-                invoice_number=min(100, base_conf + random.uniform(-10, 10)),
-                document_date=min(100, base_conf + random.uniform(-5, 15)),
-                net_amount=min(100, base_conf + random.uniform(-10, 5)),
-                vat_amount=min(100, base_conf + random.uniform(-10, 5)),
-                gross_amount=min(100, base_conf + random.uniform(-3, 10)),
-                vat_rate=min(100, base_conf + random.uniform(-20, 10)) if random.random() > 0.3 else None,
+                vendor_name=min(100, base_conf + rng.uniform(-5, 10)),
+                vendor_nif=min(100, base_conf + rng.uniform(-15, 5)) if rng.random() > 0.2 else None,
+                invoice_number=min(100, base_conf + rng.uniform(-10, 10)),
+                document_date=min(100, base_conf + rng.uniform(-5, 15)),
+                net_amount=min(100, base_conf + rng.uniform(-10, 5)),
+                vat_amount=min(100, base_conf + rng.uniform(-10, 5)),
+                gross_amount=min(100, base_conf + rng.uniform(-3, 10)),
+                vat_rate=min(100, base_conf + rng.uniform(-20, 10)) if rng.random() > 0.3 else None,
             )
         
         # Parse Azure Document Intelligence response

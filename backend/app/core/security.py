@@ -4,6 +4,7 @@ Supports both Clerk JWT validation and mock mode for development.
 """
 
 import logging
+import time
 import httpx
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -31,13 +32,18 @@ if not settings.auth_mock_mode:
 
 # JWKS cache
 _jwks_cache: Optional[dict] = None
+_jwks_fetched_at: float = 0.0
+# A token with an unknown key id triggers at most one refetch per this many
+# seconds, so junk tokens can't make every request call Clerk.
+JWKS_REFRESH_INTERVAL = 300
 
 
-async def _get_jwks() -> dict:
+async def _get_jwks(force_refresh: bool = False) -> dict:
     """Fetch and cache Clerk's JWKS (JSON Web Key Set)."""
-    global _jwks_cache
-    
-    if _jwks_cache is not None:
+    global _jwks_cache, _jwks_fetched_at
+
+    recently_fetched = time.monotonic() - _jwks_fetched_at < JWKS_REFRESH_INTERVAL
+    if _jwks_cache is not None and (not force_refresh or recently_fetched):
         return _jwks_cache
     
     jwks_url = settings.clerk_jwks_url
@@ -55,6 +61,7 @@ async def _get_jwks() -> dict:
             response = await client.get(jwks_url)
             response.raise_for_status()
             _jwks_cache = response.json()
+            _jwks_fetched_at = time.monotonic()
             return _jwks_cache
     except Exception as e:
         logger.error(f"Failed to fetch JWKS from {jwks_url}: {e}")
@@ -64,11 +71,15 @@ async def _get_jwks() -> dict:
         )
 
 
-def _find_signing_key(jwks: dict, kid: str) -> dict:
-    """Find the signing key in JWKS that matches the token's key ID."""
-    for key in jwks.get("keys", []):
-        if key.get("kid") == kid:
-            return key
+def _match_key(jwks: dict, kid: str) -> Optional[dict]:
+    return next((key for key in jwks.get("keys", []) if key.get("kid") == kid), None)
+
+
+async def _find_signing_key(kid: str) -> dict:
+    """The JWKS key for *kid*, refetching once in case Clerk rotated its keys."""
+    key = _match_key(await _get_jwks(), kid) or _match_key(await _get_jwks(force_refresh=True), kid)
+    if key:
+        return key
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Unable to find matching signing key",
@@ -127,8 +138,7 @@ async def get_current_user(
             )
         
         # Fetch JWKS and find the matching key
-        jwks = await _get_jwks()
-        signing_key = _find_signing_key(jwks, kid)
+        signing_key = await _find_signing_key(kid)
         
         # Verify and decode the token using the public key from JWKS
         payload = jwt.decode(
@@ -152,10 +162,9 @@ async def get_current_user(
         return CurrentUser(user_id=user_id, email="", is_mock=False)
         
     except JWTError as e:
+        # Expired or badly signed tokens say nothing about key rotation, so
+        # the JWKS cache is kept (unknown key ids refetch in _find_signing_key).
         logger.warning(f"JWT validation failed: {e}")
-        # Clear JWKS cache on failure (key rotation)
-        global _jwks_cache
-        _jwks_cache = None
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
