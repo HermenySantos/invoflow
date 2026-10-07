@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    app_name: str = "FaturaFlow API"
+    app_name: str = "Invoflow API"
     app_debug: bool = True
     # "development" allows the mock auth/storage modes; anything else refuses them.
     app_env: str = "development"

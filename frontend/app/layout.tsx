@@ -20,7 +20,7 @@ const inter = Inter({
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export const metadata: Metadata = {
-  title: 'FaturaFlow — IVA dos recibos para o contabilista',
+  title: 'Invoflow — IVA dos recibos para o contabilista',
   description:
     'Carregue faturas e recibos portugueses. Obtenha uma estimativa de IVA e um pacote organizado para enviar.',
   manifest: '/manifest.json',
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'FaturaFlow',
+    title: 'Invoflow',
   },
 };
 

@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: faturaflow-db
+    container_name: invoflow-db
     environment:
       POSTGRES_USER: invoflow
       POSTGRES_PASSWORD: invoflow_dev
@@ -18,7 +18,7 @@ services:
 
   backend:
     build: ./backend
-    container_name: faturaflow-api
+    container_name: invoflow-api
     ports:
       - "8000:8000"
     environment:
@@ -36,7 +36,7 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: faturaflow-web
+    container_name: invoflow-web
     ports:
       - "3000:3000"
     environment:

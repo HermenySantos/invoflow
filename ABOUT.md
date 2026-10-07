@@ -1,4 +1,4 @@
-# FaturaFlow
+# Invoflow
 
 **Simple invoice/receipt management to predict IVA and package documents for the accountant (Portugal)**
 
@@ -10,7 +10,7 @@ A small business owner in Portugal collects dozens of paper receipts every month
 
 ## The Solution
 
-FaturaFlow is not an accounting app. It is a capture-and-predict tool that sits between the business owner and their accountant.
+Invoflow is not an accounting app. It is a capture-and-predict tool that sits between the business owner and their accountant.
 
 ### 1. Capture
 
@@ -49,7 +49,7 @@ The accountant receives a structured, traceable package instead of a shoebox.
 
 ---
 
-## What FaturaFlow Is NOT
+## What Invoflow Is NOT
 
 - **Not a tax filing tool** — it does not submit anything to Autoridade Tributaria
 - **Not an invoicing or sales tool** — VAT on sales is manual input; this is about expenses

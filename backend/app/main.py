@@ -1,5 +1,5 @@
 """
-FaturaFlow API - Main FastAPI application.
+Invoflow API - Main FastAPI application.
 """
 
 import logging
@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
         for column in add_missing_nullable_columns(engine):
             logger.info(f"Added missing local column {column}")
     backend = resolve_ocr_backend()
-    logger.info("FaturaFlow API starting...")
+    logger.info("Invoflow API starting...")
     logger.info(
         f"Auth mock: {settings.auth_mock_mode}; "
         f"Storage mock: {settings.storage_mock_mode}; "
@@ -113,12 +113,12 @@ async def lifespan(app: FastAPI):
     env_status = get_environment_status()
     logger.info(f"Database: {env_status['database_type']}")
     yield
-    logger.info("FaturaFlow API shutting down...")
+    logger.info("Invoflow API shutting down...")
 
 
 app = FastAPI(
     title=settings.app_name,
-    description="Invoice/receipt API for Portuguese small businesses (FaturaFlow)",
+    description="Invoice/receipt API for Portuguese small businesses (Invoflow)",
     version="0.2.0",
     lifespan=lifespan,
 )
@@ -215,7 +215,7 @@ async def root():
     backend = resolve_ocr_backend()
     return {
         "name": settings.app_name,
-        "product": "FaturaFlow",
+        "product": "Invoflow",
         "version": "0.2.0",
         "status": "healthy",
         "ocr_backend": backend,

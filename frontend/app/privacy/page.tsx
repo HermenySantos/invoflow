@@ -5,7 +5,7 @@ export default function PrivacyPage() {
     <div className="landing">
       <main className="landing-section" style={{ paddingTop: '3rem' }}>
         <p>
-          <Link href="/">← FaturaFlow</Link>
+          <Link href="/">← Invoflow</Link>
         </p>
         <h1>Privacidade</h1>
         <p>

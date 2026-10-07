@@ -6,7 +6,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { FlowDiagram } from './FlowDiagram';
 import { LandingLang, landingCopy } from './copy';
 
-const LANG_KEY = 'faturaflow_lang';
+const LANG_KEY = 'invoflow_lang';
 
 export function LandingPage() {
   const { isAuthenticated } = useAuth();

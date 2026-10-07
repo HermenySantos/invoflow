@@ -1,5 +1,5 @@
 """
-Pytest configuration and fixtures for InvoFlow backend tests.
+Pytest configuration and fixtures for Invoflow backend tests.
 """
 
 import os
