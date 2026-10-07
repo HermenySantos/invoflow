@@ -65,8 +65,10 @@ class TestDocumentAPI:
         assert data["original_filename"] == "test-receipt.jpg"
         assert data["mime_type"] == "image/jpeg"
         assert data["file_size"] == 1024
-        # Mock OCR should set status to ready or needs_review
-        assert data["status"] in ["ready", "needs_review", "failed"]
+        # The upload returns before OCR; reading happens in the background.
+        assert data["status"] == "processing"
+        read = client.get(f"/api/documents/{data['id']}", headers=mock_user_headers).json()
+        assert read["status"] in ["ready", "needs_review", "failed"]
 
     def test_get_document(self, client: TestClient, mock_user_headers: dict):
         """Test getting a single document."""

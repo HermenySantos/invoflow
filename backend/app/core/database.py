@@ -28,6 +28,15 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def session_factory(request):
+    """
+    Sessions for work that outlives the request (background OCR), from the
+    same source as get_db, so a test's dependency override applies too.
+    """
+    dependency = request.app.dependency_overrides.get(get_db, get_db)
+    return lambda: next(dependency())
+
+
 def get_db():
     db = SessionLocal()
     try:

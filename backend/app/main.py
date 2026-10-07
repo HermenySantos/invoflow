@@ -2,6 +2,7 @@
 Invoflow API - Main FastAPI application.
 """
 
+import asyncio
 import logging
 import traceback
 from contextlib import asynccontextmanager
@@ -19,12 +20,19 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import router as api_router
 from app.core.config import get_settings
-from app.core.database import Base, add_missing_nullable_columns, engine
+from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
 from app.core.rate_limit import limiter
 from app.core.startup import get_environment_status, run_startup_checks
 from app.services.ocr import resolve_ocr_backend, tesseract_available
+from app.services.processing import read_receipt, stuck_document_ids
 
 settings = get_settings()
+
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    # Errors only (no tracing): fits the free tier and sends no request bodies.
+    sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.app_env, send_default_pii=False)
 
 logging.basicConfig(
     level=logging.INFO if not settings.app_debug else logging.DEBUG,
@@ -112,7 +120,15 @@ async def lifespan(app: FastAPI):
     )
     env_status = get_environment_status()
     logger.info(f"Database: {env_status['database_type']}")
+    # Receipts a restart interrupted mid-read are read again.
+    with SessionLocal() as db:
+        stuck = stuck_document_ids(db)
+    if stuck:
+        logger.info(f"Re-reading {len(stuck)} receipt(s) left in processing")
+    resumed = [asyncio.create_task(read_receipt(SessionLocal, document_id)) for document_id in stuck]
     yield
+    for task in resumed:
+        task.cancel()
     logger.info("Invoflow API shutting down...")
 
 

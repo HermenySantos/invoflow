@@ -47,7 +47,7 @@ class TestFieldConfidenceParsing:
         )
         
         assert response.status_code == 201
-        data = response.json()
+        data = client.get(f"/api/documents/{response.json()['id']}", headers=headers).json()
         
         # Should have field_confidence
         assert "field_confidence" in data

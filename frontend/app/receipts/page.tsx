@@ -80,6 +80,27 @@ export default function ReceiptsPage() {
     fetchDocuments(activeCategory);
   }, [activeCategory, fetchDocuments]);
 
+  // Receipts are read in the background after upload; refresh quietly until done.
+  const hasProcessing = documents.some((d) => d.status === 'processing');
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const timer = setInterval(async () => {
+      try {
+        const data = await api.getDocuments({
+          page_size: 50,
+          expense_category: activeCategory || undefined,
+          q: search || undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        });
+        setDocuments(data.documents);
+      } catch {
+        // Keep showing what we have; the next tick retries.
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [hasProcessing, activeCategory, search, dateFrom, dateTo]);
+
   const handleCategoryFilter = (key: string | null) => {
     setActiveCategory(key);
   };

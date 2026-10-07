@@ -64,11 +64,12 @@ def test_upload_stores_the_qr_totals(client: TestClient):
     key = f"{headers['X-Mock-User-Id']}/2026/09/{uuid.uuid4().hex[:8]}_fatura.png"
     client.put(get_storage_service().get_upload_url(key, "image/png"), content=buffer.getvalue())
 
-    document = client.post(
+    created = client.post(
         "/api/documents",
         json={"storage_key": key, "original_filename": "fatura.png", "file_size": len(buffer.getvalue()), "mime_type": "image/png"},
         headers=headers,
     ).json()
+    document = client.get(f"/api/documents/{created['id']}", headers=headers).json()
 
     assert document["vendor_nif"] == "503504564"
     assert document["invoice_number"] == "FT A/12"
