@@ -27,8 +27,8 @@ function getConfidenceConfig(level: ConfidenceLevel) {
         bgColor: 'bg-green-100',
         textColor: 'text-green-700',
         iconColor: 'text-green-600',
-        label: 'High confidence',
-        description: 'OCR is confident about this value',
+        label: 'Confiança alta',
+        description: 'A leitura deste valor é fiável',
       };
     case 'medium':
       return {
@@ -36,8 +36,8 @@ function getConfidenceConfig(level: ConfidenceLevel) {
         bgColor: 'bg-amber-100',
         textColor: 'text-amber-700',
         iconColor: 'text-amber-600',
-        label: 'Medium confidence',
-        description: 'Please verify this value',
+        label: 'Confiança média',
+        description: 'Confirme este valor',
       };
     case 'low':
       return {
@@ -45,8 +45,8 @@ function getConfidenceConfig(level: ConfidenceLevel) {
         bgColor: 'bg-red-100',
         textColor: 'text-red-700',
         iconColor: 'text-red-600',
-        label: 'Low confidence',
-        description: 'This value may be incorrect',
+        label: 'Confiança baixa',
+        description: 'Este valor pode estar errado',
       };
     case 'unknown':
     default:
@@ -55,8 +55,8 @@ function getConfidenceConfig(level: ConfidenceLevel) {
         bgColor: 'bg-gray-100',
         textColor: 'text-gray-600',
         iconColor: 'text-gray-500',
-        label: 'Unknown',
-        description: 'No confidence data available',
+        label: 'Desconhecida',
+        description: 'Sem dados de confiança',
       };
   }
 }

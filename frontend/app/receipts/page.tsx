@@ -69,7 +69,7 @@ export default function ReceiptsPage() {
       });
       setDocuments(data.documents);
     } catch (err) {
-      setError("Failed to load receipts");
+      setError("Não foi possível carregar os recibos.");
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -85,7 +85,7 @@ export default function ReceiptsPage() {
   };
 
   const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'No date';
+    if (!dateStr) return 'Sem data';
     return new Date(dateStr).toLocaleDateString('pt-PT', {
       day: 'numeric',
       month: 'short',
@@ -113,7 +113,7 @@ export default function ReceiptsPage() {
               aria-hidden="true"
             />
           ),
-          label: "Ready",
+          label: "Pronto",
         };
       case "needs_review":
         return {
@@ -123,7 +123,7 @@ export default function ReceiptsPage() {
               aria-hidden="true"
             />
           ),
-          label: "Needs review",
+          label: "Por rever",
         };
       case "processing":
       case "pending":
@@ -134,23 +134,23 @@ export default function ReceiptsPage() {
               aria-hidden="true"
             />
           ),
-          label: "Processing",
+          label: "A processar",
         };
       case "failed":
         return {
           icon: (
             <XCircle className="w-4 h-4 text-danger-500" aria-hidden="true" />
           ),
-          label: "Failed",
+          label: "Falhou",
         };
       default:
-        return { icon: null, label: "Unknown" };
+        return { icon: null, label: "Desconhecido" };
     }
   };
 
   return (
     <AppLayout title="Recibos">
-      <section className="p-4" aria-label="Receipts list">
+      <section className="p-4" aria-label="Lista de recibos">
         <div className="mb-3 space-y-2">
           <label className="relative block">
             <span className="sr-only">Procurar recibos</span>
@@ -191,7 +191,7 @@ export default function ReceiptsPage() {
           <div
             className="space-y-3"
             role="status"
-            aria-label="Loading receipts"
+            aria-label="A carregar recibos"
           >
             {[1, 2, 3].map((i) => (
               <div
@@ -208,7 +208,7 @@ export default function ReceiptsPage() {
                 </div>
               </div>
             ))}
-            <span className="sr-only">Loading receipts...</span>
+            <span className="sr-only">A carregar recibos...</span>
           </div>
         ) : error ? (
           <div className="card p-6 text-center" role="alert">
@@ -220,9 +220,9 @@ export default function ReceiptsPage() {
             <button
               onClick={() => fetchDocuments(activeCategory)}
               className="btn-secondary btn-md mt-4"
-              aria-label="Retry loading receipts"
+              aria-label="Tentar carregar de novo"
             >
-              Retry
+              Tentar de novo
             </button>
           </div>
         ) : documents.length === 0 && !hasFilters ? (
@@ -254,7 +254,7 @@ export default function ReceiptsPage() {
                     : "bg-gray-100 text-gray-600",
                 )}
               >
-                All
+                Todos
               </button>
               {EXPENSE_CATEGORY_LIST.map((cat) => {
                 const IconComp = ICON_MAP[cat.icon] || Tag;
@@ -282,10 +282,10 @@ export default function ReceiptsPage() {
               <button
                 onClick={() => fetchDocuments(activeCategory)}
                 className="btn-secondary btn-sm flex items-center gap-1"
-                aria-label="Refresh receipts list"
+                aria-label="Atualizar lista"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
-                Refresh
+                Atualizar
               </button>
             </div>
 
@@ -315,7 +315,7 @@ export default function ReceiptsPage() {
             <ul
               className="space-y-2 list-none p-0 m-0"
               role="list"
-              aria-label="Your receipts"
+              aria-label="Os seus recibos"
             >
               {documents.map((doc) => {
                 const statusInfo = getStatusInfo(doc.status);
@@ -339,7 +339,7 @@ export default function ReceiptsPage() {
                     <Link
                       href={`/receipts/${doc.id}`}
                       className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
-                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Status: ${statusInfo.label}`}
+                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}`}
                     >
                       {/* Category icon */}
                       <div

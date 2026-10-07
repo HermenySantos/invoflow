@@ -25,7 +25,7 @@ const MAX_ZOOM = ZOOM_LEVELS.length - 1;
 
 export function ImageViewer({ 
   src, 
-  alt = 'Document preview',
+  alt = 'Pré-visualização do documento',
   mimeType,
   filename,
   className = ''
@@ -184,8 +184,8 @@ export function ImageViewer({
     return (
       <div className={`relative bg-gray-100 rounded-xl flex flex-col items-center justify-center p-8 ${className}`}>
         <FileText className="w-16 h-16 text-gray-400 mb-3" />
-        <p className="text-sm font-medium text-gray-700">{filename || 'PDF Document'}</p>
-        <p className="text-xs text-gray-500 mt-1">PDF preview not available</p>
+        <p className="text-sm font-medium text-gray-700">{filename || 'Documento PDF'}</p>
+        <p className="text-xs text-gray-500 mt-1">Pré-visualização de PDF indisponível</p>
         {src && (
           <a 
             href={src} 
@@ -193,7 +193,7 @@ export function ImageViewer({
             rel="noopener noreferrer"
             className="mt-4 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
           >
-            Open PDF
+            Abrir PDF
           </a>
         )}
       </div>
@@ -235,7 +235,7 @@ export function ImageViewer({
       {hasError && (
         <div className="absolute inset-0 bg-gray-100 flex flex-col items-center justify-center">
           <FileText className="w-12 h-12 text-gray-400 mb-2" />
-          <p className="text-sm text-gray-500">Failed to load image</p>
+          <p className="text-sm text-gray-500">Não foi possível carregar a imagem</p>
         </div>
       )}
 
@@ -260,7 +260,7 @@ export function ImageViewer({
           onClick={(e) => { e.stopPropagation(); handleZoomOut(); }}
           disabled={zoomIndex === MIN_ZOOM}
           className="p-1.5 text-white hover:bg-white/20 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          aria-label="Zoom out"
+          aria-label="Reduzir"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
@@ -273,7 +273,7 @@ export function ImageViewer({
           onClick={(e) => { e.stopPropagation(); handleZoomIn(); }}
           disabled={zoomIndex === MAX_ZOOM}
           className="p-1.5 text-white hover:bg-white/20 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          aria-label="Zoom in"
+          aria-label="Ampliar"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
@@ -283,7 +283,7 @@ export function ImageViewer({
         <button
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
           className="p-1.5 text-white hover:bg-white/20 rounded transition-colors"
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+          aria-label={isFullscreen ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
         >
           {isFullscreen ? (
             <Minimize2 className="w-4 h-4" />
@@ -310,7 +310,7 @@ export function ImageViewer({
         <button
           onClick={toggleFullscreen}
           className="absolute top-4 right-4 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
-          aria-label="Close fullscreen"
+          aria-label="Fechar ecrã inteiro"
         >
           <X className="w-6 h-6" />
         </button>
