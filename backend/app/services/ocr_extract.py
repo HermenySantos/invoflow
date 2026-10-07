@@ -23,6 +23,7 @@ NIF_LABELED = re.compile(
     r"[:\s]*([PT]{0,2}\s*\d{9})",
     re.IGNORECASE,
 )
+CUSTOMER_LABEL = re.compile(r"cliente|adquirente|consumidor|customer", re.IGNORECASE)
 NIF_BARE = re.compile(r"\b(?:PT)?(\d{9})\b")
 DATE_DMY = re.compile(
     r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b"
@@ -80,6 +81,8 @@ class ExtractedFields:
     vat_amount: Optional[Decimal] = None
     gross_amount: Optional[Decimal] = None
     vat_rate: Optional[Decimal] = None
+    # One entry per VAT rate when the receipt has more than one; rate is then None.
+    vat_breakdown: Optional[list[dict]] = None
     confidence: float = 0.0
     needs_review: bool = True
 
@@ -98,10 +101,7 @@ def parse_pt_amount(raw: str) -> Optional[Decimal]:
     if not raw:
         return None
     cleaned = raw.strip().replace(" ", "").replace("€", "").replace("EUR", "")
-    if "," in cleaned and "." in cleaned:
-        cleaned = cleaned.replace(".", "").replace(",", ".")
-    elif "," in cleaned:
-        cleaned = cleaned.replace(",", ".")
+    cleaned = _normalise_separators(cleaned)
     try:
         value = Decimal(cleaned)
     except InvalidOperation:
@@ -111,23 +111,59 @@ def parse_pt_amount(raw: str) -> Optional[Decimal]:
     return value.quantize(Decimal("0.01"))
 
 
+def _normalise_separators(number: str) -> str:
+    """Make the decimal separator a dot and drop thousands separators.
+
+    The last separator is the decimal one, unless exactly three digits follow
+    it (1.234 / 1,234), which is a thousands group.
+    """
+    last = max(number.rfind("."), number.rfind(","))
+    if last == -1:
+        return number
+    decimals = number[last + 1 :]
+    integer = number[:last].replace(".", "").replace(",", "")
+    if len(decimals) == 3:
+        return integer + decimals
+    return f"{integer}.{decimals}"
+
+
 def extract_portuguese_nif(text: str) -> Optional[str]:
     if not text:
         return None
-    labeled = NIF_LABELED.search(text)
-    if labeled:
+    customer_nifs: set[str] = set()
+    vendor_nif: Optional[str] = None
+    for labeled in NIF_LABELED.finditer(text):
         digits = re.sub(r"\D", "", labeled.group(1))
-        if _looks_like_nif(digits):
-            return digits
+        if not _looks_like_nif(digits):
+            continue
+        if _is_customer_label(text, labeled.start()):
+            customer_nifs.add(digits)
+        elif vendor_nif is None:
+            vendor_nif = digits
+    if vendor_nif:
+        return vendor_nif
     for match in NIF_BARE.finditer(text):
         digits = match.group(1)
-        if _looks_like_nif(digits):
+        if digits not in customer_nifs and _looks_like_nif(digits):
             return digits
     return None
 
 
+def _is_customer_label(text: str, start: int) -> bool:
+    """True when the words just before a NIF label name the buyer, not the seller."""
+    line_start = text.rfind("\n", 0, start) + 1
+    before = text[max(line_start, start - 30) : start]
+    before = re.split(r"[/|;]", before)[-1]
+    return bool(CUSTOMER_LABEL.search(before))
+
+
 def _looks_like_nif(nif: str) -> bool:
-    return len(nif) == 9 and nif[0] in "12356789"
+    if len(nif) != 9 or not nif.isdigit() or nif[0] not in "12356789":
+        return False
+    # Mod-11 check digit.
+    total = sum(int(digit) * weight for digit, weight in zip(nif[:8], range(9, 1, -1)))
+    check = 11 - total % 11
+    return (0 if check >= 10 else check) == int(nif[8])
 
 
 def _money_amounts(line: str) -> list[Decimal]:
@@ -170,11 +206,16 @@ def _largest_labeled_amount(lines: list[str], label: re.Pattern[str]) -> Optiona
 
 def _extract_vat(
     lines: list[str],
-) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
-    """Return (rate, vat amount, net) from the last tax summary line."""
+) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal], list[dict]]:
+    """Return (rate, vat amount, net, per-rate breakdown) from the tax summary.
+
+    Receipts with several rates list one line per rate ("IVA 6% 10,00 0,60");
+    those lines are summed. The rate is None when they differ.
+    """
     rate: Optional[Decimal] = None
     vat_amount: Optional[Decimal] = None
     net_amount: Optional[Decimal] = None
+    breakdown: list[dict] = []
     for line in lines:
         if VAT_SKIP.search(line) or not VAT_LABEL.search(line):
             continue
@@ -187,10 +228,16 @@ def _extract_vat(
         if rate_match and len(amounts) >= 2:
             net_amount = amounts[-2]
             vat_amount = amounts[-1]
+            breakdown.append({"rate": rate, "net": net_amount, "vat": vat_amount})
         elif amounts:
             vat_amount = amounts[-1]
             net_amount = None
-    return rate, vat_amount, net_amount
+    if len(breakdown) > 1:
+        rates = {entry["rate"] for entry in breakdown}
+        rate = rates.pop() if len(rates) == 1 else None
+        net_amount = sum((entry["net"] for entry in breakdown), Decimal("0"))
+        vat_amount = sum((entry["vat"] for entry in breakdown), Decimal("0"))
+    return rate, vat_amount, net_amount, breakdown
 
 
 def _parse_date(text: str) -> Optional[date]:
@@ -267,16 +314,21 @@ def extract_fields(text: str) -> ExtractedFields:
     if invoice:
         result.invoice_number = invoice.group(1).strip()[:100]
 
-    vat_rate, vat_amount, vat_net = _extract_vat(lines)
+    vat_rate, vat_amount, vat_net, breakdown = _extract_vat(lines)
     result.vat_rate = vat_rate
     result.vat_amount = vat_amount
     result.net_amount = vat_net
+    mixed_rates = len(breakdown) > 1
+    if mixed_rates:
+        result.vat_breakdown = [
+            {key: str(value) for key, value in entry.items()} for entry in breakdown
+        ]
 
     result.gross_amount = _last_labeled_amount(lines, STRONG_TOTAL)
     if result.gross_amount is None:
         result.gross_amount = _largest_labeled_amount(lines, PAYMENT_TOTAL)
 
-    net_match = NET_LINE.search(text)
+    net_match = None if mixed_rates else NET_LINE.search(text)
     if net_match:
         labeled_net = parse_pt_amount(net_match.group(1))
         if labeled_net is not None:
@@ -289,7 +341,13 @@ def extract_fields(text: str) -> ExtractedFields:
         if vat >= 0:
             result.vat_amount = vat
 
-    if result.net_amount and result.vat_amount and result.net_amount > 0 and result.vat_rate is None:
+    if (
+        result.net_amount
+        and result.vat_amount
+        and result.net_amount > 0
+        and result.vat_rate is None
+        and not mixed_rates
+    ):
         guessed = (result.vat_amount / result.net_amount * 100).quantize(Decimal("0.01"))
         result.vat_rate = _nearest_vat_rate(guessed) or guessed
 
