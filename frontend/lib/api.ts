@@ -354,7 +354,10 @@ export interface Summary {
   total_gross: string;
   total_net: string;
   total_vat: string;
+  /** reviewed receipts only; counts toward the estimate */
   deductible_vat: string;
+  /** receipts still in needs_review; not in the estimate */
+  deductible_vat_pending: string;
   /** null until the user enters VAT on sales for the period */
   vat_on_sales: string | null;
   /** null while vat_on_sales is null */

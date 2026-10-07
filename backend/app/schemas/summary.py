@@ -39,7 +39,8 @@ class SummaryResponse(BaseModel):
     total_vat: Decimal
     
     # IVA calculation
-    deductible_vat: Decimal        # VAT that can be reclaimed (after deductible %)
+    deductible_vat: Decimal        # Reclaimable VAT on checked receipts (ready / accountant_review)
+    deductible_vat_pending: Decimal = Decimal("0.00")  # Same, on receipts still in needs_review; not in the estimate
     vat_on_sales: Optional[Decimal]           # Entered by the user; None until they do
     estimated_iva_payable: Optional[Decimal]  # vat_on_sales - deductible_vat (negative = refund); None without vat_on_sales
     

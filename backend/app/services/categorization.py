@@ -4,6 +4,7 @@ Maps vendor names and NIFs to business expense categories and IRS deduction sect
 """
 
 import re
+from decimal import Decimal
 from typing import Optional, Tuple
 
 # ── Business Expense Categories ──
@@ -295,6 +296,24 @@ def get_deductible_pct(expense_category: str | None) -> int:
     if not expense_category:
         return 0
     return EXPENSE_DEDUCTIBLE_PCT.get(expense_category, 0)
+
+
+# Statuses whose amounts a person has checked; needs_review is still raw OCR.
+CONFIRMED_STATUSES = ("ready", "accountant_review")
+
+
+def deductible_vat_split(documents) -> tuple[Decimal, Decimal]:
+    """Deductible VAT as (confirmed, pending review) for the given documents."""
+    confirmed = Decimal("0")
+    pending = Decimal("0")
+    for document in documents:
+        vat = document.vat_amount or Decimal("0")
+        deductible = vat * get_deductible_pct(document.expense_category) / 100
+        if document.status in CONFIRMED_STATUSES:
+            confirmed += deductible
+        elif document.status == "needs_review":
+            pending += deductible
+    return confirmed.quantize(Decimal("0.01")), pending.quantize(Decimal("0.01"))
 
 
 def get_expense_category_label(category: str) -> str:

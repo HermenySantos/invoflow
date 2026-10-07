@@ -25,10 +25,17 @@ from app.services.categorization import (
     get_expense_category_label,
     get_irs_sector_label,
     get_deductible_pct,
+    deductible_vat_split,
 )
 from app.services.validation import validate_period_documents
 
 router = APIRouter()
+
+
+def _format_eur(amount: Decimal) -> str:
+    """1234.5 -> "1.234,50 €" (pt-PT)."""
+    whole, cents = f"{amount:,.2f}".split(".")
+    return f"{whole.replace(',', '.')},{cents} €"
 
 
 def _get_vat_on_sales(
@@ -127,12 +134,9 @@ async def get_summary(
     total_vat = sum(d.vat_amount or Decimal(0) for d in valid_docs)
     
     # ── Deductible VAT (per-category percentage) ──
-    deductible_vat = Decimal("0.00")
-    for d in valid_docs:
-        vat = d.vat_amount or Decimal(0)
-        pct = get_deductible_pct(d.expense_category)
-        deductible_vat += vat * pct / 100
-    deductible_vat = deductible_vat.quantize(Decimal("0.01"))
+    # Only checked receipts count toward the estimate; unreviewed OCR values
+    # are reported separately.
+    deductible_vat, deductible_vat_pending = deductible_vat_split(valid_docs)
     
     # ── VAT on sales (manual input) ──
     vat_on_sales = _get_vat_on_sales(db, user.id, period_type, year, period_value)
@@ -157,6 +161,15 @@ async def get_summary(
             "code": "no_vat_on_sales",
             "message": "Introduza o IVA das vendas para calcular o IVA a pagar",
             "severity": "info",
+        })
+    if deductible_vat_pending > 0:
+        warning_objects.append({
+            "code": "pending_deductible_vat",
+            "message": (
+                f"{_format_eur(deductible_vat_pending)} de IVA dedutível em {needs_review_count} "
+                "recibo(s) por rever — fora da estimativa até serem revistos"
+            ),
+            "severity": "warning",
         })
     # Flatten to string list for the response (keep simple for V1)
     warnings = [w["message"] for w in warning_objects]
@@ -225,6 +238,7 @@ async def get_summary(
         total_net=total_net,
         total_vat=total_vat,
         deductible_vat=deductible_vat,
+        deductible_vat_pending=deductible_vat_pending,
         vat_on_sales=vat_on_sales,
         estimated_iva_payable=estimated_iva_payable,
         expense_breakdown=expense_breakdown,
