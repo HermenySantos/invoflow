@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     clerk_secret_key: str = ""
     clerk_publishable_key: str = ""
     clerk_jwks_url: str = ""
+    clerk_frontend_api: str = ""  # e.g., "clerk.your-app.com"
     auth_mock_mode: bool = True
 
+    # Cloudflare R2 (mock mode if not set)
     r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
