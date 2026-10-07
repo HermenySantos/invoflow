@@ -4,6 +4,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import './globals.css';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { OfflineProvider } from '@/components/providers/OfflineProvider';
 
 const plex = IBM_Plex_Sans({
   subsets: ['latin'],
@@ -47,7 +48,9 @@ export default function RootLayout({
 }) {
   const app = (
     <ErrorBoundary>
-      <AuthProvider>{children}</AuthProvider>
+      <OfflineProvider>
+        <AuthProvider>{children}</AuthProvider>
+      </OfflineProvider>
     </ErrorBoundary>
   );
 
