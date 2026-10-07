@@ -1,12 +1,12 @@
-# FaturaFlow
+# Invoflow
 
-Product name: **FaturaFlow**. Repository name remains `invoflow`.
+Product name: **Invoflow**.
 
 Upload a Portuguese receipt or invoice → IVA estimate → accountant pack.
 
 This is a personal MIT product. It does not include Dorier / employer IP.
 
-The public landing at `/` follows the Eggbot FaturaFlow landing spec (CVO integrate). Do not replace it with a second marketing design.
+The public landing at `/` follows the Eggbot Invoflow landing spec (CVO integrate). Do not replace it with a second marketing design.
 
 ## One path: Docker Compose
 
@@ -83,7 +83,7 @@ IVA is an **estimate for review**, not a filing. Sales VAT is not entered in thi
 
 ## Landing (Eggbot spec)
 
-`/` is the FaturaFlow marketing page: PT first, boring SMB tone, single scroll, tokens from the Eggbot spec. Primary CTA goes to `/upload` (live in this repo). There is no waitlist, no fake counts, no “AI-powered” headline.
+`/` is the Invoflow marketing page: PT first, boring SMB tone, single scroll, tokens from the Eggbot spec. Primary CTA goes to `/upload` (live in this repo). There is no waitlist, no fake counts, no “AI-powered” headline.
 
 `/privacy` is a stub. CVO: replace with real legal copy when hosting.
 

@@ -112,7 +112,7 @@ class ExportService:
         # Generate filename
         safe_period = period.replace("-", "_")
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"FaturaFlow_Export_{safe_period}_{timestamp}.zip"
+        filename = f"Invoflow_Export_{safe_period}_{timestamp}.zip"
         
         return zip_bytes, filename
     
@@ -191,7 +191,7 @@ class ExportService:
         elements = []
         
         # Title
-        elements.append(Paragraph(f"FaturaFlow — pacote contabilista — {period}", title_style))
+        elements.append(Paragraph(f"Invoflow — pacote contabilista — {period}", title_style))
         elements.append(Spacer(1, 12))
         
         # Generation info

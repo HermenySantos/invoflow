@@ -75,5 +75,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t faturaflow-backend backend
-      - run: docker build -t faturaflow-frontend frontend
+      - run: docker build -t invoflow-backend backend
+      - run: docker build -t invoflow-frontend frontend

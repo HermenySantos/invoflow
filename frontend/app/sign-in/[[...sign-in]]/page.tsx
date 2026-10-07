@@ -17,7 +17,7 @@ function SignInForm() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    signIn(email || 'demo@faturaflow.test');
+    signIn(email || 'demo@invoflow.test');
     router.push(next.startsWith('/') ? next : '/upload');
   };
 
@@ -25,7 +25,7 @@ function SignInForm() {
     <div className="landing min-h-screen flex flex-col items-center justify-center px-4">
       <div className="w-full" style={{ maxWidth: 400 }}>
         <p className="mb-8">
-          <Link href="/">← FaturaFlow</Link>
+          <Link href="/">← Invoflow</Link>
         </p>
         <h1 className="text-2xl font-semibold">Entrar</h1>
         <p className="mt-2 text-[var(--ff-text-muted)]">

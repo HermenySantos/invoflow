@@ -1,5 +1,5 @@
 /**
- * API client for InvoFlow backend.
+ * API client for Invoflow backend.
  * Handles all HTTP requests with Clerk authentication.
  */
 
@@ -206,7 +206,7 @@ class ApiClient {
     const blob = await response.blob();
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
-    return { blob, filename: match?.[1] || 'FaturaFlow_Export.zip' };
+    return { blob, filename: match?.[1] || 'Invoflow_Export.zip' };
   }
 
   // VAT on Sales

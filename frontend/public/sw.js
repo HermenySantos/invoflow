@@ -1,5 +1,5 @@
 /*
- * FaturaFlow service worker: keeps the app shell available offline.
+ * Invoflow service worker: keeps the app shell available offline.
  *
  * Deliberately never caches /api/* or pages: those hold one user's receipts
  * and IVA figures, and a shared browser cache would show them to the next
@@ -7,7 +7,7 @@
  * offline page are stored.
  */
 
-const CACHE = 'faturaflow-shell-v1';
+const CACHE = 'invoflow-shell-v1';
 const PRECACHE = ['/offline.html', '/manifest.json', '/favicon.svg', '/icons/icon-192x192.svg'];
 
 self.addEventListener('install', (event) => {

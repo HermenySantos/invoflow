@@ -1,6 +1,6 @@
 {
-  "name": "FaturaFlow",
-  "short_name": "FaturaFlow",
+  "name": "Invoflow",
+  "short_name": "Invoflow",
   "description": "Carregue faturas e recibos portugueses. Estimativa de IVA e pacote para o contabilista.",
   "start_url": "/upload",
   "display": "standalone",

@@ -2,7 +2,7 @@ export type LandingLang = 'pt' | 'en';
 
 export const landingCopy = {
   pt: {
-    wordmark: "FaturaFlow",
+    wordmark: "Invoflow",
     navEntrar: "Entrar",
     navComecar: "Começar",
     h1: "Pare de descobrir o IVA um dia antes do prazo",
@@ -37,14 +37,14 @@ export const landingCopy = {
       "Demonstração, sem cartão. O que enviar ao contabilista decide-o você.",
     footerPrivacy: "Privacidade",
     footerNote:
-      "FaturaFlow. Recibos portugueses → IVA → pacote para o contabilista.",
+      "Invoflow. Recibos portugueses → IVA → pacote para o contabilista.",
     langLabel: "EN",
     diagramReceipt: "Recibo",
     diagramIva: "IVA",
     diagramPack: "Pacote",
   },
   en: {
-    wordmark: "FaturaFlow",
+    wordmark: "Invoflow",
     navEntrar: "Sign in",
     navComecar: "Start",
     h1: "Stop learning your VAT the day before it’s due",
@@ -77,7 +77,7 @@ export const landingCopy = {
     ctaBandTitle: "Upload a receipt and see your number",
     ctaBandBody: "Demo mode, no card. You decide what to send.",
     footerPrivacy: "Privacy",
-    footerNote: "FaturaFlow. Portuguese receipts → VAT → accountant pack.",
+    footerNote: "Invoflow. Portuguese receipts → VAT → accountant pack.",
     langLabel: "PT",
     diagramReceipt: "Receipt",
     diagramIva: "VAT",

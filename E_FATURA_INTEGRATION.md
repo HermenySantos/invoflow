@@ -1,4 +1,4 @@
-# FaturaFlow — e-Fatura Integration Research
+# Invoflow — e-Fatura Integration Research
 
 > Research conducted: February 2026
 > Sources: Official AT documentation (Portal das Financas), AT Integration Manuals V3.0 (October 2025)
@@ -7,7 +7,7 @@
 
 ## 1. Executive Summary
 
-The Portuguese Tax Authority (Autoridade Tributaria e Aduaneira — AT) **does expose official SOAP web services** for the e-Fatura system. As of October 2025 (Manual V3.0), a **new invoice consultation operation** was added that allows querying all invoices associated with a taxpayer's NIF — both as issuer and as buyer. This is directly relevant to FaturaFlow's core use case.
+The Portuguese Tax Authority (Autoridade Tributaria e Aduaneira — AT) **does expose official SOAP web services** for the e-Fatura system. As of October 2025 (Manual V3.0), a **new invoice consultation operation** was added that allows querying all invoices associated with a taxpayer's NIF — both as issuer and as buyer. This is directly relevant to Invoflow's core use case.
 
 There are three viable integration paths, ranging from simple file import to full real-time API access.
 
@@ -38,7 +38,7 @@ There are three viable integration paths, ranging from simple file import to ful
 | Change Payment Status | ChangePaymentStatusRequest / Response | Update receipt status |
 | Delete Payment | DeletePaymentRequest / Response | Remove receipts |
 
-**Relevance to FaturaFlow**: Low for the MVP. This service is for submitting invoices, not reading them. FaturaFlow does not issue invoices.
+**Relevance to Invoflow**: Low for the MVP. This service is for submitting invoices, not reading them. Invoflow does not issue invoices.
 
 ### 2.2 Invoice Consultation Service (NEW — October 2025)
 
@@ -71,7 +71,7 @@ There are three viable integration paths, ranging from simple file import to ful
 - Document totals: TaxPayable, NetTotal, GrossTotal
 - Withholding tax details (IRS, IRC, IS)
 
-**Relevance to FaturaFlow**: **CRITICAL**. This is exactly what FaturaFlow needs. By authenticating with the user's Portal das Financas credentials, FaturaFlow could pull all their purchase invoices automatically — complete with VAT breakdowns, tax rates, and totals. This eliminates the need for OCR on any receipt that was registered with a NIF.
+**Relevance to Invoflow**: **CRITICAL**. This is exactly what Invoflow needs. By authenticating with the user's Portal das Financas credentials, Invoflow could pull all their purchase invoices automatically — complete with VAT breakdowns, tax rates, and totals. This eliminates the need for OCR on any receipt that was registered with a NIF.
 
 **Key quote from the official manual**:
 
@@ -85,7 +85,7 @@ Translation: "The possibility of consulting invoices registered in the e-Fatura 
 
 ### 3.1 Software Certification
 
-To access the web services, FaturaFlow must be registered as a certified software producer with the AT:
+To access the web services, Invoflow must be registered as a certified software producer with the AT:
 
 1. **Software must be certified** under Portaria 363/2010 and Portaria 340/2013
 2. A **software certificate number** is assigned by the AT
@@ -148,7 +148,7 @@ SAF-T (Standard Audit File for Tax) is an OECD-standard XML file format used in 
 - **Functional data**: Invoices, journal entries, tax summaries
 - **Legal basis**: Portaria 321-A/2007, Portaria 31/2019, Decreto-Lei 198/2012
 
-### Relevance to FaturaFlow
+### Relevance to Invoflow
 
 SAF-T import is the **easiest integration path** because:
 
@@ -180,7 +180,7 @@ The QR code on Portuguese receipts contains:
 - ATCUD (unique document code)
 - Hash characters for document integrity
 
-### Relevance to FaturaFlow
+### Relevance to Invoflow
 
 QR code scanning could replace or supplement OCR:
 - **Far more accurate** than OCR — structured data, not image recognition
@@ -188,7 +188,7 @@ QR code scanning could replace or supplement OCR:
 - **Cheaper** — no third-party OCR API costs
 - **Already standard** — all Portuguese receipts have them since 2022
 
-FaturaFlow could offer: "Scan the QR code on your receipt" as the primary capture method, with camera OCR as fallback for older or foreign receipts.
+Invoflow could offer: "Scan the QR code on your receipt" as the primary capture method, with camera OCR as fallback for older or foreign receipts.
 
 ---
 
@@ -211,7 +211,7 @@ FaturaFlow could offer: "Scan the QR code on your receipt" as the primary captur
 - Show validation warnings or confidence scores
 - Provide period-based IVA dashboards
 
-This gap is FaturaFlow's opportunity.
+This gap is Invoflow's opportunity.
 
 ---
 
@@ -223,12 +223,12 @@ This gap is FaturaFlow's opportunity.
 **Value**: High for accountant workflow
 
 - Build SAF-T XML parser for the billing module
-- Accept file upload in FaturaFlow
+- Accept file upload in Invoflow
 - Extract: vendor NIF, invoice amounts, VAT breakdowns, dates
-- Map to FaturaFlow's category system
+- Map to Invoflow's category system
 - Merge with manually scanned receipts for complete picture
 
-**User flow**: User exports SAF-T from Portal das Financas or billing software, uploads to FaturaFlow.
+**User flow**: User exports SAF-T from Portal das Financas or billing software, uploads to Invoflow.
 
 ### Tier 2: QR Code Scanning (No certification needed)
 
@@ -248,7 +248,7 @@ This gap is FaturaFlow's opportunity.
 **Value**: Transformative — complete automation
 
 Steps:
-1. Register FaturaFlow as a software producer with AT
+1. Register Invoflow as a software producer with AT
 2. Apply for software certification (Portaria 363/2010)
 3. Request SSL certificate and public authentication key from AT
 4. Implement SOAP client with WS-Security headers
@@ -257,7 +257,7 @@ Steps:
 7. Apply for production access (adesao ao servico)
 8. Deploy and monitor
 
-**User flow**: User connects their Portal das Financas credentials once. FaturaFlow automatically pulls all their invoices from e-Fatura. Combined with manual receipt scans, the user has a complete expense picture with zero effort.
+**User flow**: User connects their Portal das Financas credentials once. Invoflow automatically pulls all their invoices from e-Fatura. Combined with manual receipt scans, the user has a complete expense picture with zero effort.
 
 **This is the moat**. Any competitor would need to go through the same certification process.
 
@@ -268,7 +268,7 @@ Steps:
 ### SOAP Client Requirements
 
 ```
-FaturaFlow Backend
+Invoflow Backend
     |
     |-- SOAP Client (e.g., zeep for Python, or soap for Node.js)
     |     |-- WS-Security Header Builder
@@ -288,9 +288,9 @@ FaturaFlow Backend
 ### Security Considerations
 
 - User's Portal das Financas credentials must be stored encrypted (AES-256 at rest)
-- Credentials are the user's own — they create a sub-user specifically for FaturaFlow
+- Credentials are the user's own — they create a sub-user specifically for Invoflow
 - The WFA permission is scoped to invoice communication only
-- AT's SSL certificate validates the server; FaturaFlow's client certificate validates the app
+- AT's SSL certificate validates the server; Invoflow's client certificate validates the app
 - Each request uses a unique symmetric key (Nonce) — no replay attacks possible
 
 ### Data Flow
@@ -300,7 +300,7 @@ AT e-Fatura System
     |
     | (SOAP/HTTPS, port 425)
     |
-FaturaFlow Backend
+Invoflow Backend
     |
     |-- Parse InvoicesResponse
     |-- Extract: NIF, dates, amounts, VAT rates, exemption codes
@@ -309,7 +309,7 @@ FaturaFlow Backend
     |-- Merge with manually scanned receipts
     |-- Update IVA dashboard
     |
-FaturaFlow Frontend
+Invoflow Frontend
     |-- Show unified expense view (e-Fatura + manual scans)
     |-- IVA prediction with higher confidence (more complete data)
 ```
@@ -346,4 +346,4 @@ FaturaFlow Frontend
 | What data do we get? | Invoice number, type, date, NIFs, full VAT breakdown by rate, totals, exemption codes, withholding tax |
 | What's required? | AT software certification, AT-signed SSL certificate, user creates WFA sub-user |
 | How long to implement? | Tier 1 (SAF-T import): 1-2 weeks. Tier 2 (QR codes): 1-2 weeks. Tier 3 (full API): 2-4 months |
-| Is it worth it? | Tier 3 is transformative — it turns FaturaFlow from "useful tool" into "essential infrastructure" and creates a competitive moat |
+| Is it worth it? | Tier 3 is transformative — it turns Invoflow from "useful tool" into "essential infrastructure" and creates a competitive moat |

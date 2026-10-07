@@ -1,6 +1,6 @@
-# FaturaFlow API
+# Invoflow API
 
-FastAPI backend for the InvoFlow repo (product name: FaturaFlow).
+FastAPI backend for Invoflow.
 
 ```bash
 python3 -m venv .venv

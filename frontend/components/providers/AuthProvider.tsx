@@ -43,7 +43,7 @@ function MockAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = (email: string) => {
-    const demoEmail = email.trim() || 'demo@faturaflow.test';
+    const demoEmail = email.trim() || 'demo@invoflow.test';
     const demoUser: User = { id: demoUserId(demoEmail), email: demoEmail };
     setUser(demoUser);
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoUser));
