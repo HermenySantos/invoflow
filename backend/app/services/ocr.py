@@ -24,7 +24,7 @@ from io import BytesIO
 from typing import Optional
 
 import httpx
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 
 from app.core.config import get_settings
 from app.services.ocr_extract import ExtractedFields, extract_fields, extracted_to_json
@@ -185,12 +185,35 @@ class OCRService:
             )
 
         fields = extract_fields(text)
+        if fields.gross_amount is None:
+            # Crumpled or faded talões often lose the total on the first read.
+            retry = await asyncio.to_thread(self._second_read, file_content, mime_type)
+            if retry is not None:
+                text, fields = retry
         if settings.ollama_base_url:
             llm_fields = await self._extract_with_ollama(text)
             if llm_fields:
                 fields = _merge_fields(fields, llm_fields)
 
         return _fields_to_result(fields, text, backend="tesseract")
+
+    def _second_read(
+        self, file_content: bytes, mime_type: str
+    ) -> Optional[tuple[str, ExtractedFields]]:
+        """
+        Re-read a photo that gave no total: boost contrast, binarise, and try
+        it rotated. Returns the first read that finds a total, else None, so
+        the receipt stays in review rather than getting an invented amount.
+        """
+        image = _document_image(file_content, mime_type)
+        if image is None:
+            return None
+        for variant, config in _second_read_variants(image):
+            text = _image_to_text(variant, config=config)
+            fields = extract_fields(text)
+            if fields.gross_amount is not None:
+                return text, fields
+        return None
 
     def _read_document_text(self, file_content: bytes, mime_type: str) -> str:
         mime = (mime_type or "").lower()
@@ -396,13 +419,51 @@ class OCRService:
         return None
 
 
-def _image_to_text(image: Image.Image) -> str:
+def _image_to_text(image: Image.Image, config: str = "") -> str:
     import pytesseract
 
     if image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
     langs = settings.tesseract_lang or "por+eng"
-    return pytesseract.image_to_string(image, lang=langs)
+    return pytesseract.image_to_string(image, lang=langs, config=config)
+
+
+def _document_image(file_content: bytes, mime_type: str) -> Optional[Image.Image]:
+    """The photo itself, or a PDF's first page; None for PDFs that can't be rasterised."""
+    if (mime_type or "").lower() == "application/pdf" or file_content[:4] == b"%PDF":
+        return _pdf_first_page_image(file_content)
+    try:
+        return Image.open(BytesIO(file_content))
+    except Exception:
+        return None
+
+
+def enhance_for_ocr(image: Image.Image) -> Image.Image:
+    """Grey, upright, big enough, with the faded ink stretched to full contrast."""
+    image = ImageOps.exif_transpose(image).convert("L")
+    if image.width < 1400:
+        scale = 1400 / image.width
+        image = image.resize((1400, int(image.height * scale)), Image.LANCZOS)
+    image = ImageOps.autocontrast(image, cutoff=2)
+    return image.filter(ImageFilter.MedianFilter(3))
+
+
+def binarize(image: Image.Image) -> Image.Image:
+    """Black ink on white paper, thresholded a little under the mean to keep thin strokes."""
+    histogram = image.histogram()
+    mean = sum(level * count for level, count in enumerate(histogram)) / max(1, sum(histogram))
+    threshold = mean * 0.85
+    return image.point(lambda level: 255 if level > threshold else 0)
+
+
+def _second_read_variants(image: Image.Image):
+    """(image, tesseract config) pairs to try, cheapest first."""
+    enhanced = enhance_for_ocr(image)
+    yield enhanced, ""
+    yield enhanced, "--psm 6"  # one uniform block: suits narrow thermal rolls
+    yield binarize(enhanced), "--psm 6"
+    for angle in (90, 270, 180):
+        yield enhanced.rotate(angle, expand=True, fillcolor=255), ""
 
 
 def _extract_pdf_text(file_content: bytes) -> str:
