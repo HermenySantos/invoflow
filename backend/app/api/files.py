@@ -5,8 +5,8 @@ In production, files are served directly from R2 via presigned URLs.
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
-
-from app.services.storage import get_storage_service
+from app.core.rate_limit import RATE_LIMITS, limiter
+from app.services.storage import MAX_FILE_SIZE, get_storage_service
 
 router = APIRouter()
 
@@ -56,9 +56,10 @@ async def get_file(
 
 
 @router.put("/mock-upload/{storage_key:path}")
+@limiter.limit(RATE_LIMITS["upload"])
 async def mock_upload(
-    storage_key: str,
     request: Request,
+    storage_key: str,
 ):
     """
     Handle mock file uploads.
@@ -72,6 +73,18 @@ async def mock_upload(
             detail="Mock upload only available in mock mode",
         )
     
+    # Check Content-Length header first (quick reject for large files)
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024 * 1024)}MB",
+                )
+        except ValueError:
+            pass  # Invalid content-length header, will check actual content size
+    
     # Read file content from request body
     content = await request.body()
     
@@ -81,7 +94,20 @@ async def mock_upload(
             detail="No file content provided",
         )
     
-    # Save to mock storage
-    storage.save_file_mock(storage_key, content)
+    # Validate actual file size
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+    
+    # Save to mock storage (storage key is validated inside this function)
+    try:
+        storage.save_file_mock(storage_key, content)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
     
     return Response(status_code=status.HTTP_200_OK)

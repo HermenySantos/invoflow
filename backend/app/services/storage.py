@@ -14,6 +14,32 @@ settings = get_settings()
 
 MOCK_STORAGE_DIR = Path(__file__).parent.parent.parent / "mock_storage"
 
+# Maximum file size (10MB)
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
+
+def _validate_storage_key(storage_key: str, base_dir: Path) -> Path:
+    """
+    Validate storage key to prevent path traversal attacks.
+    Returns the resolved file path if valid.
+    Raises ValueError if the path would escape the base directory.
+    """
+    # Reject obviously malicious patterns
+    if any(part.startswith("..") for part in Path(storage_key).parts) or storage_key.startswith("/"):
+        raise ValueError("Invalid storage key: path traversal attempt detected")
+    
+    # Resolve the full path and ensure it's within base_dir
+    file_path = (base_dir / storage_key).resolve()
+    base_resolved = base_dir.resolve()
+    
+    # Check that resolved path starts with the base directory
+    try:
+        file_path.relative_to(base_resolved)
+    except ValueError:
+        raise ValueError("Invalid storage key: path traversal attempt detected")
+    
+    return file_path
+
 
 class StorageService:
     """
@@ -87,7 +113,7 @@ class StorageService:
         if not self.mock_mode:
             raise RuntimeError("save_file_mock called in non-mock mode")
 
-        file_path = MOCK_STORAGE_DIR / storage_key
+        file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(content)
         return str(file_path)
@@ -104,26 +130,39 @@ class StorageService:
             return None
 
     def get_file_mock(self, storage_key: str) -> Optional[bytes]:
-        file_path = MOCK_STORAGE_DIR / storage_key
-        if file_path.exists():
-            return file_path.read_bytes()
+        """Get file from local filesystem in mock mode."""
+        if not self.mock_mode:
+            raise RuntimeError("get_file_mock called in non-mock mode")
+
+        try:
+            file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
+            if file_path.exists():
+                return file_path.read_bytes()
+        except ValueError:
+            return None
         return None
 
     def get_file_path_mock(self, storage_key: str) -> Optional[Path]:
         if not self.mock_mode:
             return None
 
-        file_path = MOCK_STORAGE_DIR / storage_key
-        if file_path.exists():
-            return file_path
+        try:
+            file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
+            if file_path.exists():
+                return file_path
+        except ValueError:
+            return None
         return None
 
     def delete_file(self, storage_key: str) -> bool:
         if self.mock_mode:
-            file_path = MOCK_STORAGE_DIR / storage_key
-            if file_path.exists():
-                file_path.unlink()
-                return True
+            try:
+                file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
+                if file_path.exists():
+                    file_path.unlink()
+                    return True
+            except ValueError:
+                return False
             return False
 
         try:
@@ -134,7 +173,11 @@ class StorageService:
 
     def file_exists(self, storage_key: str) -> bool:
         if self.mock_mode:
-            return (MOCK_STORAGE_DIR / storage_key).exists()
+            try:
+                file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
+                return file_path.exists()
+            except ValueError:
+                return False
 
         try:
             self.s3_client.head_object(Bucket=self.bucket_name, Key=storage_key)
