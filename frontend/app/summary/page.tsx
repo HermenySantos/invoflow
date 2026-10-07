@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { AppLayout } from '@/components/layout/AppLayout';
+import { parseAmountInput } from "@/lib/amount";
 import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
 import {
@@ -120,6 +121,7 @@ export default function SummaryPage() {
   const [isEditingVatSales, setIsEditingVatSales] = useState(false);
   const [vatSalesInput, setVatSalesInput] = useState("");
   const [isSavingVatSales, setIsSavingVatSales] = useState(false);
+  const [vatSalesError, setVatSalesError] = useState<string | null>(null);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -203,9 +205,14 @@ export default function SummaryPage() {
   // ── VAT on Sales Save ──
 
   const handleSaveVatSales = async () => {
+    const amount = parseAmountInput(vatSalesInput);
+    if (amount === null) {
+      setVatSalesError("Introduza um valor como 1.234,56");
+      return;
+    }
     try {
       setIsSavingVatSales(true);
-      const amount = vatSalesInput.replace(/[^\d.,\-]/g, "").replace(",", ".");
+      setVatSalesError(null);
       await api.upsertVatSales({
         period_type: periodType,
         year,
@@ -216,6 +223,7 @@ export default function SummaryPage() {
       await fetchSummary();
     } catch (err) {
       console.error("Failed to save VAT on sales:", err);
+      setVatSalesError("Não foi possível guardar. Tente novamente.");
     } finally {
       setIsSavingVatSales(false);
     }
@@ -223,8 +231,19 @@ export default function SummaryPage() {
 
   // ── Derived values ──
 
-  const ivaPayable = summary ? parseFloat(summary.estimated_iva_payable) : 0;
+  const hasVatOnSales = summary?.estimated_iva_payable != null;
+  const ivaPayable = hasVatOnSales ? parseFloat(summary!.estimated_iva_payable!) : 0;
   const isRefund = ivaPayable < 0;
+
+  const startEditingVatSales = () => {
+    setVatSalesInput(
+      summary?.vat_on_sales != null
+        ? parseFloat(summary.vat_on_sales).toFixed(2).replace(".", ",")
+        : "",
+    );
+    setVatSalesError(null);
+    setIsEditingVatSales(true);
+  };
 
   const deadline = useMemo(
     () => getDeadlineDate(periodType, year, periodValue),
@@ -285,23 +304,44 @@ export default function SummaryPage() {
                 <span className="text-sm font-medium text-gray-500">
                   IVA estimado — {getPeriodLabel(periodType, year, periodValue)}
                 </span>
-                {isRefund ? (
-                  <TrendingDown className="w-5 h-5 text-success-500" />
-                ) : (
-                  <TrendingUp className="w-5 h-5 text-warning-500" />
-                )}
+                {hasVatOnSales &&
+                  (isRefund ? (
+                    <TrendingDown className="w-5 h-5 text-success-500" />
+                  ) : (
+                    <TrendingUp className="w-5 h-5 text-warning-500" />
+                  ))}
               </div>
-              <div
-                className={clsx(
-                  "text-4xl font-bold tracking-tight",
-                  isRefund ? "text-emerald-600" : "text-gray-900",
-                )}
-              >
-                {formatCurrency(summary.estimated_iva_payable)}
-              </div>
-              <p className="text-sm text-gray-500 mt-1">
-                {isRefund ? "Reembolso estimado" : "Estimativa a pagar"}
-              </p>
+              {hasVatOnSales ? (
+                <>
+                  <div
+                    className={clsx(
+                      "text-4xl font-bold tracking-tight",
+                      isRefund ? "text-emerald-600" : "text-gray-900",
+                    )}
+                  >
+                    {formatCurrency(summary.estimated_iva_payable)}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {isRefund ? "Reembolso estimado" : "Estimativa a pagar"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-semibold text-gray-900 mt-2">
+                    Falta o IVA das vendas
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Sem ele não conseguimos estimar o IVA a pagar.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={startEditingVatSales}
+                    className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    Introduzir IVA das vendas
+                  </button>
+                </>
+              )}
 
               {/* Confidence badge */}
               <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100">
@@ -364,19 +404,12 @@ export default function SummaryPage() {
                   ) : (
                     <>
                       <span className="text-sm font-semibold text-gray-900">
-                        {formatCurrency(summary.vat_on_sales)}
+                        {summary.vat_on_sales != null
+                          ? formatCurrency(summary.vat_on_sales)
+                          : "Por introduzir"}
                       </span>
                       <button
-                        onClick={() => {
-                          setVatSalesInput(
-                            summary.vat_on_sales
-                              ? parseFloat(summary.vat_on_sales)
-                                  .toFixed(2)
-                                  .replace(".", ",")
-                              : "",
-                          );
-                          setIsEditingVatSales(true);
-                        }}
+                        onClick={startEditingVatSales}
                         className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
                         aria-label="Editar IVA vendas"
                       >
@@ -396,9 +429,14 @@ export default function SummaryPage() {
                     isRefund ? "text-emerald-600" : "text-gray-900",
                   )}
                 >
-                  {formatCurrency(summary.estimated_iva_payable)}
+                  {hasVatOnSales ? formatCurrency(summary.estimated_iva_payable) : "—"}
                 </span>
               </div>
+              {vatSalesError && (
+                <p role="alert" className="py-2 text-sm text-red-600">
+                  {vatSalesError}
+                </p>
+              )}
             </div>
 
             {/* ─── 5. Deadline Reminder ─── */}
