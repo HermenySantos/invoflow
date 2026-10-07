@@ -32,7 +32,7 @@ if not settings.auth_mock_mode:
 
 # JWKS cache
 _jwks_cache: Optional[dict] = None
-_jwks_fetched_at: float = 0.0
+_jwks_fetched_at: Optional[float] = None  # time.monotonic() of the last fetch
 # A token with an unknown key id triggers at most one refetch per this many
 # seconds, so junk tokens can't make every request call Clerk.
 JWKS_REFRESH_INTERVAL = 300
@@ -42,7 +42,11 @@ async def _get_jwks(force_refresh: bool = False) -> dict:
     """Fetch and cache Clerk's JWKS (JSON Web Key Set)."""
     global _jwks_cache, _jwks_fetched_at
 
-    recently_fetched = time.monotonic() - _jwks_fetched_at < JWKS_REFRESH_INTERVAL
+    # monotonic() counts from boot, so "never fetched" can't be modelled as 0.
+    recently_fetched = (
+        _jwks_fetched_at is not None
+        and time.monotonic() - _jwks_fetched_at < JWKS_REFRESH_INTERVAL
+    )
     if _jwks_cache is not None and (not force_refresh or recently_fetched):
         return _jwks_cache
     
