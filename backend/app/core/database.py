@@ -9,9 +9,13 @@ connect_args = {}
 engine_kwargs: dict = {"pool_pre_ping": True}
 
 if settings.database_url.startswith("sqlite"):
+    # SQLite-specific configuration
     connect_args = {"check_same_thread": False}
     # SQLite + QueuePool + pool_size is a common local-dev crash.
     engine_kwargs = {}
+else:
+    engine_kwargs["pool_size"] = 5
+    engine_kwargs["max_overflow"] = 10
 
 engine = create_engine(
     settings.database_url,

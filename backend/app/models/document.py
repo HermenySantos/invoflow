@@ -42,6 +42,13 @@ class Document(Base):
     ocr_confidence = Column(Numeric(5, 2), nullable=True)  # 0-100
     ocr_raw_response = Column(Text, nullable=True)  # JSON string
     
+    # Review workflow
+    review_notes = Column(Text, nullable=True)  # Notes for accountant or reviewer
+    
+    # Categorization
+    expense_category = Column(String(50), nullable=True, index=True)  # Business: food, travel, utilities...
+    irs_sector = Column(String(50), nullable=True, index=True)  # Tax: saude, educacao, geral...
+    
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
