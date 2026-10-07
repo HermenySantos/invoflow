@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "invoflow-documents"
+    # Override for S3-compatible storage other than R2 (e.g. MinIO in a local prod rehearsal).
+    r2_endpoint_url: str = ""
+
+    # Error reporting; empty disables Sentry.
+    sentry_dsn: str = ""
     r2_public_url: str = ""
     storage_mock_mode: bool = True
     # Signs mock storage URLs. Random per process unless set.

@@ -1,0 +1,27 @@
+# HTTPS certificates are obtained and renewed automatically for {$DOMAIN}.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The API is served straight from FastAPI; everything else is the Next.js app.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /health {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

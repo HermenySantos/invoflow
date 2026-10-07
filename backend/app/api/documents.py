@@ -9,12 +9,12 @@ from decimal import Decimal
 import logging
 import random
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.database import get_db
+from app.core.database import get_db, session_factory
 from app.core.security import get_current_user, CurrentUser
 from app.core.rate_limit import limiter, RATE_LIMITS
 from app.models.user import User
@@ -29,12 +29,10 @@ from app.schemas.document import (
     FieldConfidence,
 )
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
-from app.services.ocr import get_ocr_service
-from app.services.categorization import categorize_document, effective_deductible_pct
+from app.services.processing import read_receipt
+from app.services.categorization import effective_deductible_pct
 from app.services.audit import (
     log_document_create,
-    log_ocr_extraction,
-    log_auto_categorize,
     log_document_update,
     log_document_delete,
 )
@@ -212,6 +210,7 @@ async def get_upload_url(
 async def create_document(
     request: Request,
     doc_create: DocumentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -235,8 +234,7 @@ async def create_document(
 
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
-    ocr = get_ocr_service()
-    
+
     try:
         document = Document(
             user_id=user.id,
@@ -248,83 +246,9 @@ async def create_document(
         )
         db.add(document)
         db.flush()
-
-        file_content = storage.get_file(doc_create.storage_key)
-
-        if file_content or ocr.backend == "mock":
-            try:
-                ocr_result = await ocr.process_document(
-                    file_content or b"mock_content",
-                    doc_create.mime_type,
-                )
-                
-                # Update document with OCR results
-                document.vendor_name = ocr_result.vendor_name
-                document.vendor_nif = ocr_result.vendor_nif
-                document.invoice_number = ocr_result.invoice_number
-                document.document_date = ocr_result.document_date
-                document.net_amount = ocr_result.net_amount
-                document.vat_amount = ocr_result.vat_amount
-                document.gross_amount = ocr_result.gross_amount
-                document.vat_rate = ocr_result.vat_rate
-                document.ocr_confidence = ocr_result.confidence
-                document.ocr_raw_response = ocr_result.raw_response
-                
-                # Auto-categorize based on vendor
-                expense_cat, irs_sect = categorize_document(
-                    ocr_result.vendor_name, ocr_result.vendor_nif
-                )
-                document.expense_category = expense_cat
-                document.irs_sector = irs_sect
-                
-                if ocr_result.error:
-                    document.status = "failed"
-                elif ocr_result.needs_review:
-                    document.status = "needs_review"
-                else:
-                    document.status = "ready"
-                    
-            except Exception as e:
-                logger.error(f"OCR processing failed: {e}")
-                document.status = "failed"
-                document.ocr_raw_response = str(e)
-        else:
-            document.status = "failed"
-            document.ocr_raw_response = "File content not available for OCR processing"
-        
-        # ── Audit logging ──
         log_document_create(db, document_id=document.id, user_id=user.id)
-
-        if document.status in ("ready", "needs_review"):
-            # Log OCR extraction
-            log_ocr_extraction(
-                db,
-                document_id=document.id,
-                user_id=user.id,
-                extracted_fields={
-                    "vendor_name": document.vendor_name,
-                    "vendor_nif": document.vendor_nif,
-                    "invoice_number": document.invoice_number,
-                    "document_date": document.document_date,
-                    "net_amount": document.net_amount,
-                    "vat_amount": document.vat_amount,
-                    "gross_amount": document.gross_amount,
-                    "vat_rate": document.vat_rate,
-                },
-            )
-            # Log auto-categorization
-            if document.expense_category:
-                log_auto_categorize(
-                    db,
-                    document_id=document.id,
-                    user_id=user.id,
-                    expense_category=document.expense_category,
-                    irs_sector=document.irs_sector or "geral",
-                )
-
         db.commit()
         db.refresh(document)
-        
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating document: {e}")
@@ -332,7 +256,10 @@ async def create_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create document",
         )
-    
+
+    # OCR runs after the response; the receipt shows "A processar" until then.
+    background_tasks.add_task(read_receipt, session_factory(request), document.id)
+
     file_url = storage.get_download_url(document.storage_key)
     return build_document_response(document, file_url, db)
 

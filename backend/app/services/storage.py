@@ -80,22 +80,20 @@ class StorageService:
         self.bucket_name = None
 
         if not self.mock_mode:
-            try:
-                import boto3
-                from botocore.config import Config
+            # No silent fallback: in production, local files would be lost on redeploy.
+            import boto3
+            from botocore.config import Config
 
-                self.s3_client = boto3.client(
-                    "s3",
-                    endpoint_url=f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
-                    aws_access_key_id=settings.r2_access_key_id,
-                    aws_secret_access_key=settings.r2_secret_access_key,
-                    config=Config(signature_version="s3v4"),
-                    region_name="auto",
-                )
-                self.bucket_name = settings.r2_bucket_name
-            except ImportError:
-                logger.warning("boto3 not installed. Falling back to mock storage.")
-                self.mock_mode = True
+            self.s3_client = boto3.client(
+                "s3",
+                endpoint_url=settings.r2_endpoint_url
+                or f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
+                aws_access_key_id=settings.r2_access_key_id,
+                aws_secret_access_key=settings.r2_secret_access_key,
+                config=Config(signature_version="s3v4"),
+                region_name="auto",
+            )
+            self.bucket_name = settings.r2_bucket_name
 
         if self.mock_mode:
             MOCK_STORAGE_DIR.mkdir(parents=True, exist_ok=True)

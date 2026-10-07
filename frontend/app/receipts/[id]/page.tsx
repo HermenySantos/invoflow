@@ -138,6 +138,28 @@ export default function ReceiptDetailPage() {
     fetchDocument();
   }, [params.id]);
 
+  // The receipt is still being read in the background: poll until it settles.
+  const isProcessing = document?.status === 'processing';
+  useEffect(() => {
+    if (!isProcessing) return;
+    const timer = setInterval(async () => {
+      try {
+        const data = await api.getDocument(params.id as string);
+        if (data.status === 'processing') return;
+        setDocument(data);
+        setEditData({
+          vendor_name: data.vendor_name || '',
+          document_date: data.document_date || '',
+          gross_amount: data.gross_amount || '',
+          vat_amount: data.vat_amount || '',
+        });
+      } catch {
+        // Next tick retries.
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [isProcessing, params.id]);
+
   // Fetch audit trail on mount
   useEffect(() => {
     const fetchAudit = async () => {
@@ -460,6 +482,13 @@ export default function ReceiptDetailPage() {
             ) : (
               /* ========== CONFIRMATION MODE (default) ========== */
               <>
+                {document.status === 'processing' && (
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl" role="status">
+                    <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" aria-hidden="true" />
+                    <p className="text-sm text-blue-800">A ler o recibo… os dados aparecem em segundos.</p>
+                  </div>
+                )}
+
                 {/* Needs review alert */}
                 {document.status === 'needs_review' && !isComplete() && (
                   <div className="card p-3 bg-amber-50 border-amber-200 flex items-start gap-2">

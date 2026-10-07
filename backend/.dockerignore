@@ -1,0 +1,13 @@
+# Never ship local secrets, data or environments in the image (it is pushed to a registry).
+.env
+.env.*
+!.env.example
+.venv
+venv
+__pycache__
+**/*.pyc
+.pytest_cache
+*.db
+*.sqlite
+mock_storage
+tests
