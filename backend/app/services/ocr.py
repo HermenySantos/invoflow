@@ -28,6 +28,7 @@ from PIL import Image
 
 from app.core.config import get_settings
 from app.services.ocr_extract import ExtractedFields, extract_fields, extracted_to_json
+from app.services.pt_qr import InvoiceQR, read_invoice_qr_from_file
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +110,16 @@ class OCRService:
         backend = resolve_ocr_backend()
         self.backend = backend
         if backend == "mock":
-            return self._generate_mock_result(mime_type)
-        if backend == "azure":
-            return await self._process_with_azure(file_content, mime_type)
-        return await self._process_with_tesseract(file_content, mime_type)
+            result = self._generate_mock_result(mime_type)
+        elif backend == "azure":
+            result = await self._process_with_azure(file_content, mime_type)
+        else:
+            result = await self._process_with_tesseract(file_content, mime_type)
+
+        qr = await asyncio.to_thread(
+            read_invoice_qr_from_file, file_content, mime_type, _pdf_first_page_image
+        )
+        return _apply_invoice_qr(result, qr) if qr else result
 
     def _generate_mock_result(self, mime_type: str) -> OCRResult:
         vendors = [
@@ -421,6 +428,32 @@ def _pdf_first_page_image(file_content: bytes) -> Optional[Image.Image]:
         return images[0] if images else None
     except Exception:
         return None
+
+
+def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
+    """The AT QR's NIF, date, number and amounts replace what OCR read; OCR keeps the vendor name."""
+    result.vendor_nif = qr.vendor_nif
+    result.document_date = qr.document_date or result.document_date
+    result.invoice_number = qr.invoice_number or result.invoice_number
+    result.net_amount = qr.net_amount if qr.net_amount is not None else result.net_amount
+    result.vat_amount = qr.vat_amount if qr.vat_amount is not None else result.vat_amount
+    result.gross_amount = qr.gross_amount
+    result.vat_rate = qr.vat_rate
+    result.error = None
+    result.confidence = max(result.confidence, 95.0)
+    # Everything but the vendor name came from the issuer, so only a missing
+    # name still needs a person.
+    result.needs_review = not result.vendor_name
+
+    try:
+        raw = json.loads(result.raw_response) if result.raw_response else {}
+        if not isinstance(raw, dict):
+            raw = {"ocr": raw}
+    except ValueError:
+        raw = {"ocr": result.raw_response}
+    raw["qr"] = {"payload": qr.payload, "atcud": qr.atcud, "vat_breakdown": qr.breakdown}
+    result.raw_response = json.dumps(raw, ensure_ascii=False)
+    return result
 
 
 def _fields_to_result(fields: ExtractedFields, text: str, backend: str) -> OCRResult:
