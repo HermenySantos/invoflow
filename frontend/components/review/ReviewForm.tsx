@@ -83,14 +83,15 @@ export function ReviewForm({
     
     if (!isNaN(net) && !isNaN(vat) && net > 0) {
       const rate = (vat / net) * 100;
-      // Round to common Portuguese VAT rates
-      const commonRates = [6, 13, 23];
+      // Portuguese VAT rates: mainland, Madeira, Azores
+      const commonRates = [23, 13, 6, 22, 12, 5, 16, 9, 4];
       const closestRate = commonRates.reduce((prev, curr) => 
         Math.abs(curr - rate) < Math.abs(prev - rate) ? curr : prev
       );
       
       // Only auto-fill if close to a common rate
-      if (Math.abs(rate - closestRate) < 2) {
+      // Regional rates are 1 point apart, so snap only when very close.
+      if (Math.abs(rate - closestRate) <= 0.5) {
         handleChange('vat_rate', closestRate.toString());
       }
     }

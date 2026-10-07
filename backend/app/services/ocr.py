@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import shutil
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from PIL import Image
 
 from app.core.config import get_settings
 from app.services.ocr_extract import ExtractedFields, extract_fields, extracted_to_json
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -241,7 +244,7 @@ class OCRService:
             img.save(output, format="JPEG", quality=95)
             return output.getvalue(), "image/jpeg"
         except Exception as exc:
-            print(f"Image conversion failed: {exc}")
+            logger.warning(f"Image conversion failed: {exc}")
             return file_content, mime_type
 
     async def _process_with_azure(self, file_content: bytes, mime_type: str) -> OCRResult:

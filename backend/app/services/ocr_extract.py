@@ -16,7 +16,16 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 
-PT_VAT_RATES = (Decimal("23.00"), Decimal("13.00"), Decimal("6.00"), Decimal("0.00"))
+# Standard / intermediate / reduced rates, then exempt.
+PT_VAT_RATES = tuple(
+    Decimal(rate)
+    for rate in (
+        "23.00", "13.00", "6.00",   # Mainland
+        "22.00", "12.00", "5.00",   # Madeira
+        "16.00", "9.00", "4.00",    # Azores
+        "0.00",
+    )
+)
 
 NIF_LABELED = re.compile(
     r"(?:NIF|NIPC|N\.?\s*I\.?\s*F\.?|Contribuinte|N\.?\s*Contribuinte)"

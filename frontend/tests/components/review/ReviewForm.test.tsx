@@ -24,6 +24,8 @@ const mockDocument: Document = {
   review_notes: null,
   expense_category: 'food',
   irs_sector: 'geral',
+  deductible_pct: 0,
+  deductible_pct_override: null,
   period_tag: '2024-01',
   quarter_tag: '2024-Q1',
   file_url: null,

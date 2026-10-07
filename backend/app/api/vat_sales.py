@@ -14,7 +14,6 @@ from app.core.security import get_current_user, CurrentUser
 from app.models.vat_sales import VatSalesEntry
 from app.schemas.vat_sales import (
     VatSalesCreate,
-    VatSalesUpdate,
     VatSalesResponse,
     VatSalesListResponse,
 )

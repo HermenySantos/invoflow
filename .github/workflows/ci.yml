@@ -67,6 +67,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --legacy-peer-deps
       - run: npx tsc --noEmit
+      - run: npm run lint
       - run: npm test
       - run: npm run build
 

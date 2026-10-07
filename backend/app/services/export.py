@@ -24,6 +24,7 @@ from app.services.categorization import (
     get_irs_sector_label,
     get_deductible_pct,
     deductible_vat_split,
+    effective_deductible_pct,
 )
 
 
@@ -41,6 +42,22 @@ def _csv_text(value: Optional[str]) -> str:
 def _csv_amount(value: Optional[Decimal]) -> str:
     """12.50 -> "12,50" so pt-PT spreadsheets read it as a number."""
     return "" if value is None else f"{value:.2f}".replace(".", ",")
+
+
+STATUS_LABELS = {
+    "ready": "Pronto",
+    "needs_review": "Por rever",
+    "accountant_review": "Contabilista",
+    "processing": "A processar",
+    "pending": "Pendente",
+    "failed": "Falhou",
+}
+
+
+def _pdf_eur(value: Decimal) -> str:
+    """1234.5 -> "1.234,50 €" (pt-PT)."""
+    whole, cents = f"{value:,.2f}".split(".")
+    return f"{whole.replace(',', '.')},{cents} €"
 
 
 class ExportService:
@@ -135,7 +152,7 @@ class ExportService:
         # Data rows
         for doc in documents:
             cat = doc.expense_category or "other"
-            pct = get_deductible_pct(cat)
+            pct = effective_deductible_pct(doc)
             vat = doc.vat_amount or Decimal(0)
             deductible = (vat * pct / 100).quantize(Decimal("0.01"))
             writer.writerow([
@@ -179,10 +196,10 @@ class ExportService:
         
         # Generation info
         elements.append(Paragraph(
-            f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            f"Gerado em: {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}",
             styles['Normal']
         ))
-        elements.append(Paragraph(f"Total documents: {len(documents)}", styles['Normal']))
+        elements.append(Paragraph(f"Total de documentos: {len(documents)}", styles['Normal']))
         elements.append(Spacer(1, 20))
         
         # Calculate totals with per-category deductible
@@ -192,14 +209,14 @@ class ExportService:
         deductible_vat, deductible_vat_pending = deductible_vat_split(documents)
         
         # Summary table
-        elements.append(Paragraph("Summary", styles['Heading2']))
+        elements.append(Paragraph("Resumo", styles['Heading2']))
         summary_data = [
-            ["Description", "Amount (EUR)"],
-            ["Total Gross", f"€{total_gross:,.2f}"],
-            ["Total Net", f"€{total_net:,.2f}"],
-            ["Total VAT", f"€{total_vat:,.2f}"],
-            ["Deductible VAT (reviewed receipts)", f"€{deductible_vat:,.2f}"],
-            ["Deductible VAT (receipts still to review)", f"€{deductible_vat_pending:,.2f}"],
+            ["Descrição", "Valor (EUR)"],
+            ["Total bruto", _pdf_eur(total_gross)],
+            ["Total líquido", _pdf_eur(total_net)],
+            ["IVA total", _pdf_eur(total_vat)],
+            ["IVA dedutível (recibos revistos)", _pdf_eur(deductible_vat)],
+            ["IVA dedutível (recibos por rever)", _pdf_eur(deductible_vat_pending)],
         ]
         
         summary_table = Table(summary_data, colWidths=[10*cm, 5*cm])
@@ -218,21 +235,21 @@ class ExportService:
         elements.append(Spacer(1, 30))
         
         # Document list (truncated if too many)
-        elements.append(Paragraph("Documents", styles['Heading2']))
+        elements.append(Paragraph("Documentos", styles['Heading2']))
         
-        doc_data = [["Date", "Vendor", "Category", "Gross", "VAT", "Status"]]
+        doc_data = [["Data", "Fornecedor", "Categoria", "Bruto", "IVA", "Estado"]]
         for d in documents[:50]:  # Limit to 50 for PDF readability
             doc_data.append([
-                d.document_date.strftime("%Y-%m-%d") if d.document_date else "-",
-                (d.vendor_name or "Unknown")[:25],
+                d.document_date.strftime("%d/%m/%Y") if d.document_date else "-",
+                (d.vendor_name or "Desconhecido")[:25],
                 get_expense_category_label(d.expense_category or "other")[:15],
-                f"€{d.gross_amount:,.2f}" if d.gross_amount else "-",
-                f"€{d.vat_amount:,.2f}" if d.vat_amount else "-",
-                d.status,
+                _pdf_eur(d.gross_amount) if d.gross_amount else "-",
+                _pdf_eur(d.vat_amount) if d.vat_amount else "-",
+                STATUS_LABELS.get(d.status, d.status),
             ])
         
         if len(documents) > 50:
-            doc_data.append(["...", f"+ {len(documents) - 50} more", "", "", "", ""])
+            doc_data.append(["...", f"+ {len(documents) - 50} mais", "", "", "", ""])
         
         doc_table = Table(doc_data, colWidths=[2*cm, 5*cm, 2.5*cm, 2*cm, 2*cm, 2*cm])
         doc_table.setStyle(TableStyle([

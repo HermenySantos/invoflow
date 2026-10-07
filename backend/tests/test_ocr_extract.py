@@ -136,3 +136,20 @@ def test_nif_must_pass_check_digit():
 def test_vendor_nif_preferred_over_customer_nif():
     text = "Cliente NIF 123456789 / Fornecedor NIF 503504564"
     assert extract_portuguese_nif(text) == "503504564"
+
+
+@pytest.mark.parametrize("vat, net, expected", [
+    ("2,20", "10,00", "22.00"),  # Madeira standard
+    ("1,20", "10,00", "12.00"),  # Madeira intermediate
+    ("0,50", "10,00", "5.00"),   # Madeira reduced
+    ("1,60", "10,00", "16.00"),  # Azores standard
+    ("0,90", "10,00", "9.00"),   # Azores intermediate
+    ("0,40", "10,00", "4.00"),   # Azores reduced
+    ("2,30", "10,00", "23.00"),  # Mainland still wins
+])
+def test_regional_vat_rates_are_recognised(vat, net, expected):
+    gross = parse_pt_amount(vat) + parse_pt_amount(net)
+    fields = extract_fields(
+        f"Loja Funchal\nNIF 503504564\n15/09/2026\nIVA {vat}\nBase {net}\nTOTAL {str(gross).replace('.', ',')}"
+    )
+    assert fields.vat_rate == Decimal(expected)

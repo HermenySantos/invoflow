@@ -68,7 +68,9 @@ class ApiClient {
       };
       try {
         const data = await response.json();
-        error.message = data.detail || data.message || error.message;
+        // HTTPException sends {detail}; the global handlers also nest {error: {message}}.
+        const detail = typeof data.detail === 'string' ? data.detail : undefined;
+        error.message = detail || data.error?.message || data.message || error.message;
       } catch {
         // Ignore JSON parse errors
       }
@@ -325,6 +327,10 @@ export interface Document {
   review_notes: string | null;
   expense_category: string | null;
   irs_sector: string | null;
+  /** % of the VAT the estimate deducts for this receipt */
+  deductible_pct: number;
+  /** set by the user; null means the category rule applies */
+  deductible_pct_override: number | null;
   period_tag: string;
   quarter_tag: string;
   file_url: string | null;

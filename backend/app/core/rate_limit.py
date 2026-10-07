@@ -29,7 +29,6 @@ def get_user_identifier(request: Request) -> str:
 # Create limiter instance
 limiter = Limiter(
     key_func=get_user_identifier,
-    default_limits=["100/minute"],  # Default: 100 requests per minute
     storage_uri="memory://",  # In-memory storage (use Redis for production)
     strategy="fixed-window",
 )

@@ -21,12 +21,6 @@ class VatSalesCreate(BaseModel):
         return self
 
 
-class VatSalesUpdate(BaseModel):
-    """Body for updating a VAT-on-sales entry."""
-    vat_amount: Optional[Decimal] = Field(None, ge=0)
-    notes: Optional[str] = Field(None, max_length=500)
-
-
 class VatSalesResponse(BaseModel):
     """Single VAT-on-sales entry returned to the client."""
     id: str

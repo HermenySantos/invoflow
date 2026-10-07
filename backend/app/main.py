@@ -41,6 +41,8 @@ def create_error_response(
 ) -> JSONResponse:
     """Create a standardized error response."""
     content = {
+        # Same key FastAPI's HTTPException uses, so clients read one field.
+        "detail": message,
         "success": False,
         "error": {
             "code": code,
@@ -159,10 +161,11 @@ async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
 
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
+    # The message can describe internals (parsing, storage keys); log it, don't return it.
     logger.warning(f"Value error: {exc}")
     return create_error_response(
         code="INVALID_VALUE",
-        message=str(exc),
+        message="Invalid value in request",
         status_code=status.HTTP_400_BAD_REQUEST,
     )
 
