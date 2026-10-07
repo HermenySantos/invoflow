@@ -3,6 +3,10 @@ Storage service for Cloudflare R2.
 Includes mock mode for development without R2 credentials.
 """
 
+import hashlib
+import hmac
+import secrets
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +20,26 @@ MOCK_STORAGE_DIR = Path(__file__).parent.parent.parent / "mock_storage"
 
 # Maximum file size (10MB)
 MAX_FILE_SIZE = 10 * 1024 * 1024
+
+
+_MOCK_URL_SECRET = (get_settings().mock_url_secret or secrets.token_hex(32)).encode()
+
+
+def _mock_signature(storage_key: str, expires: int) -> str:
+    message = f"{storage_key}:{expires}".encode()
+    return hmac.new(_MOCK_URL_SECRET, message, hashlib.sha256).hexdigest()
+
+
+def sign_mock_url(prefix: str, storage_key: str, expires_in: int) -> str:
+    """Mock-mode stand-in for an R2 presigned URL: valid for one key, until it expires."""
+    expires = int(time.time()) + expires_in
+    return f"{prefix}{storage_key}?expires={expires}&signature={_mock_signature(storage_key, expires)}"
+
+
+def verify_mock_signature(storage_key: str, expires: int, signature: str) -> bool:
+    if expires < time.time():
+        return False
+    return hmac.compare_digest(_mock_signature(storage_key, expires), signature)
 
 
 def _validate_storage_key(storage_key: str, base_dir: Path) -> Path:
@@ -82,7 +106,7 @@ class StorageService:
     def get_upload_url(self, storage_key: str, content_type: str, expires_in: int = 900) -> str:
         if self.mock_mode:
             # Relative URL so the Next.js rewrite (or same-origin API) can proxy it.
-            return f"/api/files/mock-upload/{storage_key}"
+            return sign_mock_url("/api/files/mock-upload/", storage_key, expires_in)
 
         url = self.s3_client.generate_presigned_url(
             "put_object",
@@ -97,7 +121,7 @@ class StorageService:
 
     def get_download_url(self, storage_key: str, expires_in: int = 3600) -> str:
         if self.mock_mode:
-            return f"/api/files/{storage_key}"
+            return sign_mock_url("/api/files/", storage_key, expires_in)
 
         url = self.s3_client.generate_presigned_url(
             "get_object",

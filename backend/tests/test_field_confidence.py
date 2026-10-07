@@ -7,6 +7,8 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from app.services.storage import get_storage_service
+
 
 def unique_user_headers():
     """Generate unique user headers to avoid rate limiting."""
@@ -27,7 +29,7 @@ class TestFieldConfidenceParsing:
         
         # First upload a mock file
         client.put(
-            f"/api/files/mock-upload/{user_id}/test-confidence.jpg",
+            get_storage_service().get_upload_url(f"{user_id}/test-confidence.jpg", "image/jpeg"),
             content=b"fake image content",
             headers={"Content-Type": "image/jpeg"},
         )
@@ -61,7 +63,7 @@ class TestFieldConfidenceParsing:
         
         # Create a document first
         client.put(
-            f"/api/files/mock-upload/{user_id}/test-fc-get.jpg",
+            get_storage_service().get_upload_url(f"{user_id}/test-fc-get.jpg", "image/jpeg"),
             content=b"fake image content",
             headers={"Content-Type": "image/jpeg"},
         )
@@ -95,7 +97,7 @@ class TestReviewNotes:
         
         # Create a document
         client.put(
-            f"/api/files/mock-upload/{user_id}/test-notes.jpg",
+            get_storage_service().get_upload_url(f"{user_id}/test-notes.jpg", "image/jpeg"),
             content=b"fake image content",
             headers={"Content-Type": "image/jpeg"},
         )
@@ -131,7 +133,7 @@ class TestReviewNotes:
         
         # Create a document
         client.put(
-            f"/api/files/mock-upload/{user_id}/test-notes-persist.jpg",
+            get_storage_service().get_upload_url(f"{user_id}/test-notes-persist.jpg", "image/jpeg"),
             content=b"fake image content",
             headers={"Content-Type": "image/jpeg"},
         )
@@ -170,7 +172,7 @@ class TestAccountantReviewStatus:
         
         # Create a document
         client.put(
-            f"/api/files/mock-upload/{user_id}/test-accountant.jpg",
+            get_storage_service().get_upload_url(f"{user_id}/test-accountant.jpg", "image/jpeg"),
             content=b"fake image content",
             headers={"Content-Type": "image/jpeg"},
         )
@@ -207,7 +209,7 @@ class TestAccountantReviewStatus:
         
         # Create a document
         client.put(
-            f"/api/files/mock-upload/{user_id}/test-invalid-status.jpg",
+            get_storage_service().get_upload_url(f"{user_id}/test-invalid-status.jpg", "image/jpeg"),
             content=b"fake image content",
             headers={"Content-Type": "image/jpeg"},
         )

@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     app_name: str = "FaturaFlow API"
     app_debug: bool = True
+    # "development" allows the mock auth/storage modes; anything else refuses them.
+    app_env: str = "development"
     api_prefix: str = "/api"
 
     # SQLite by default so `uvicorn` works without Docker/Postgres.
@@ -28,6 +30,8 @@ class Settings(BaseSettings):
     r2_bucket_name: str = "invoflow-documents"
     r2_public_url: str = ""
     storage_mock_mode: bool = True
+    # Signs mock storage URLs. Random per process unless set.
+    mock_url_secret: str = ""
 
     # OCR: auto (Tesseract if present, else mock). Azure is optional paid.
     ocr_backend: str = "auto"
