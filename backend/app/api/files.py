@@ -3,10 +3,10 @@ File serving endpoints for mock mode.
 In production, files are served directly from R2 via presigned URLs.
 """
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, Response
 from app.core.rate_limit import RATE_LIMITS, limiter
-from app.services.storage import MAX_FILE_SIZE, get_storage_service
+from app.services.storage import MAX_FILE_SIZE, get_storage_service, verify_mock_signature
 
 router = APIRouter()
 
@@ -14,6 +14,8 @@ router = APIRouter()
 @router.get("/{storage_key:path}")
 async def get_file(
     storage_key: str,
+    expires: int = Query(0),
+    signature: str = Query(""),
 ):
     """
     Serve files from mock storage.
@@ -25,6 +27,12 @@ async def get_file(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File serving only available in mock mode",
+        )
+
+    if not verify_mock_signature(storage_key, expires, signature):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or expired file link",
         )
     
     file_path = storage.get_file_path_mock(storage_key)
@@ -60,6 +68,8 @@ async def get_file(
 async def mock_upload(
     request: Request,
     storage_key: str,
+    expires: int = Query(0),
+    signature: str = Query(""),
 ):
     """
     Handle mock file uploads.
@@ -71,6 +81,12 @@ async def mock_upload(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Mock upload only available in mock mode",
+        )
+
+    if not verify_mock_signature(storage_key, expires, signature):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or expired file link",
         )
     
     # Check Content-Length header first (quick reject for large files)

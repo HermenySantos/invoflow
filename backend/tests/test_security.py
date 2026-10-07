@@ -4,7 +4,7 @@ Tests for security features including path traversal protection.
 
 import pytest
 from fastapi.testclient import TestClient
-from app.services.storage import _validate_storage_key, MOCK_STORAGE_DIR
+from app.services.storage import get_storage_service, _validate_storage_key, MOCK_STORAGE_DIR
 
 
 class TestPathTraversalProtection:
@@ -92,7 +92,7 @@ class TestFileSizeValidation:
     def test_mock_upload_file_too_large_header(self, client: TestClient):
         """Test that Content-Length header is checked for large files."""
         response = client.put(
-            "/api/files/mock-upload/test/key",
+            get_storage_service().get_upload_url("test/key", "image/jpeg"),
             content=b"small content",
             headers={"Content-Length": str(100 * 1024 * 1024)},  # 100MB
         )
@@ -101,7 +101,7 @@ class TestFileSizeValidation:
     def test_mock_upload_file_within_limit(self, client: TestClient):
         """Test that files within size limit are accepted."""
         response = client.put(
-            "/api/files/mock-upload/test/valid_key.jpg",
+            get_storage_service().get_upload_url("test/valid_key.jpg", "image/jpeg"),
             content=b"x" * 1024,  # 1KB
         )
         assert response.status_code == 200

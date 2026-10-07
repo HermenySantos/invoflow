@@ -86,6 +86,14 @@ def validate_configuration() -> List[str]:
             "Disable for production!"
         )
     
+    # Mock auth trusts a client header and mock storage serves local files:
+    # never allowed outside development.
+    if settings.app_env != "development":
+        if settings.auth_mock_mode:
+            errors.append(f"AUTH_MOCK_MODE must be false when APP_ENV is {settings.app_env}.")
+        if settings.storage_mock_mode:
+            errors.append(f"STORAGE_MOCK_MODE must be false when APP_ENV is {settings.app_env}.")
+
     # Raise error if critical configuration is missing
     if errors:
         error_message = "\n".join([f"  - {e}" for e in errors])

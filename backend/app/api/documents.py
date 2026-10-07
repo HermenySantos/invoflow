@@ -213,7 +213,14 @@ async def create_document(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
-    
+
+    # Upload keys are issued under the user's own folder; anything else is another user's file.
+    if not doc_create.storage_key.startswith(f"{current_user.user_id}/"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Storage key does not belong to the current user",
+        )
+
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
     ocr = get_ocr_service()
