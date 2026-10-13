@@ -1,22 +1,12 @@
-import Link from 'next/link';
+import type { Metadata } from 'next';
+import { PrivacyPage } from './PrivacyPage';
 
-export default function PrivacyPage() {
-  return (
-    <div className="landing">
-      <main className="landing-section" style={{ paddingTop: '3rem' }}>
-        <p>
-          <Link href="/">← Invoflow</Link>
-        </p>
-        <h1>Privacidade</h1>
-        <p>
-          Texto legal ainda não está publicado. Em modo de demonstração, os ficheiros ficam no
-          armazenamento local desta instalação e a autenticação é simulada.
-        </p>
-        <p>
-          Privacy copy is not published yet. In demo mode, files stay on this installation’s local
-          storage and sign-in is mocked.
-        </p>
-      </main>
-    </div>
-  );
+export const metadata: Metadata = {
+  title: 'Privacidade — Invoflow',
+  description:
+    'Aviso de privacidade do Invoflow: dados de faturas e NIFs, finalidades, conservação, subcontratantes na UE e direitos.',
+};
+
+export default function Page() {
+  return <PrivacyPage />;
 }

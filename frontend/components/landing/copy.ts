@@ -1,8 +1,11 @@
 export type LandingLang = 'pt' | 'en';
 
+export const LANG_KEY = 'invoflow_lang';
+
 export const landingCopy = {
   pt: {
     wordmark: "Invoflow",
+    navPilot: "Piloto",
     navEntrar: "Entrar",
     navComecar: "Começar",
     h1: "Pare de descobrir o IVA um dia antes do prazo",
@@ -25,7 +28,20 @@ export const landingCopy = {
     ivaDue: "Prazo 20 de abril",
     ivaDetail: "14 documentos. Este recibo entra com 9,09 €.",
     ivaCaveat:
-      "É uma estimativa para rever. Nada é enviado à Autoridade Tributária.",
+      "É uma estimativa. Este valor ignora o IVA das vendas. Nada é enviado à Autoridade Tributária.",
+    demoLimit:
+      "Modo de demonstração: o início de sessão e o armazenamento de ficheiros são simulados.",
+    pilotKicker: "Piloto",
+    pilotTitle: "Pack IVA",
+    pilotPrice: "~190 €",
+    pilotPeriod: "por trimestre",
+    pilotFounding: "Oferta de piloto fundador: o primeiro trimestre com desconto.",
+    pilotIncludes: "O que está incluído",
+    pilotItem1: "Carregar faturas e recibos",
+    pilotItem2: "Estimativa de IVA",
+    pilotItem3: "Pacote de exportação pronto para o contabilista",
+    pilotDisclaimer:
+      "O Invoflow não substitui o contabilista. O pacote organiza os recibos para quem faz a contabilidade; não é aconselhamento fiscal.",
     packKicker: "Pacote",
     packTitle: "O que segue para o contabilista",
     packFile1: "originais/2026-03-12-cafe-lisboa.pdf",
@@ -45,6 +61,7 @@ export const landingCopy = {
   },
   en: {
     wordmark: "Invoflow",
+    navPilot: "Pilot",
     navEntrar: "Sign in",
     navComecar: "Start",
     h1: "Stop learning your VAT the day before it’s due",
@@ -67,7 +84,19 @@ export const landingCopy = {
     ivaDue: "Due 20 April",
     ivaDetail: "14 documents. This receipt contributes €9.09.",
     ivaCaveat:
-      "An estimate to review. Nothing is filed with the tax authority.",
+      "An estimate. This figure ignores VAT on sales. Nothing is filed with the tax authority.",
+    demoLimit: "Demo mode: sign-in and file storage are mock.",
+    pilotKicker: "Pilot",
+    pilotTitle: "Pack IVA",
+    pilotPrice: "~€190",
+    pilotPeriod: "per quarter",
+    pilotFounding: "Founding-pilot offer: the first quarter is discounted.",
+    pilotIncludes: "What’s included",
+    pilotItem1: "Upload invoices and receipts",
+    pilotItem2: "IVA estimate",
+    pilotItem3: "Accountant-ready export pack",
+    pilotDisclaimer:
+      "Invoflow does not replace an accountant. The pack organises receipts for whoever does the accounts; it is not tax advice.",
     packKicker: "Pack",
     packTitle: "What goes to the accountant",
     packFile1: "originais/2026-03-12-cafe-lisboa.pdf",

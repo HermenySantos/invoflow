@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { isDemoMode } from '@/lib/demoUser';
 import { FlowDiagram } from './FlowDiagram';
-import { LandingLang, landingCopy } from './copy';
-
-const LANG_KEY = 'invoflow_lang';
+import { LANG_KEY, LandingLang, landingCopy } from './copy';
 
 export function LandingPage() {
   const { isAuthenticated } = useAuth();
@@ -36,6 +35,7 @@ export function LandingPage() {
             {t.wordmark}
           </a>
           <nav className="landing-nav-links" aria-label="Secções">
+            <a href="#piloto">{t.navPilot}</a>
             <Link href="/sign-in">{t.navEntrar}</Link>
             <Link
               href={startHref}
@@ -106,7 +106,25 @@ export function LandingPage() {
               </article>
             </div>
             <p className="landing-example-note">{t.ivaCaveat}</p>
+            {isDemoMode ? <p className="landing-example-note">{t.demoLimit}</p> : null}
           </div>
+        </section>
+
+        <section id="piloto" className="landing-pilot" aria-labelledby="pilot-title">
+          <p className="landing-kicker">{t.pilotKicker}</p>
+          <h2 id="pilot-title">{t.pilotTitle}</h2>
+          <div className="landing-pilot-card">
+            <p className="landing-pilot-price">{t.pilotPrice}</p>
+            <p className="landing-pilot-period">{t.pilotPeriod}</p>
+            <p className="landing-pilot-founding">{t.pilotFounding}</p>
+            <p className="landing-pack-title">{t.pilotIncludes}</p>
+            <ul>
+              <li>{t.pilotItem1}</li>
+              <li>{t.pilotItem2}</li>
+              <li>{t.pilotItem3}</li>
+            </ul>
+          </div>
+          <p className="landing-pilot-note">{t.pilotDisclaimer}</p>
         </section>
 
         <section className="landing-cta-band">

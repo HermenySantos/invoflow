@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { AppLayout } from '@/components/layout/AppLayout';
 import { parseAmountInput } from "@/lib/amount";
 import { api, Summary, CategoryBreakdown } from "@/lib/api";
+import { isDemoMode } from "@/lib/demoUser";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
 import {
   Download,
@@ -342,6 +343,17 @@ export default function SummaryPage() {
                   </button>
                 </>
               )}
+
+              <p className="text-sm text-gray-600 mt-3">
+                {hasVatOnSales
+                  ? "Estimativa para rever. Usa o IVA das vendas que introduziu à mão e não é uma declaração."
+                  : "Estimativa. Este valor ignora o IVA das vendas."}
+              </p>
+              {isDemoMode ? (
+                <p className="text-sm text-gray-600 mt-1">
+                  Modo de demonstração: o início de sessão e o armazenamento de ficheiros são simulados.
+                </p>
+              ) : null}
 
               {/* Confidence badge */}
               <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100">
