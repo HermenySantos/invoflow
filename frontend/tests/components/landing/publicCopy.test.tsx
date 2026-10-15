@@ -66,10 +66,10 @@ describe('privacy notice', () => {
     render(<PrivacyPage />);
 
     expect(screen.getByRole('heading', { name: 'Privacidade' })).toBeInTheDocument();
-    expect(screen.getAllByText('TODO').length).toBeGreaterThanOrEqual(5);
-    expect(screen.getByText('Nome legal de Gildo')).toBeInTheDocument();
-    expect(screen.getByText('Morada completa do responsável')).toBeInTheDocument();
-    expect(screen.getByText('NIF do responsável pelo tratamento')).toBeInTheDocument();
+    expect(screen.getAllByText('TODO').length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText('Nome: Hermenegildo Jerónimo dos Santos').closest('li')).not.toHaveTextContent('TODO');
+    expect(screen.getByText('Morada completa do responsável').closest('li')).toHaveTextContent('TODO');
+    expect(screen.getByText('NIF do responsável pelo tratamento').closest('li')).toHaveTextContent('TODO');
     expect(screen.getAllByText('hermeny7@hotmail.com').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('(a confirmar)').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/incluindo NIFs/).length).toBeGreaterThanOrEqual(1);
@@ -85,7 +85,9 @@ describe('privacy notice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'EN' }));
 
     expect(screen.getByRole('heading', { name: 'Privacy' })).toBeInTheDocument();
-    expect(screen.getByText('Gildo’s legal name')).toBeInTheDocument();
+    expect(screen.getByText('Name: Hermenegildo Jerónimo dos Santos').closest('li')).not.toHaveTextContent('TODO');
+    expect(screen.getByText('Controller’s full postal address').closest('li')).toHaveTextContent('TODO');
+    expect(screen.getByText('Controller’s tax identification number (NIF)').closest('li')).toHaveTextContent('TODO');
     expect(screen.getAllByText('(to confirm)').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/including NIFs/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('heading', { name: 'Your rights' })).toBeInTheDocument();

@@ -47,8 +47,8 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
     langLabel: 'EN',
     controllerHeading: 'Responsável pelo tratamento',
     controllerBody:
-      'O responsável pelo tratamento é Gildo, a pessoa que opera o Invoflow. Os dados legais abaixo ainda não estão preenchidos:',
-    controllerName: 'Nome legal de Gildo',
+      'O responsável pelo tratamento opera o Invoflow. A morada e o NIF ainda não estão preenchidos:',
+    controllerName: 'Nome: Hermenegildo Jerónimo dos Santos',
     controllerAddress: 'Morada completa do responsável',
     controllerNif: 'NIF do responsável pelo tratamento',
     contactLabel: 'Contacto',
@@ -119,8 +119,8 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
     langLabel: 'PT',
     controllerHeading: 'Data controller',
     controllerBody:
-      'The controller is Gildo, the person who operates Invoflow. The legal details below are not filled in yet:',
-    controllerName: 'Gildo’s legal name',
+      'The controller operates Invoflow. Address and NIF are not filled in yet:',
+    controllerName: 'Name: Hermenegildo Jerónimo dos Santos',
     controllerAddress: 'Controller’s full postal address',
     controllerNif: 'Controller’s tax identification number (NIF)',
     contactLabel: 'Contact',

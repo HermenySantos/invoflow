@@ -58,7 +58,7 @@ export function PrivacyPage() {
         <h2>{t.controllerHeading}</h2>
         <p>{t.controllerBody}</p>
         <ul>
-          <Todo>{t.controllerName}</Todo>
+          <li>{t.controllerName}</li>
           <Todo>{t.controllerAddress}</Todo>
           <Todo>{t.controllerNif}</Todo>
         </ul>
