@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from app.core.database import Base
-from app.models import User, Document, AuditLog, VatSalesEntry
+from app.models import User, Document, AuditLog, VatSalesEntry, EfaturaSubject, EfaturaLink
 
 config = context.config
 

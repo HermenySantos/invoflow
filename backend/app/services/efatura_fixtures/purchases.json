@@ -1,0 +1,170 @@
+[
+  {
+    "document_type": "FT",
+    "invoice_number": "FT EDPC/2026/1",
+    "issue_date": "2026-02-10",
+    "issuer_nif": "503504564",
+    "issuer_name": "EDP Comercial",
+    "acquirer_nif": "555555555",
+    "acquirer_country": "PT",
+    "fiscal_status": "normal",
+    "atcud": "JF8K2M9X-1",
+    "lines": [
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "NOR",
+        "percentage": "23.00",
+        "taxable": "100.00",
+        "tax": "23.00",
+        "exemption_code": null
+      },
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "RED",
+        "percentage": "6.00",
+        "taxable": "50.00",
+        "tax": "3.00",
+        "exemption_code": null
+      }
+    ],
+    "tax_payable": "26.00",
+    "net_total": "150.00",
+    "gross_total": "176.00"
+  },
+  {
+    "document_type": "FT",
+    "invoice_number": "FT A/123",
+    "issue_date": "2026-01-20",
+    "issuer_nif": "500100144",
+    "issuer_name": "Continente",
+    "acquirer_nif": "555555555",
+    "acquirer_country": "PT",
+    "fiscal_status": "normal",
+    "lines": [
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "NOR",
+        "percentage": "23.00",
+        "taxable": "10.00",
+        "tax": "2.30",
+        "exemption_code": null
+      }
+    ],
+    "tax_payable": "2.30",
+    "net_total": "10.00",
+    "gross_total": "12.30"
+  },
+  {
+    "document_type": "FT",
+    "invoice_number": "FT FUTURE/1",
+    "issue_date": "2099-06-01",
+    "issuer_nif": "412345678",
+    "issuer_name": "Fornecedor Quatro",
+    "acquirer_nif": "555555555",
+    "acquirer_country": "PT",
+    "fiscal_status": "normal",
+    "lines": [
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "NOR",
+        "percentage": "23.00",
+        "taxable": "20.00",
+        "tax": "4.60",
+        "exemption_code": null
+      }
+    ],
+    "tax_payable": "4.60",
+    "net_total": "20.00",
+    "gross_total": "24.60"
+  },
+  {
+    "document_type": "FT",
+    "invoice_number": "FT SALE/1",
+    "issue_date": "2026-02-12",
+    "issuer_nif": "555555555",
+    "issuer_name": "A nossa empresa",
+    "acquirer_nif": "999999990",
+    "acquirer_country": "PT",
+    "fiscal_status": "normal",
+    "lines": [
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "NOR",
+        "percentage": "23.00",
+        "taxable": "80.00",
+        "tax": "18.40",
+        "exemption_code": null
+      }
+    ],
+    "tax_payable": "18.40",
+    "net_total": "80.00",
+    "gross_total": "98.40"
+  },
+  {
+    "document_type": "NC",
+    "invoice_number": "NC 2026/1",
+    "issue_date": "2026-02-13",
+    "issuer_nif": "501507930",
+    "issuer_name": "Vodafone Portugal",
+    "acquirer_nif": "555555555",
+    "acquirer_country": "PT",
+    "fiscal_status": "normal",
+    "lines": [
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "NOR",
+        "percentage": "23.00",
+        "taxable": "10.00",
+        "tax": "2.30",
+        "exemption_code": null
+      }
+    ],
+    "tax_payable": "2.30",
+    "net_total": "10.00",
+    "gross_total": "12.30"
+  },
+  {
+    "document_type": "FT",
+    "invoice_number": "FT CANCEL/1",
+    "issue_date": "2026-02-14",
+    "issuer_nif": "502793208",
+    "issuer_name": "MEO",
+    "acquirer_nif": "555555555",
+    "acquirer_country": "PT",
+    "fiscal_status": "cancelled",
+    "lines": [
+      {
+        "tax_type": "IVA",
+        "region": "PT",
+        "tax_code": "NOR",
+        "percentage": "23.00",
+        "taxable": "40.00",
+        "tax": "9.20",
+        "exemption_code": null
+      }
+    ],
+    "tax_payable": "9.20",
+    "net_total": "40.00",
+    "gross_total": "49.20"
+  },
+  {
+    "document_type": "FT",
+    "invoice_number": "FT EMPTY/1",
+    "issue_date": "2026-02-15",
+    "issuer_nif": "500252100",
+    "issuer_name": null,
+    "acquirer_nif": "555555555",
+    "acquirer_country": "PT",
+    "fiscal_status": "normal",
+    "lines": [],
+    "tax_payable": null,
+    "net_total": null,
+    "gross_total": null
+  }
+]
