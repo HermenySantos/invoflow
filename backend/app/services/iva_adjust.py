@@ -90,69 +90,98 @@ def _when(document):
     return (issued, created, str(getattr(document, "id", "")))
 
 
-def _same_invoice(purchase, credit) -> bool:
-    if not purchase.vendor_nif or purchase.vendor_nif != credit.vendor_nif:
-        return False
-    left = (purchase.invoice_number or "").strip().lower()
-    right = (credit.invoice_number or "").strip().lower()
-    return bool(left) and left == right
+# The QR does not carry the credited invoice number, so a purchase with the
+# same supplier NIF is the link a person can actually see.
+ORPHAN_CREDIT_WARNING = "nota de crédito sem fatura associada"
+OTHER_PERIOD_CREDIT_WARNING = "nota de crédito referente a uma fatura de outro período"
 
 
-def _same_supplier(purchase, credit) -> bool:
-    return bool(purchase.vendor_nif and credit.vendor_nif and purchase.vendor_nif == credit.vendor_nif)
+def _nif(document) -> str:
+    return (getattr(document, "vendor_nif", None) or "").strip()
+
+
+def _prefer(candidate, incumbent) -> bool:
+    """Reviewed copy wins. Otherwise the newer file wins."""
+    candidate_confirmed = _bucket(candidate) == "confirmed"
+    incumbent_confirmed = _bucket(incumbent) == "confirmed"
+    if candidate_confirmed != incumbent_confirmed:
+        return candidate_confirmed
+    candidate_created = getattr(candidate, "created_at", None) or datetime.min
+    incumbent_created = getattr(incumbent, "created_at", None) or datetime.min
+    if candidate_created != incumbent_created:
+        return candidate_created > incumbent_created
+    return str(getattr(candidate, "id", "")) > str(getattr(incumbent, "id", ""))
+
+
+def _signed(document, mark: FiscalMark) -> Counted:
+    sign = -1 if mark.document_type == "NC" else 1
+    return Counted(
+        document=document,
+        net=(_money(document.net_amount) * sign).quantize(_CENT),
+        vat=(_money(document.vat_amount) * sign).quantize(_CENT),
+        gross=(_money(document.gross_amount) * sign).quantize(_CENT),
+    )
 
 
 def contributions(documents) -> list[Counted]:
+    """One row per counted document.
+
+    Purchases stay positive. A credit note is its own row for the full
+    amount, negative, including the part above the invoice it refers to.
+    A cancelled invoice is left out. The same file counts once: the reviewed
+    copy beats an unreviewed copy, and the newer copy beats an older one.
+    """
     marked = [(document, fiscal_mark(document)) for document in documents if _bucket(document)]
-    purchases: list = []
-    credits: list[tuple] = []
-    seen_hash: set[str] = set()
-    for document, mark in sorted(marked, key=lambda item: _when(item[0])):
+    chosen: dict[str, tuple] = {}
+    loose: list[tuple] = []
+    for document, mark in marked:
         if mark.fiscal_status == "A":
             continue
-        if mark.document_type == "NC":
-            credits.append((document, mark))
+        digest = mark.file_sha256
+        if not digest:
+            loose.append((document, mark))
             continue
-        if mark.file_sha256:
-            if mark.file_sha256 in seen_hash:
-                continue
-            seen_hash.add(mark.file_sha256)
-        purchases.append(document)
+        current = chosen.get(digest)
+        if current is None or _prefer(document, current[0]):
+            chosen[digest] = (document, mark)
+    rows = [_signed(document, mark) for document, mark in list(chosen.values()) + loose]
+    rows.sort(key=lambda row: _when(row.document))
+    return rows
 
-    counted = {
-        id(document): Counted(
-            document=document,
-            net=_money(document.net_amount),
-            vat=_money(document.vat_amount),
-            gross=_money(document.gross_amount),
-        )
-        for document in purchases
-    }
 
-    for credit, _mark in credits:
-        bucket = _bucket(credit)
-        linked = [
-            document
-            for document in purchases
-            if _bucket(document) == bucket and _same_invoice(document, credit)
-        ]
-        targets = linked or [
-            document
-            for document in purchases
-            if _bucket(document) == bucket and _same_supplier(document, credit)
-        ]
-        remaining_net = _money(credit.net_amount)
-        remaining_vat = _money(credit.vat_amount)
-        remaining_gross = _money(credit.gross_amount)
-        for document in targets:
-            row = counted[id(document)]
-            take_net = min(row.net, remaining_net)
-            take_vat = min(row.vat, remaining_vat)
-            take_gross = min(row.gross, remaining_gross)
-            row.net = (row.net - take_net).quantize(_CENT)
-            row.vat = (row.vat - take_vat).quantize(_CENT)
-            row.gross = (row.gross - take_gross).quantize(_CENT)
-            remaining_net -= take_net
-            remaining_vat -= take_vat
-            remaining_gross -= take_gross
-    return list(counted.values())
+def _is_purchase(document) -> bool:
+    if not _bucket(document):
+        return False
+    mark = fiscal_mark(document)
+    return mark.fiscal_status != "A" and mark.document_type != "NC" and bool(_nif(document))
+
+
+def credit_note_warnings(period_documents, library) -> list[str]:
+    """Warn when a counted credit note has no purchase from that supplier in the period."""
+    period_ids = {getattr(document, "id", None) for document in period_documents}
+    period_ids.discard(None)
+    period_tokens = {id(document) for document in period_documents}
+    combined = {}
+    for document in list(library) + list(period_documents):
+        combined[getattr(document, "id", None) or id(document)] = document
+
+    in_period: set[str] = set()
+    anywhere: set[str] = set()
+    for document in combined.values():
+        if not _is_purchase(document):
+            continue
+        nif = _nif(document)
+        anywhere.add(nif)
+        ident = getattr(document, "id", None)
+        if id(document) in period_tokens or (ident is not None and ident in period_ids):
+            in_period.add(nif)
+
+    warnings: list[str] = []
+    for row in contributions(period_documents):
+        if fiscal_mark(row.document).document_type != "NC":
+            continue
+        nif = _nif(row.document)
+        if nif and nif in in_period:
+            continue
+        warnings.append(OTHER_PERIOD_CREDIT_WARNING if nif and nif in anywhere else ORPHAN_CREDIT_WARNING)
+    return warnings

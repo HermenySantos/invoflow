@@ -5,6 +5,14 @@ Tests for document API endpoints.
 import pytest
 from fastapi.testclient import TestClient
 
+from app.services.storage import get_storage_service
+
+_JPEG = b"\xff\xd8\xff\xd9"
+
+
+def _store(client: TestClient, storage_key: str) -> None:
+    client.put(get_storage_service().get_upload_url(storage_key, "image/jpeg"), content=_JPEG)
+
 
 class TestDocumentAPI:
     """Tests for document CRUD operations."""
@@ -48,6 +56,7 @@ class TestDocumentAPI:
             },
         )
         storage_key = upload_response.json()["storage_key"]
+        _store(client, storage_key)
 
         # Create document
         response = client.post(
@@ -79,6 +88,7 @@ class TestDocumentAPI:
             json={"filename": "test.jpg", "content_type": "image/jpeg"},
         )
         storage_key = upload_response.json()["storage_key"]
+        _store(client, storage_key)
 
         create_response = client.post(
             "/api/documents",
@@ -116,6 +126,7 @@ class TestDocumentAPI:
             json={"filename": "test.jpg", "content_type": "image/jpeg"},
         )
         storage_key = upload_response.json()["storage_key"]
+        _store(client, storage_key)
 
         create_response = client.post(
             "/api/documents",
@@ -152,6 +163,7 @@ class TestDocumentAPI:
             json={"filename": "test.jpg", "content_type": "image/jpeg"},
         )
         storage_key = upload_response.json()["storage_key"]
+        _store(client, storage_key)
 
         create_response = client.post(
             "/api/documents",
@@ -200,6 +212,7 @@ class TestDocumentAPI:
                 json={"filename": f"test{i}.jpg", "content_type": "image/jpeg"},
             )
             storage_key = upload_response.json()["storage_key"]
+            _store(client, storage_key)
             client.post(
                 "/api/documents",
                 headers=mock_user_headers,

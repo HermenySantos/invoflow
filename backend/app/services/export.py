@@ -26,11 +26,15 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
-from app.services.iva_adjust import contributions, fiscal_mark
+from app.services.iva_adjust import contributions, credit_note_warnings
 
 
 # A cell starting with one of these runs as a formula in Excel/LibreOffice.
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_RECEIPT_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf",
+    ".bmp", ".tif", ".tiff", ".heic", ".heif",
+}
 
 
 def _csv_text(value: Optional[str]) -> str:
@@ -85,30 +89,23 @@ class ExportService:
         # Create ZIP in memory
         zip_buffer = io.BytesIO()
         
+        counted = contributions(documents)
+        warnings = credit_note_warnings(documents, self._library(db, user_id, documents))
+        counted_ids = {id(row.document) for row in counted}
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            counted_ids = {id(row.document) for row in contributions(documents)}
             for doc in documents:
-                mark = fiscal_mark(doc)
-                credit_note = mark.document_type == "NC" and mark.fiscal_status != "A"
-                if id(doc) not in counted_ids and not credit_note:
+                if id(doc) not in counted_ids:
                     continue
                 file_content = self._get_file_content(doc.storage_key)
                 if file_content:
-                    # Organize by month
-                    month_folder = doc.period_tag
-                    safe_vendor = self._safe_filename(doc.vendor_name or "unknown")
-                    doc_id_short = str(doc.id)[:8] if doc.id else "unknown"
-                    filename = f"{doc.document_date or 'nodate'}_{safe_vendor}_{doc_id_short}"
-                    ext = Path(doc.original_filename).suffix or ".jpg"
-                    
-                    zf.writestr(f"receipts/{month_folder}/{filename}{ext}", file_content)
+                    zf.writestr(self._receipt_entry(doc), file_content)
             
             # Generate and add summary CSV
-            csv_content = self._generate_csv(documents)
+            csv_content = self._generate_csv(documents, warnings)
             zf.writestr("summary.csv", csv_content)
             
             # Generate and add summary PDF
-            pdf_content = self._generate_pdf(documents, period)
+            pdf_content = self._generate_pdf(documents, period, warnings)
             zf.writestr("summary.pdf", pdf_content)
         
         zip_buffer.seek(0)
@@ -128,8 +125,32 @@ class ExportService:
     def _safe_filename(self, name: str) -> str:
         """Convert string to safe filename."""
         return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:50]
-    
-    def _generate_csv(self, documents: list[Document]) -> str:
+
+    def _library(self, db: Optional[Session], user_id: str, documents: list[Document]) -> list[Document]:
+        if db is None:
+            return documents
+        return (
+            db.query(Document)
+            .filter(Document.deleted_at.is_(None))
+            .filter(Document.user_id == user_id)
+            .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
+            .all()
+        )
+
+    def _receipt_entry(self, doc: Document) -> str:
+        """Zip path with no directory parts from the uploaded name, and a known extension."""
+        raw_month = doc.period_tag if doc.document_date or doc.created_at else "undated"
+        month = "".join(ch for ch in str(raw_month) if ch.isdigit() or ch == "-") or "undated"
+        vendor = self._safe_filename(doc.vendor_name or "unknown")
+        short = str(doc.id)[:8] if doc.id else "unknown"
+        when = doc.document_date.isoformat() if doc.document_date else "nodate"
+        uploaded = str(doc.original_filename or "").replace("\\", "/")
+        suffix = Path(uploaded).suffix.lower()
+        ext = suffix if suffix in _RECEIPT_EXTENSIONS else ".bin"
+        leaf = f"{when}_{vendor}_{short}{ext}".replace("\\", "").replace("..", "")
+        return f"receipts/{month}/{leaf}"
+
+    def _generate_csv(self, documents: list[Document], warnings: Optional[list[str]] = None) -> str:
         """CSV summary for Portuguese Excel: ';' separated, comma decimals, UTF-8 BOM."""
         output = io.StringIO()
         output.write("\ufeff")
@@ -154,7 +175,8 @@ class ExportService:
             "Filename",
         ])
         
-        for row in contributions(documents):
+        counted = contributions(documents)
+        for row in counted:
             doc = row.document
             cat = doc.expense_category or "other"
             pct = effective_deductible_pct(doc)
@@ -177,10 +199,25 @@ class ExportService:
                 doc.status,
                 _csv_text(doc.original_filename),
             ])
+
+        if counted:
+            writer.writerow([
+                "Total",
+                "",
+                "",
+                "",
+                "",
+                _csv_amount(sum((row.net for row in counted), Decimal(0))),
+                _csv_amount(sum((row.vat for row in counted), Decimal(0))),
+                _csv_amount(sum((row.gross for row in counted), Decimal(0))),
+            ])
+
+        for warning in warnings or []:
+            writer.writerow(["Avisos", warning])
         
         return output.getvalue()
     
-    def _generate_pdf(self, documents: list[Document], period: str) -> bytes:
+    def _generate_pdf(self, documents: list[Document], period: str, warnings: Optional[list[str]] = None) -> bytes:
         """Generate PDF summary."""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
@@ -204,10 +241,9 @@ class ExportService:
             f"Gerado em: {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}",
             styles['Normal']
         ))
-        elements.append(Paragraph(f"Total de documentos: {len(documents)}", styles['Normal']))
-        elements.append(Spacer(1, 20))
-        
         counted = contributions(documents)
+        elements.append(Paragraph(f"Total de documentos: {len(counted)}", styles['Normal']))
+        elements.append(Spacer(1, 20))
         total_gross = sum((row.gross for row in counted), Decimal(0))
         total_vat = sum((row.vat for row in counted), Decimal(0))
         total_net = sum((row.net for row in counted), Decimal(0))
@@ -270,6 +306,12 @@ class ExportService:
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
         ]))
         elements.append(doc_table)
+        if warnings:
+            elements.append(Spacer(1, 16))
+            elements.append(Paragraph("Avisos", styles["Heading2"]))
+            for warning in warnings:
+                safe = warning.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                elements.append(Paragraph(safe, styles["Normal"]))
         
         # Build PDF
         doc.build(elements)

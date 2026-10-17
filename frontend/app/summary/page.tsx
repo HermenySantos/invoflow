@@ -88,7 +88,7 @@ function getDaysRemaining(deadline: Date): number {
 }
 
 function formatDeadlineDatePT(date: Date): string {
-  return `20 de ${MONTH_NAMES_PT[date.getMonth()]} de ${date.getFullYear()}`;
+  return `${date.getDate()} de ${MONTH_NAMES_PT[date.getMonth()]} de ${date.getFullYear()}`;
 }
 
 // ── Main Page Component ──
@@ -476,7 +476,7 @@ export default function SummaryPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900">
-                  Prazo de pagamento: {formatDeadlineDatePT(deadline)}
+                  Prazo de entrega: {formatDeadlineDatePT(deadline)}
                 </p>
                 <p
                   className={clsx(

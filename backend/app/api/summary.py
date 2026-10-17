@@ -28,7 +28,7 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
-from app.services.iva_adjust import contributions
+from app.services.iva_adjust import contributions, credit_note_warnings
 from app.services.validation import validate_period_documents
 
 router = APIRouter()
@@ -177,6 +177,14 @@ async def get_summary(
         })
     # Flatten to string list for the response (keep simple for V1)
     warnings = [w["message"] for w in warning_objects]
+    library = (
+        db.query(Document)
+        .filter(Document.deleted_at.is_(None))
+        .filter(Document.user_id == user.id)
+        .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
+        .all()
+    )
+    warnings.extend(credit_note_warnings(valid_docs, library))
     
     # ── Category breakdowns ──
     expense_totals: dict[str, dict] = defaultdict(lambda: {"count": 0, "total": Decimal(0), "vat": Decimal(0), "deductible": Decimal(0)})

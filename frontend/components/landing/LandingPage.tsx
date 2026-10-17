@@ -22,6 +22,10 @@ export function LandingPage() {
     }
   }, []);
 
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
   const toggleLang = () => {
     const next = lang === 'pt' ? 'en' : 'pt';
     setLang(next);

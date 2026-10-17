@@ -347,8 +347,8 @@ CONFIRMED_STATUSES = ("ready", "accountant_review")
 def deductible_vat_split(documents) -> tuple[Decimal, Decimal]:
     """Deductible VAT as (confirmed, pending review) for the given documents.
 
-    Credit notes, cancelled invoices and duplicate files are applied first,
-    so a stored positive vat_amount is not added twice or added for a credit.
+    Credit notes contribute their full VAT as a negative row. Cancelled
+    invoices are omitted. A repeated file counts once.
     """
     from app.services.iva_adjust import contributions
 

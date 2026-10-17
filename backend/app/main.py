@@ -283,7 +283,9 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return ocr_runtime_status()
+    payload = ocr_runtime_status()
+    code = status.HTTP_503_SERVICE_UNAVAILABLE if payload["status"] == "degraded" else status.HTTP_200_OK
+    return JSONResponse(status_code=code, content=payload)
 
 
 @app.get("/health/detailed")

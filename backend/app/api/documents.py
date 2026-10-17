@@ -228,8 +228,23 @@ async def create_document(
             detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
 
+    # A key that walks out of the user's folder is rejected before the prefix
+    # check, because "user/../other" still starts with "user/".
+    storage_key = doc_create.storage_key
+    if (
+        not storage_key
+        or "\x00" in storage_key
+        or "\\" in storage_key
+        or storage_key.startswith("/")
+        or any(part == ".." for part in storage_key.split("/"))
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid storage key",
+        )
+
     # Upload keys are issued under the user's own folder; anything else is another user's file.
-    if not doc_create.storage_key.startswith(f"{current_user.user_id}/"):
+    if not storage_key.startswith(f"{current_user.user_id}/"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Storage key does not belong to the current user",
@@ -237,8 +252,13 @@ async def create_document(
 
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
-    stored = storage.get_file(doc_create.storage_key)
-    if stored is not None and not allowed_upload(stored):
+    stored = storage.get_file(storage_key)
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Uploaded file was not found",
+        )
+    if not allowed_upload(stored):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Only image and PDF files are accepted",

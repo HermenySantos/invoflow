@@ -109,7 +109,14 @@ def test_q1_credit_note_and_cancelled_invoice_do_not_inflate_iva(client: TestCli
 
     listed = client.get("/api/documents", headers=headers).json()["documents"]
     assert all(Decimal(document["vat_amount"]) >= 0 for document in listed)
-    data_rows = [line for line in csv_text.splitlines() if line and not line.startswith("Avisos") and not line.startswith("\ufeffAvisos")]
+    data_rows = [
+        line
+        for line in csv_text.splitlines()
+        if line
+        and not line.startswith("Avisos")
+        and not line.startswith("\ufeffAvisos")
+        and not line.startswith("Total")
+    ]
     assert data_rows[0].startswith("ID;") or "ID" in data_rows[0]
     assert len(data_rows) - 1 == 3
     assert "-23,00" in csv_text
