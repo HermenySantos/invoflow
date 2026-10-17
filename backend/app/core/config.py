@@ -1,8 +1,14 @@
 from functools import lru_cache
 from typing import Union
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+_MOCK_AUTH_ON = {"1", "true", "yes", "on"}
+
+
+def mock_auth_requested(mock_auth: str) -> bool:
+    return mock_auth.strip().lower() in _MOCK_AUTH_ON
 
 
 class Settings(BaseSettings):
@@ -10,7 +16,6 @@ class Settings(BaseSettings):
 
     app_name: str = "Invoflow API"
     app_debug: bool = False
-    # "development" allows the mock auth/storage modes; anything else refuses them.
     app_env: str = "development"
     api_prefix: str = "/api"
 
@@ -21,14 +26,14 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = ""
     clerk_jwks_url: str = ""
     clerk_frontend_api: str = ""  # e.g., "clerk.your-app.com"
-    auth_mock_mode: bool = True
+    auth_mock_mode: bool = False
+    mock_auth: str = ""
 
     # Cloudflare R2 (mock mode if not set)
     r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "invoflow-documents"
-    # Override for S3-compatible storage other than R2 (e.g. MinIO in a local prod rehearsal).
     r2_endpoint_url: str = ""
 
     # Error reporting; empty disables Sentry.
@@ -62,6 +67,12 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @model_validator(mode="after")
+    def enable_mock_auth_only_when_asked(self):
+        if mock_auth_requested(self.mock_auth):
+            self.auth_mock_mode = True
+        return self
 
     @field_validator("efatura_pull_enabled", mode="before")
     @classmethod

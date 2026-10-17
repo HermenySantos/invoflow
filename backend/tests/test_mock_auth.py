@@ -1,5 +1,3 @@
-"""Mock auth stays off unless a process asks for it outside production."""
-
 from app.core.config import Settings
 from app.core.startup import ConfigurationError, validate_configuration
 

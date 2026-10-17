@@ -23,7 +23,8 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://invoflow:invoflow_dev@postgres:5432/invoflow
-      AUTH_MOCK_MODE: "true"
+      APP_ENV: development
+      MOCK_AUTH: "1"
       STORAGE_MOCK_MODE: "true"
       OCR_BACKEND: tesseract
       TESSERACT_LANG: por+eng
@@ -35,7 +36,10 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_DEMO_AUTH: "1"
     container_name: invoflow-web
     ports:
       - "3000:3000"
