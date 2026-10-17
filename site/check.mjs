@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG } from './js/config.js';
@@ -9,7 +9,17 @@ import { onRequestPost } from './functions/api/signup.js';
 import { captionFiles } from './tools/captions.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const read = (path) => readFileSync(join(root, path), 'utf8');
+const pub = join(root, 'public');
+const read = (path) => readFileSync(join(pub, path), 'utf8');
+
+assert.equal(existsSync(join(pub, '404.html')), true, 'public/404.html');
+assert.equal(existsSync(join(pub, 'index.html')), true, 'public/index.html');
+assert.equal(existsSync(join(pub, 'README.md')), false, 'README stays out of public');
+assert.equal(existsSync(join(pub, 'check.mjs')), false, 'check stays out of public');
+assert.equal(existsSync(join(pub, 'tools')), false, 'tools stays out of public');
+assert.equal(existsSync(join(root, 'README.md')), true, 'README stays in site');
+assert.equal(existsSync(join(root, 'check.mjs')), true, 'check stays in site');
+assert.equal(existsSync(join(root, 'tools', 'captions.mjs')), true, 'captions stay in tools');
 
 const pages = ['index.html', 'privacy/index.html', 'js/copy.js', 'js/main.js', 'css/site.css'].map(read);
 const visible = pages.join('\n');
@@ -86,9 +96,9 @@ assert.deepEqual(readUtm(params), {
 
 const ruleHits = read('js/qualify.js').match(/regime === 'trimestral'/g) || [];
 assert.equal(ruleHits.length, 1);
-const elsewhere = ['index.html', 'js/main.js', 'js/copy.js', 'functions/api/signup.js']
-  .map(read)
-  .join('\n');
+const elsewhere = [read('index.html'), read('js/main.js'), read('js/copy.js'), readFileSync(join(root, 'functions/api/signup.js'), 'utf8')].join(
+  '\n',
+);
 assert.equal(elsewhere.includes("regime === 'trimestral'"), false);
 
 const visitor = [home, read('js/copy.js'), read('js/main.js')].join('\n');
@@ -345,7 +355,7 @@ assert.equal(/expira ao fim de uma hora/i.test(read('privacy/index.html')), fals
 assert.equal(/expires after one hour/i.test(read('privacy/index.html')), false);
 
 const timeline = JSON.parse(read('assets/demo-timeline.json'));
-const duration = mp4DurationSeconds(join(root, 'assets/demo-short.mp4'));
+const duration = mp4DurationSeconds(join(pub, 'assets/demo-short.mp4'));
 assert.ok(duration > 0, 'mp4 duration');
 const ptCues = parseVtt(read('assets/captions-pt.vtt'));
 const enCues = parseVtt(read('assets/captions-en.vtt'));
@@ -378,13 +388,15 @@ assert.equal(read('assets/captions-pt.vtt').includes('exemplo ilustrativo'), fal
 assert.match(read('assets/captions-pt.vtt'), /Enviar ao contabilista\./);
 assert.equal(read('assets/captions-pt.vtt').includes('Contabilista'), false);
 
-for (const code of ['pt-PT', 'en', 'x-default']) {
-  assert.match(homeSource, new RegExp(`<link rel="alternate" hreflang="${code}" href="https://invoflow.pt/"\\s*/>`));
-  assert.match(
-    read('privacy/index.html'),
-    new RegExp(`<link rel="alternate" hreflang="${code}" href="https://invoflow.pt/privacy/"\\s*/>`),
-  );
-}
+assert.equal(/hreflang/i.test(homeSource), false);
+assert.equal(/hreflang/i.test(read('privacy/index.html')), false);
+const notFound = read('404.html');
+assert.equal(/hreflang/i.test(notFound), false);
+assert.match(notFound, /Página não encontrada/);
+assert.match(notFound, /id="lang-toggle"/);
+assert.match(notFound, /src="\/js\/not-found\.js"/);
+assert.match(read('js/not-found.js'), /Page not found/);
+assert.match(read('js/not-found.js'), /Este endereço não existe\./);
 
 const headerFile = read('_headers');
 assert.match(headerFile, /^ {2}Strict-Transport-Security: max-age=31536000; includeSubDomains$/m);
