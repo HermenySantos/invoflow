@@ -11,8 +11,8 @@ describe('paymentDeadline', () => {
     expect(q2.getFullYear()).toBe(2026);
     expect(q2.getMonth()).toBe(8);
     expect(q2.getDate()).toBe(21);
-    expect(formatPaymentDeadline(q1, 'pt')).toBe('Prazo 20 de maio de 2026');
-    expect(formatPaymentDeadline(q2, 'en')).toBe('Due 21 September 2026');
+    expect(formatPaymentDeadline(q1, 'pt')).toBe('Prazo de entrega: 20 de maio de 2026');
+    expect(formatPaymentDeadline(q2, 'en')).toBe('Filing deadline: 21 September 2026');
   });
 
   it('moves Q4 2026 off Saturday 20 February to Monday 22 February 2027', () => {

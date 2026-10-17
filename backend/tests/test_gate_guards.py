@@ -121,3 +121,30 @@ def test_missing_or_forged_storage_key_creates_nothing(client: TestClient):
 def test_mock_user_id_with_a_path_separator_is_rejected(client: TestClient):
     response = client.get("/api/documents", headers={"X-Mock-User-Id": "attacker/../../etc"})
     assert response.status_code == 400
+
+
+def test_very_long_storage_key_is_rejected(client: TestClient):
+    headers = {"X-Mock-User-Id": f"long-{uuid.uuid4().hex[:8]}"}
+    response = client.post(
+        "/api/documents",
+        json={
+            "storage_key": f"{headers['X-Mock-User-Id']}/{'a' * 5000}.png",
+            "original_filename": "long.png",
+            "mime_type": "image/png",
+            "file_size": 4,
+        },
+        headers=headers,
+    )
+    assert response.status_code in {400, 413, 422}
+    assert client.get("/api/documents", headers=headers).json()["documents"] == []
+
+
+def test_root_and_detailed_health_match_degraded_runtime(client: TestClient, monkeypatch):
+    monkeypatch.setattr(get_settings(), "ocr_backend", "tesseract")
+    monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: False)
+    root = client.get("/")
+    assert root.status_code == 503
+    assert root.json()["status"] == "degraded"
+    detailed = client.get("/health/detailed")
+    assert detailed.status_code == 503
+    assert detailed.json()["status"] == "degraded"

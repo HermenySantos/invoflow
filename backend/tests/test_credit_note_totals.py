@@ -121,6 +121,8 @@ def test_q1_credit_note_and_cancelled_invoice_do_not_inflate_iva(client: TestCli
     assert len(data_rows) - 1 == 3
     assert "-23,00" in csv_text
     assert "Total de documentos: 3" in pdf_text
+    assert "Prazo de entrega" in pdf_text
+    assert "20 de maio de 2026" in pdf_text
 
 
 SMALL = (
@@ -198,21 +200,32 @@ def test_q2_credit_for_a_q1_invoice_counts_in_q2_with_a_warning(client: TestClie
     q2 = _period(client, headers, period_type="quarter", year=2026, quarter=2)
     assert q1["deductible_vat"] == "23.00"
     assert q2["deductible_vat"] == "-10.00"
-    assert any("outro período" in warning for warning in q2["warnings"])
+    assert any(
+        "outro período" in warning and "NC Q2" in warning and "2026-04-15" in warning
+        for warning in q2["warnings"]
+    )
     projection = client.get(
         "/api/summary/projection",
         params={"year": 2026, "quarter": 2, "as_of": "2026-06-30"},
         headers=headers,
     ).json()
     assert projection["confirmed_deductible_to_date"] == "-10.00"
-    assert any("outro período" in warning for warning in projection["warnings"])
+    assert any(
+        "outro período" in warning and "NC Q2" in warning and "2026-04-15" in warning
+        for warning in projection["warnings"]
+    )
     csv_text, pdf_text, _names = _export_texts(
         client, headers, period_type="quarter", year=2026, quarter=2
     )
     assert "-10,00" in csv_text
     assert "outro período" in csv_text
+    assert "NC Q2" in csv_text
+    assert "2026-04-15" in csv_text
     assert "-10,00" in pdf_text
     assert "outro período" in pdf_text
+    assert "NC Q2" in pdf_text
+    assert "2026-04-15" in pdf_text
+    assert "21 de setembro de 2026" in pdf_text
 
 
 def test_credit_note_without_an_invoice_is_counted_and_warned(client: TestClient):
@@ -220,18 +233,28 @@ def test_credit_note_without_an_invoice_is_counted_and_warned(client: TestClient
     _upload(client, headers, "orphan", ORPHAN_CREDIT)
     summary = _period(client, headers, period_type="quarter", year=2026, quarter=1)
     assert summary["deductible_vat"] == "-5.00"
-    assert any(warning == "nota de crédito sem fatura associada" for warning in summary["warnings"])
+    assert any(
+        "nota de crédito sem fatura associada" in warning and "NC ORPHAN" in warning and "2026-02-02" in warning
+        for warning in summary["warnings"]
+    )
     projection = client.get(
         "/api/summary/projection",
         params={"year": 2026, "quarter": 1, "as_of": "2026-03-31"},
         headers=headers,
     ).json()
-    assert any(warning == "nota de crédito sem fatura associada" for warning in projection["warnings"])
+    assert any(
+        "nota de crédito sem fatura associada" in warning and "NC ORPHAN" in warning and "2026-02-02" in warning
+        for warning in projection["warnings"]
+    )
     csv_text, pdf_text, _names = _export_texts(
         client, headers, period_type="quarter", year=2026, quarter=1
     )
     assert "nota de crédito sem fatura associada" in csv_text
+    assert "NC ORPHAN" in csv_text
+    assert "2026-02-02" in csv_text
     assert "nota de crédito sem fatura associada" in pdf_text
+    assert "NC ORPHAN" in pdf_text
+    assert "2026-02-02" in pdf_text
     assert "-5,00" in csv_text
 
 
@@ -286,3 +309,21 @@ def test_zip_entry_names_drop_path_parts(client: TestClient):
     assert receipt_names
     assert all("\\" not in name and ".." not in name for name in receipt_names)
     assert all(name.rsplit(".", 1)[-1] in {"jpg", "jpeg", "png", "gif", "webp", "pdf", "bmp", "tif", "tiff", "heic", "heif", "bin"} for name in receipt_names)
+
+
+def test_same_file_moved_to_another_quarter_is_not_counted_twice(client: TestClient):
+    headers = {"X-Mock-User-Id": f"move-{uuid.uuid4().hex[:8]}", "X-Mock-User-Email": "move@example.com"}
+    content = _png(PURCHASE)
+    _upload(client, headers, "original", PURCHASE, content)
+    copy = _upload(client, headers, "moved", PURCHASE, content)
+    moved = client.patch(
+        f"/api/documents/{copy['id']}",
+        json={"document_date": "2026-04-15"},
+        headers=headers,
+    )
+    assert moved.status_code == 200, moved.text
+    q1 = _period(client, headers, period_type="quarter", year=2026, quarter=1)
+    q2 = _period(client, headers, period_type="quarter", year=2026, quarter=2)
+    assert Decimal(q1["deductible_vat"]) + Decimal(q2["deductible_vat"]) == Decimal("23.00")
+    warnings = q1["warnings"] + q2["warnings"]
+    assert any("duplicad" in warning for warning in warnings)

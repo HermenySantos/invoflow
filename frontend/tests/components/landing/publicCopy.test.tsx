@@ -49,7 +49,7 @@ describe('landing pilot and limits', () => {
     expect(screen.getByText(/Este valor ignora o IVA das vendas/)).toBeInTheDocument();
     expect(screen.getByText('Exemplo ilustrativo · março de 2026')).toBeInTheDocument();
     expect(screen.getByText('Estimativa')).toBeInTheDocument();
-    expect(screen.getByText('Prazo 20 de maio de 2026')).toBeInTheDocument();
+    expect(screen.getByText('Prazo de entrega: 20 de maio de 2026')).toBeInTheDocument();
     expect(screen.getByText(/entra com 0,00 €/)).toBeInTheDocument();
     expect(screen.queryByText(/486/)).not.toBeInTheDocument();
     expect(screen.queryByText(/20 de abril/)).not.toBeInTheDocument();
