@@ -335,6 +335,118 @@
   margin-bottom: 1rem;
 }
 
+.landing-pilot {
+  max-width: var(--ff-hero-max);
+  margin: 0 auto;
+  padding: 0 1.25rem 2.5rem;
+}
+
+.landing-pilot-card {
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  padding: 1.15rem 1.15rem 1.25rem;
+  max-width: 36rem;
+}
+
+.landing-pilot-price {
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.landing-pilot-period,
+.landing-pilot-founding,
+.landing-pilot-note {
+  margin-top: 0.45rem;
+  color: var(--ff-text-muted);
+  line-height: 1.45;
+}
+
+.landing-pilot-founding {
+  margin-top: 0.85rem;
+  color: var(--ff-text);
+  font-weight: 500;
+}
+
+.landing-pilot-card .landing-pack-title {
+  margin-top: 1.1rem;
+}
+
+.landing-pilot ul {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-pilot li {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--ff-border);
+}
+
+.landing-pilot-note {
+  margin-top: 0.9rem;
+  max-width: 40rem;
+  font-size: 0.875rem;
+}
+
+.landing-prose {
+  max-width: var(--ff-max);
+  margin: 0 auto;
+  padding: 2.25rem 1.25rem 3rem;
+}
+
+.landing-prose h1 {
+  max-width: none;
+}
+
+.landing-prose h2 {
+  margin-top: 1.85rem;
+  margin-bottom: 0.45rem;
+}
+
+.landing-prose p,
+.landing-prose li {
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.landing-prose p + p,
+.landing-prose ul + p,
+.landing-prose p + ul {
+  margin-top: 0.7rem;
+}
+
+.landing-prose ul {
+  margin-top: 0.7rem;
+  padding-left: 1.15rem;
+}
+
+.landing-prose li + li {
+  margin-top: 0.35rem;
+}
+
+.landing-todo {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  background: #fff4d6;
+  color: #6b4e00;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  vertical-align: 0.05em;
+}
+
+.landing-confirm {
+  color: var(--ff-text-muted);
+}
+
 .landing-cta-band {
   max-width: var(--ff-hero-max);
   margin: 0 auto 2rem;

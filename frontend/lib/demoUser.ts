@@ -5,6 +5,9 @@
 
 export const DEMO_AUTH_KEY = 'invoflow_mock_auth';
 
+/** Clerk key absent: this build uses mock sign-in and local mock storage. */
+export const isDemoMode = !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 export interface DemoUser {
   id: string;
   email: string;
