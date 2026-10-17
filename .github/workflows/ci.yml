@@ -19,6 +19,8 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
+      - name: poppler for PDF invoice QR tests
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: python -m pytest -q
 
   migrations:
@@ -55,6 +57,8 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_DEMO_AUTH: "1"
     defaults:
       run:
         working-directory: frontend
@@ -76,4 +80,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t invoflow-backend backend
-      - run: docker build -t invoflow-frontend frontend
+      - run: docker build --build-arg NEXT_PUBLIC_DEMO_AUTH=1 -t invoflow-frontend frontend
