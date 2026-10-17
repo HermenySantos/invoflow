@@ -1,8 +1,8 @@
 """The 20 upload variants from the QA re-gate.
 
 Ten polyglots must not be stored as uploaded. An image with a trailing
-executable is kept only after the trailer is gone. A PDF with an executable
-signature, and any file with markup, is refused. Ten clean files stay.
+executable is kept only after the trailer is gone. A PDF that does not
+parse is refused. Markup in a non-PDF file is refused. Ten clean files stay.
 """
 
 import io
@@ -11,6 +11,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from pypdf import PdfWriter
 
 from app.services.storage import get_storage_service
 
@@ -26,9 +27,13 @@ def _image(fmt: str, color: str = "red") -> bytes:
     return buffer.getvalue()
 
 
-def _pdf(*parts: bytes) -> bytes:
-    body = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<</Root 1 0 R>>\nstartxref\n9\n%%EOF"
-    return b"".join(parts) + body if parts else body
+def _pdf() -> bytes:
+    """A one-page PDF a parser accepts. The old byte stub is not a PDF."""
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 JPEG = _image("JPEG")

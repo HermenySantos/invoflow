@@ -38,7 +38,7 @@ from app.services.audit import (
 )
 from app.services.validation import validate_document, detect_duplicates
 from app.services.iva_adjust import reading_is_fictional
-from app.services.uploads import prepare_upload
+from app.services.uploads import UNSUPPORTED_TYPE_DETAIL, prepare_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -262,7 +262,7 @@ async def create_document(
     if prepared is None:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only image and PDF files are accepted",
+            detail=UNSUPPORTED_TYPE_DETAIL,
         )
     if prepared != stored:
         storage.replace_file(storage_key, prepared)
