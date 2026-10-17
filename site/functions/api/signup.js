@@ -4,6 +4,7 @@ const MAX_BODY = 8192;
 const LIMIT = 5;
 const WINDOW_MS = 60 * 60 * 1000;
 const OK_BODY = '{"ok":true}';
+export const CONSENT_TEXT_VERSION = 'copy-v4.2-2026-10-17';
 
 const DELETE_STALE =
   'DELETE FROM signup_rates WHERE reset_at <= ? AND ip_hash != ?';
@@ -142,6 +143,7 @@ function interestFrom(raw, email, consentAt) {
   const record = {
     email,
     consent_at: consentAt,
+    consent_text_version: CONSENT_TEXT_VERSION,
     lang: raw.lang === 'en' ? 'en' : 'pt',
   };
   for (const key of ['utm_source', 'utm_medium', 'utm_campaign']) {

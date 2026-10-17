@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG } from './public/js/config.js';
 import { copy } from './public/js/copy.js';
 import { readUtm } from './public/js/qualify.js';
-import { onRequestPost } from './functions/api/signup.js';
+import { CONSENT_TEXT_VERSION, onRequestPost } from './functions/api/signup.js';
 import { onRequest as onAsset } from './functions/assets/[[path]].js';
 import { onRequest as onGuard } from './functions/_middleware.js';
 import { SECURITY_HEADERS } from './functions/security.js';
@@ -48,36 +48,50 @@ for (const pattern of banned) {
   assert.equal(pattern.test(visible), false, `banned copy ${pattern}`);
 }
 
-const amounts = [...visible.matchAll(/€\s*(\d+)|(\d+)\s*€/g)].map((match) => match[1] || match[2]);
-assert.deepEqual([...new Set(amounts)].sort(), ['190']);
-
 const home = read('index.html');
-for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'pilotPrice', 'consentBody', 'thanksTitle']) {
+for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'friction', 'consentBody', 'thanksTitle', 'thanksBody']) {
   assert.ok(home.includes(copy.pt[key]), key);
 }
+assert.equal(home.includes('priceLine'), false);
+assert.equal(home.includes('pilotPrice'), false);
+const outsideLabels = stripLabelled([home, read('privacy/index.html'), read('js/copy.js'), read('js/main.js')].join('\n'));
+assert.equal(outsideLabels.includes('€'), false, '€ amount outside an example or estimate label');
+assert.equal(/\b\d[\d.,]*\s*(?:\/\s*trimestre|por\s+trimestre|per\s+quarter)\b/i.test(outsideLabels), false);
+assert.equal(outsideLabels.includes('Pack IVA'), false);
+assert.match(home, /data-label="example"[\s\S]*Exemplo, Lda[\s\S]*23,00[\s\S]*41,86[\s\S]*230,00/);
+assert.match(home, /data-label="estimate"[\s\S]*188,14/);
 assert.ok(home.includes('href="/privacy"'));
 assert.ok(home.includes('rel="canonical" href="https://invoflow.pt/"'));
 assert.ok(home.includes('property="og:url" content="https://invoflow.pt/"'));
-assert.ok(home.includes('pack para o seu contabilista'));
-assert.equal(home.includes('pack para enviar ao seu contabilista'), false);
+assert.ok(home.includes('pack para enviar ao seu contabilista'));
 assert.ok(home.includes('Exemplo ilustrativo com dados fictícios.'));
 assert.ok(home.includes('Estimativa do IVA a entregar'));
-assert.ok(home.includes('Dados fictícios'));
+assert.ok(home.includes('Exemplo · dados fictícios'));
 assert.equal((home.match(/exemplo ilustrativo/g) || []).length, 0);
 assert.equal(/<details\b[^>]*\bopen\b/.test(home), false);
 
 const privacy = read('privacy/index.html');
 assert.ok(privacy.includes('href="/"'));
-assert.ok(privacy.includes('Hermenegildo Jerónimo dos Santos'));
+assert.equal(privacy.includes('Hermenegildo Jerónimo dos Santos'), false);
 assert.equal(privacy.includes('hermeny7@hotmail.com'), false);
 assert.equal(privacy.includes('mailto:contact@invoflow.pt'), false);
 assert.ok(privacy.includes('mailto:contacto@invoflow.pt'));
-assert.ok(privacy.includes('É uma estimativa, não um cálculo oficial. Não substitui o contabilista e nada é enviado às Finanças.'));
 assert.equal(privacy.includes('Este valor ignora o IVA das vendas.'), false);
-assert.ok(privacy.includes('Guardamos apenas o email da lista de interesse'));
-assert.ok(privacy.includes('Pode cancelar a subscrição a qualquer momento.'));
-assert.ok(privacy.includes('<span class="token">[prazo]</span>'));
-assert.ok(privacy.includes('You can unsubscribe at any time.'));
+assert.equal(privacy.includes('É uma estimativa, não um cálculo oficial.'), false);
+assert.ok(privacy.includes('Lista de interesse'));
+assert.ok(privacy.includes('O email que indicar, a data e a confirmação do seu consentimento'));
+assert.ok(privacy.includes('ou escrevendo para'));
+assert.ok(privacy.includes('Depois disso, deixamos de lhe escrever.'));
+assert.ok(privacy.includes('<span class="token">[alojamento e retenção da lista: onde fica guardada, durante quanto tempo, o que acontece quando sai — aguarda decisão do Gildo]</span>'));
+assert.ok(privacy.includes('<span class="token">[entidade e NIF]</span>'));
+assert.ok(privacy.includes('<span class="token">[texto sobre o endereço IP — aguarda correção técnica:'));
+assert.ok(privacy.includes('Interest list'));
+assert.ok(privacy.includes('or write to'));
+assert.ok(privacy.includes('After that, we stop writing to you.'));
+assert.ok(privacy.includes("<span class=\"token\">[interest-list hosting and retention: where it's stored, for how long, what happens when you leave — awaiting Gildo's decision]</span>"));
+assert.ok(privacy.includes('<span class="token">[entity and tax number]</span>'));
+assert.ok(privacy.includes('<span class="token">[IP address wording — awaiting a technical fix:'));
+assert.equal(privacy.includes('<span class="token">[prazo]</span>'), false);
 assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy/"'));
 assert.ok(privacy.includes('property="og:url" content="https://invoflow.pt/privacy/"'));
 
@@ -107,6 +121,8 @@ assert.equal(interestFiles.includes('name="regime"'), false);
 assert.equal(interestFiles.includes('name="volume"'), false);
 assert.equal(interestFiles.includes('name="accountant"'), false);
 assert.equal(interestFiles.includes('qualified'), false);
+assert.equal(interestFiles.includes('parseAnswers'), false);
+assert.equal(interestFiles.includes('isQualified'), false);
 
 const visitor = [home, read('js/copy.js'), read('js/main.js')].join('\n');
 for (const phrase of [
@@ -119,21 +135,49 @@ for (const phrase of [
 ]) {
   assert.equal(visitor.includes(phrase), false, phrase);
 }
-assert.ok(home.includes('id="piloto"'));
+assert.equal(home.includes('id="piloto"'), false);
+assert.ok(home.includes('id="limites"'));
+assert.ok(home.includes('id="lista"'));
 assert.ok(home.includes('data-i18n="termGetTitle"'));
 assert.ok(visitor.includes('What you get'));
-assert.ok(visitor.includes('Pack IVA: €190/trimestre.'));
-assert.ok(visitor.includes('Pack IVA: €190 per quarter.'));
+assert.ok(visitor.includes('O que recebe'));
+assert.equal(visitor.includes('Pack IVA'), false);
 assert.ok(home.includes('mailto:contacto@invoflow.pt'));
 assert.equal(home.includes('mailto:contact@invoflow.pt'), false);
 assert.equal(visitor.includes('Reservar lugar no piloto'), false);
 assert.ok(visitor.includes('Avisem-me'));
-assert.ok(visitor.includes('Notify me'));
-assert.ok(visitor.includes('Quero receber novidades sobre a Invoflow e o piloto por email. Posso cancelar a qualquer momento.'));
-assert.ok(visitor.includes('I want email news about Invoflow and the pilot. I can unsubscribe at any time.'));
-assert.ok(visitor.includes('Obrigado, recebemos o seu pedido. Entraremos em contacto por email.'));
-assert.ok(visitor.includes("Thank you, we've received your request. We'll get in touch by email."));
+assert.ok(visitor.includes('Keep me posted'));
+assert.equal(visitor.includes('Notify me'), false);
+assert.ok(visitor.includes('Aceito receber emails da Invoflow sobre o produto e o seu lançamento. Posso sair da lista a qualquer momento.'));
+assert.ok(visitor.includes('I agree to receive emails from Invoflow about the product and its launch. I can leave the list at any time.'));
+assert.ok(visitor.includes('Obrigado. Está na lista.'));
+assert.ok(visitor.includes("Thanks. You're on the list."));
+assert.equal(visitor.includes('Obrigado, recebemos o seu pedido. Entraremos em contacto por email.'), false);
+assert.equal(visitor.includes("Thank you, we've received your request. We'll get in touch by email."), false);
 assert.equal(visitor.includes('Obrigado! Vamos enviar-lhe novidades sobre o piloto.'), false);
+assert.ok(visitor.includes('Só pedimos o email. Sem compromisso.'));
+assert.ok(visitor.includes('Just your email. No commitment.'));
+assert.ok(visitor.includes('É uma estimativa. Não substitui o contabilista.'));
+assert.ok(visitor.includes("It's an estimate. It doesn't replace your accountant."));
+assert.ok(visitor.includes('Limites, com honestidade'));
+assert.ok(visitor.includes('Honest limits'));
+assert.ok(visitor.includes('O original segue no pack para o contabilista.'));
+assert.ok(visitor.includes("The original goes in your accountant's pack."));
+assert.ok(visitor.includes('Fotografou, está no pack.'));
+assert.ok(visitor.includes("Snap it, and it's in the pack."));
+assert.ok(visitor.includes('Quer saber quando a Invoflow abrir?'));
+assert.ok(visitor.includes('Want to know when Invoflow opens?'));
+assert.ok(visitor.includes('Ainda não há preço público.'));
+assert.ok(visitor.includes("There's no public price yet."));
+assert.ok(visitor.includes('Quanto vai custar?'));
+assert.ok(visitor.includes('How much will it cost?'));
+assert.ok(visitor.includes('Example · fictional data'));
+assert.equal(visitor.includes('IVA dedutível'), false);
+assert.equal(visitor.includes('fica guardado'), false);
+assert.equal(visitor.includes('ficou guardado'), false);
+assert.equal(visitor.includes('The original is kept'), false);
+assert.equal(visitor.includes('Photographed means kept'), false);
+assert.equal(visitor.includes('[figuras do exemplo'), false);
 for (const gone of [
   '[desconto',
   '[discount',
@@ -158,8 +202,8 @@ for (const gone of [
   assert.equal(visitor.includes(gone), false, gone);
 }
 assert.ok(visitor.includes('Inscrições abrem em breve.'));
-assert.ok(visitor.includes('Sign-ups open soon.'));
-assert.equal(visitor.includes('Registration opens soon.'), false);
+assert.ok(visitor.includes('Registration opens soon.'));
+assert.equal(visitor.includes('Sign-ups open soon.'), false);
 assert.match(home, /id="submit-pilot"[^>]*disabled/);
 assert.match(home, /id="formset"[^>]*disabled/);
 
@@ -209,7 +253,15 @@ assert.equal(missing.status, 400);
 const db = memoryDb();
 const env = { DB: db };
 const saved = await post(
-  { ...validBody, regime: 'mensal', qualified: true, password: 'secret', name: 'Ana Costa', consent_at: '1999-01-01T00:00:00.000Z' },
+  {
+    ...validBody,
+    regime: 'mensal',
+    qualified: true,
+    password: 'secret',
+    name: 'Ana Costa',
+    consent_at: '1999-01-01T00:00:00.000Z',
+    consent_text_version: 'client-spoof',
+  },
   env,
   { 'cf-connecting-ip': '198.51.100.4' },
 );
@@ -221,7 +273,8 @@ const savedText = await saved.text();
 assert.equal(savedText, '{"ok":true}');
 const stored = db.signups.map((row) => JSON.parse(row.payload));
 assert.equal(stored.length, 1);
-assert.deepEqual(Object.keys(stored[0]).sort(), ['consent_at', 'email', 'lang', 'utm_campaign', 'utm_medium', 'utm_source']);
+assert.deepEqual(Object.keys(stored[0]).sort(), ['consent_at', 'consent_text_version', 'email', 'lang', 'utm_campaign', 'utm_medium', 'utm_source']);
+assert.equal(stored[0].consent_text_version, CONSENT_TEXT_VERSION);
 assert.equal(stored[0].utm_source, 'meta');
 assert.equal(stored[0].email, 'ana@example.com');
 assert.equal(stored[0].lang, 'pt');
@@ -418,10 +471,8 @@ assert.equal(/website/i.test(homeSource), false);
 assert.match(read('js/main.js'), /extra: form\.extra\.value/);
 assert.match(read('js/main.js'), /response\.status === 429/);
 assert.match(read('css/site.css'), /\.honeypot\s*\{/);
-assert.match(read('privacy/index.html'), /O endereço IP não é guardado\./);
-assert.match(read('privacy/index.html'), /O pedido seguinte apaga os resumos com mais de uma hora\./);
-assert.match(read('privacy/index.html'), /The IP address is not stored\./);
-assert.match(read('privacy/index.html'), /The next request deletes summaries older than one hour\./);
+assert.match(read('privacy/index.html'), /escrevendo para/);
+assert.match(read('privacy/index.html'), /write to/);
 assert.equal(/expira ao fim de uma hora/i.test(read('privacy/index.html')), false);
 assert.equal(/expires after one hour/i.test(read('privacy/index.html')), false);
 
@@ -554,7 +605,7 @@ const privacyPage = await onGuard({
 assert.equal(privacyPage.status, 200);
 
 if (process.argv.includes('--release')) {
-  for (const file of ['index.html', 'js/copy.js']) {
+  for (const file of ['index.html', 'js/copy.js', 'privacy/index.html']) {
     const source = read(file);
     assert.equal((source.match(/class="token/g) || []).length, 0, `${file} still has .token`);
     assert.equal(/\[[^\]\r\n]+\]/.test(source), false, `${file} still has a [token]`);
@@ -562,6 +613,17 @@ if (process.argv.includes('--release')) {
 }
 
 console.log('site checks passed');
+
+function stripLabelled(html) {
+  let previous;
+  let next = html;
+  const pattern = /<([a-zA-Z0-9]+)(\s[^>]*?\bdata-label="(?:example|estimate)"[^>]*)>[\s\S]*?<\/\1>/g;
+  do {
+    previous = next;
+    next = previous.replace(pattern, '');
+  } while (next !== previous);
+  return next;
+}
 
 function assertSecurity(response, label) {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {

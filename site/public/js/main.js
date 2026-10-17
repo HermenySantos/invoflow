@@ -7,7 +7,7 @@ const LANG_KEY = 'invoflow_demand_lang';
 const CLOSED_LOG = 'FORM_ENDPOINT is empty. The form is not sent and nothing is stored.';
 
 const fields = [
-  ['email', 'errorEmail'],
+  ['email', 'errorEmailEmpty'],
   ['consent', 'errorConsent'],
 ];
 
@@ -22,6 +22,10 @@ function applyCopy() {
   document.title = t('metaTitle');
   const description = document.querySelector('meta[name="description"]');
   if (description) description.setAttribute('content', t('metaDescription'));
+  const ogTitle = document.querySelector('meta[property="og:title"]');
+  const ogDescription = document.querySelector('meta[property="og:description"]');
+  if (ogTitle) ogTitle.setAttribute('content', t('ogTitle'));
+  if (ogDescription) ogDescription.setAttribute('content', t('ogDescription'));
   document.querySelectorAll('[data-i18n]').forEach((node) => {
     if (node.children.length) return;
     const value = t(node.dataset.i18n);
@@ -76,7 +80,11 @@ function clearErrors() {
 }
 
 function fieldMessage(form, name) {
-  if (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.value.trim())) return t('errorEmail');
+  if (name === 'email') {
+    const value = form.email.value.trim();
+    if (!value) return t('errorEmailEmpty');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return t('errorEmailInvalid');
+  }
   if (name === 'consent' && !form.consent.checked) return t('errorConsent');
   return '';
 }
@@ -126,34 +134,31 @@ async function submitForm(form) {
   }
 
   const button = document.querySelector('#submit-pilot');
+  const sending = document.querySelector('#sending');
   button.disabled = true;
   form.setAttribute('aria-busy', 'true');
+  if (sending) sending.textContent = t('sending');
   try {
     const response = await fetch(CONFIG.FORM_ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (response.status === 429) {
-      let message = t('errorSend');
-      try {
-        const body = await response.json();
-        if (body?.message?.[lang]) message = body.message[lang];
-      } catch {
-        message = t('errorSend');
-      }
-      showError('form', message);
+    if (response.status === 429 || !response.ok) {
+      showError('form', t('errorSend'));
       button.disabled = false;
       form.removeAttribute('aria-busy');
+      if (sending) sending.textContent = '';
       return;
     }
-    if (!response.ok) throw new Error('request failed');
     form.removeAttribute('aria-busy');
+    if (sending) sending.textContent = '';
     showThanks();
   } catch {
     showError('form', t('errorSend'));
     button.disabled = false;
     form.removeAttribute('aria-busy');
+    if (sending) sending.textContent = '';
   }
 }
 
