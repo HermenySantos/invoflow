@@ -115,7 +115,7 @@ async function submitForm(form) {
     utm_medium: form.utm_medium.value,
     utm_campaign: form.utm_campaign.value,
   };
-  const payload = { ...answers, ...utm, lang, leave_blank: form.leave_blank.value };
+  const payload = { ...answers, ...utm, lang, extra: form.extra.value };
 
   track('form_submit');
   if (answers.qualified) track('qualified_submit');
@@ -133,6 +133,18 @@ async function submitForm(form) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (response.status === 429) {
+      let message = t('errorSend');
+      try {
+        const body = await response.json();
+        if (body?.message?.[lang]) message = body.message[lang];
+      } catch {
+        message = t('errorSend');
+      }
+      showError('form', message);
+      button.disabled = false;
+      return;
+    }
     if (!response.ok) throw new Error('request failed');
     showThanks();
   } catch {

@@ -56,12 +56,9 @@ Plausible, when enabled, receives the event names above. The Meta pixel, when en
 
 ## Signup function
 
-`functions/api/signup.js` is an optional Pages Function. It is not bound to a Cloudflare account in this repository.
+`functions/api/signup.js` is an optional Pages Function. It is not bound to a Cloudflare account in this repository. Vercel does not run it. The function stores rows only in D1. A KV binding is ignored and does not receive signups.
 
-It accepts the form JSON and writes one record.
-
-- KV binding: `SIGNUPS`. The signup key is a random id. The value is the JSON record. A second key, `email:` plus the normalized email, points at that id.
-- D1 binding: `DB`. Create both tables, then the function inserts a row.
+Create both tables on the D1 database bound as `DB`:
 
 ```sql
 CREATE TABLE signups (
@@ -79,15 +76,21 @@ CREATE TABLE signup_rates (
 );
 ```
 
-If neither binding exists, the function returns HTTP 501 and writes nothing. Point `FORM_ENDPOINT` at `/api/signup` only after one binding is in place.
+Set `IP_HASH_SECRET` in the Cloudflare environment. The function uses it as the HMAC-SHA-256 key for the address summary. Do not commit a value for that secret. If `DB` or `IP_HASH_SECRET` is missing, the function returns HTTP 501 and writes nothing. Point `FORM_ENDPOINT` at `/api/signup` only after both are in place.
+
+`SIGNUP_ORIGINS` is optional. When it is set, it is a comma-separated list of allowed `Origin` values, matched exactly. When it is unset, the `Origin` host must equal the host of the request URL. A missing or other origin returns HTTP 403.
+
+The request must send `Content-Type: application/json` and `CF-Connecting-IP`. The function does not read `X-Forwarded-For`. A missing address returns HTTP 400. IPv4 addresses are counted as written. IPv6 addresses share one counter for each `/64`. An IPv4-mapped address is counted as that IPv4 address.
+
+Each address can submit 5 requests an hour. The stored key is the HMAC of that bucket, not the address. The sixth request returns HTTP 429 with a short message in Portuguese and in English. The next write deletes rate rows whose window ended more than an hour ago. The current address is reset in the same upsert instead of being deleted.
 
 The function calculates `qualified` again. A value sent by the browser does not override that result.
 
-The email is stored in lowercase with surrounding spaces removed. A second request for that email returns HTTP 200 and the same thank-you, and it does not write another row.
+The email is stored after Unicode NFKC, lowercasing, and punycode on the domain. One trailing dot on the domain is removed. A second request for that email returns the same HTTP 200 body and does not write another row.
 
-The form includes a hidden `leave_blank` field. When that field has text, the function returns HTTP 200 and writes nothing.
+The form includes a hidden `extra` field. When that field has text, the function still touches the database and returns the same HTTP 200 body, `{"ok":true}`, with no id. A first accepted signup returns that same body.
 
-Each IP address can submit 5 requests an hour. The function stores SHA-256 of the address, not the address, and the KV entry expires within the hour. The sixth request in that hour returns HTTP 429. A body larger than 8192 bytes returns HTTP 413. A body that is not a JSON object, or that fails the form rules, returns HTTP 400.
+A body larger than 8192 bytes returns HTTP 413. A body that is not a JSON object, or that fails the form rules, returns HTTP 400. Function responses send `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
 
 ## Check
 

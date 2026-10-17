@@ -7,7 +7,7 @@ Carregar uma fatura.
 Exemplo ilustrativo. Exemplo, Lda. IVA estimativa 23,00 €. Total 123,00 €.
 
 00:00:05.705 --> 00:00:09.370
-Rever. exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.
+Rever. Exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.
 
 00:00:09.370 --> 00:00:12.079
 Prazo de entrega: 22 de Fevereiro de 2027. Estimativa. Este valor ignora o IVA das vendas.
@@ -16,5 +16,5 @@ Prazo de entrega: 22 de Fevereiro de 2027. Estimativa. Este valor ignora o IVA d
 Prazo de entrega: 20 de Maio de 2026. Estimativa. IVA dedutível 23,00 €.
 
 00:00:15.286 --> 00:00:17.467
-Enviar ao Contabilista.
+Enviar ao contabilista.
 

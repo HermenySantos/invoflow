@@ -46,10 +46,10 @@ export function captionFiles(timeline) {
   const pt = render([
     [upload.start, upload.end, 'Carregar uma fatura.'],
     [preview.start, uploaded.end, 'Exemplo ilustrativo. Exemplo, Lda. IVA estimativa 23,00 €. Total 123,00 €.'],
-    [review.start, review.end, 'Rever. exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.'],
+    [review.start, review.end, 'Rever. Exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.'],
     [q4.start, q4.end, `${q4Deadline}. Estimativa. Este valor ignora o IVA das vendas.`],
     [q1.start, q1.end, `${q1Deadline}. Estimativa. IVA dedutível 23,00 €.`],
-    [pack.start, pack.end, 'Enviar ao Contabilista.'],
+    [pack.start, pack.end, 'Enviar ao contabilista.'],
   ]);
   const en = render([
     [upload.start, upload.end, 'Upload an invoice.'],
