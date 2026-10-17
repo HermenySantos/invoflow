@@ -60,20 +60,34 @@ Plausible, when enabled, receives the event names above. The Meta pixel, when en
 
 It accepts the form JSON and writes one record.
 
-- KV binding: `SIGNUPS`. The key is a random id. The value is the JSON record.
-- D1 binding: `DB`. Create the table, then the function inserts a row.
+- KV binding: `SIGNUPS`. The signup key is a random id. The value is the JSON record. A second key, `email:` plus the normalized email, points at that id.
+- D1 binding: `DB`. Create both tables, then the function inserts a row.
 
 ```sql
 CREATE TABLE signups (
   id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
   payload TEXT NOT NULL,
   received_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX signups_email ON signups (email);
+
+CREATE TABLE signup_rates (
+  ip_hash TEXT PRIMARY KEY,
+  count INTEGER NOT NULL,
+  reset_at INTEGER NOT NULL
 );
 ```
 
 If neither binding exists, the function returns HTTP 501 and writes nothing. Point `FORM_ENDPOINT` at `/api/signup` only after one binding is in place.
 
 The function calculates `qualified` again. A value sent by the browser does not override that result.
+
+The email is stored in lowercase with surrounding spaces removed. A second request for that email returns HTTP 200 and the same thank-you, and it does not write another row.
+
+The form includes a hidden `leave_blank` field. When that field has text, the function returns HTTP 200 and writes nothing.
+
+Each IP address can submit 5 requests an hour. The function stores SHA-256 of the address, not the address, and the KV entry expires within the hour. The sixth request in that hour returns HTTP 429. A body larger than 8192 bytes returns HTTP 413. A body that is not a JSON object, or that fails the form rules, returns HTTP 400.
 
 ## Check
 

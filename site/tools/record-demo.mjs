@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { captionFiles, q1Deadline, q4Deadline, videoTimeline } from './captions.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const site = dirname(here);
@@ -22,9 +23,6 @@ const receipt = {
   expense_category: 'office',
   status: 'ready',
 };
-
-const q1Deadline = 'Prazo de entrega: 20 de Maio de 2026';
-const q4Deadline = 'Prazo de entrega: 22 de Fevereiro de 2027';
 
 function drawText(fontfile, text, size, color, y) {
   const escaped = text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/,/g, '\\,');
@@ -122,17 +120,6 @@ function assertClean(label, lines) {
     if (pattern.test(text)) throw new Error(`${label} shows ${pattern}`);
   }
   return text;
-}
-
-function cue(start, end, text) {
-  const stamp = (ms) => {
-    const total = Math.max(0, Math.round(ms / 1000));
-    const seconds = total % 60;
-    const minutes = Math.floor(total / 60) % 60;
-    const hours = Math.floor(total / 3600);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.000`;
-  };
-  return `${stamp(start)} --> ${stamp(end)}\n${text}\n`;
 }
 
 async function main() {
@@ -295,26 +282,11 @@ async function main() {
     if (saved.status !== 0) throw new Error(saved.stderr || `frame ${name} failed`);
   }
 
-  const pt = [
-    'WEBVTT',
-    '',
-    cue(scenes[0].start, scenes[1].end, 'Carregar uma fatura. Exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.'),
-    cue(scenes[3].start, scenes[3].end, 'Rever. exemplo ilustrativo. Exemplo, Lda. IVA estimativa 23,00 €. Total 123,00 €.'),
-    cue(scenes[4].start, scenes[4].end, `${q4Deadline}. Estimativa. Este valor ignora o IVA das vendas.`),
-    cue(scenes[5].start, scenes[6].end, `${q1Deadline}. Estimativa. IVA dedutível 23,00 €. Enviar ao Contabilista.`),
-    '',
-  ].join('\n');
-  const en = [
-    'WEBVTT',
-    '',
-    cue(scenes[0].start, scenes[1].end, 'Upload an invoice. Illustrative example. Exemplo, Lda. NIF 999 999 990. VAT estimate €23.00. Total €123.00.'),
-    cue(scenes[3].start, scenes[3].end, 'Review. Illustrative example. Exemplo, Lda. VAT estimate €23.00. Total €123.00.'),
-    cue(scenes[4].start, scenes[4].end, 'Filing deadline: 22 February 2027. An estimate. This figure ignores VAT on sales.'),
-    cue(scenes[5].start, scenes[6].end, 'Filing deadline: 20 May 2026. An estimate. Deductible VAT €23.00. Send to the accountant.'),
-    '',
-  ].join('\n');
-  writeFileSync(join(site, 'assets/captions-pt.vtt'), pt);
-  writeFileSync(join(site, 'assets/captions-en.vtt'), en);
+  const timeline = videoTimeline(scenes);
+  const tracks = captionFiles(timeline);
+  writeFileSync(join(site, 'assets/captions-pt.vtt'), tracks.pt);
+  writeFileSync(join(site, 'assets/captions-en.vtt'), tracks.en);
+  writeFileSync(join(site, 'assets/demo-timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
   writeFileSync(join(work, 'scenes.json'), JSON.stringify(scenes, null, 2));
   await browser.close();
   console.log(JSON.stringify({ mp4, frameDir, scenes: scenes.map(({ name, start, end }) => ({ name, start, end })) }));

@@ -115,7 +115,7 @@ async function submitForm(form) {
     utm_medium: form.utm_medium.value,
     utm_campaign: form.utm_campaign.value,
   };
-  const payload = { ...answers, ...utm, lang };
+  const payload = { ...answers, ...utm, lang, leave_blank: form.leave_blank.value };
 
   track('form_submit');
   if (answers.qualified) track('qualified_submit');
