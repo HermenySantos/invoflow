@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 import { captionFiles, q1Deadline, q4Deadline, videoTimeline } from './captions.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const site = dirname(here);
+const site = join(dirname(here), 'public');
 const app = process.env.DEMO_APP_URL || 'http://127.0.0.1:3000';
 const font = process.env.DEMO_FONT || '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf';
 const bold = process.env.DEMO_FONT_BOLD || '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf';

@@ -1,4 +1,4 @@
-import { parseAnswers } from '../../js/qualify.js';
+import { parseAnswers } from '../../public/js/qualify.js';
 
 const MAX_BODY = 8192;
 const LIMIT = 5;

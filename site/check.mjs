@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG } from './js/config.js';
-import { copy } from './js/copy.js';
-import { isQualified, parseAnswers, readUtm } from './js/qualify.js';
+import { CONFIG } from './public/js/config.js';
+import { copy } from './public/js/copy.js';
+import { isQualified, parseAnswers, readUtm } from './public/js/qualify.js';
 import { onRequestPost } from './functions/api/signup.js';
 import { captionFiles } from './tools/captions.mjs';
 

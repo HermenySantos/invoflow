@@ -6,26 +6,26 @@ The page stores nothing while `FORM_ENDPOINT` is empty. There is no account, no 
 
 ## Deploy
 
-The files in this folder are the site. There is no compile step. Use the same build command and output directory on either host. Set the project root directory to `site` in both dashboards. Do not change DNS from this repository.
+The published files are in `public/`. There is no compile step. Set the project root directory to `site` in both dashboards, and set the output directory to `public`. `README.md`, `check.mjs`, and `tools/` stay outside that directory, so they are not served. Do not change DNS from this repository.
 
 | Host | Build command | Output directory |
 | --- | --- | --- |
-| Cloudflare Pages | empty | `.` |
-| Vercel | empty | `.` |
+| Cloudflare Pages | empty | `public` |
+| Vercel | empty | `public` |
 
 On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null) and turns on clean URLs, so `/privacy` matches the Cloudflare path.
 
-Cloudflare Pages reads `functions/` from this folder. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
+Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
 
 A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only. Attaching invoflow.pt is a dashboard and DNS step, and it is outside this repository.
 
 ## Configure the form
 
-Edit `js/config.js`. Publish a new deployment after each change.
+Edit `public/js/config.js`. Publish a new deployment after each change.
 
 | Constant | Default | What to set |
 | --- | --- | --- |
-| `FORM_ENDPOINT` | empty | `/api/signup` after the function below has a binding. Any other URL also works if you widen `connect-src` in `_headers`. |
+| `FORM_ENDPOINT` | empty | `/api/signup` after the function below has a binding. Any other URL also works if you widen `connect-src` in `public/_headers`. |
 | `DEPOSIT_ENABLED` | `false` | `true` only when you also set the Stripe link. |
 | `STRIPE_PAYMENT_LINK` | empty | A Stripe Payment Link for the €19 refundable reservation. The amount is taken off the first quarter. |
 | `ANALYTICS` | empty | `plausible` to load Plausible. |
@@ -49,7 +49,7 @@ Nothing is sent until `ANALYTICS` or `META_PIXEL_ID` is set.
 
 Qualified means quarterly VAT, 20 or more invoices a month, and an accountant. Consent is required to submit and is not part of that rule.
 
-Plausible, when enabled, receives the event names above. The Meta pixel, when enabled, records a page view. Adding either one needs a wider content security policy in `_headers`:
+Plausible, when enabled, receives the event names above. The Meta pixel, when enabled, records a page view. Adding either one needs a wider content security policy in `public/_headers`:
 
 - Plausible: `script-src` and `connect-src` must allow `https://plausible.io`.
 - Meta: `script-src` must allow `https://connect.facebook.net`. `connect-src` and `img-src` must allow `https://www.facebook.com`.
@@ -104,4 +104,4 @@ CI runs the same command. It rejects banned marketing lines, unexpected euro amo
 
 ## Demo recording
 
-`tools/record-demo.mjs` drives the local app in mock mode and writes `assets/demo-short.mp4`, `assets/poster.jpg`, and the caption tracks. Install Playwright in this folder first (`npm install playwright`), with the app already running at `http://127.0.0.1:3000`. The script signs in as `demo@invoflow.test`, uploads one fictional invoice, and checks the picture for the filing dates and the estimate label.
+`tools/record-demo.mjs` drives the local app in mock mode and writes `public/assets/demo-short.mp4`, `public/assets/poster.jpg`, and the caption tracks. Install Playwright in this folder first (`npm install playwright`), with the app already running at `http://127.0.0.1:3000`. The script signs in as `demo@invoflow.test`, uploads one fictional invoice, and checks the picture for the filing dates and the estimate label.
