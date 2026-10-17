@@ -18,4 +18,5 @@ USER app
 EXPOSE 8000
 # Migrations run before the server so a deploy never serves an older schema.
 # One worker: OCR runs as in-process background tasks and rate limits are per process.
+# The rasterizer semaphore allows 2 poppler renders in this process, so the total is 2 times the worker count.
 CMD ["sh", "-c", "if [ \"$APP_ENV\" != development ]; then alembic upgrade head; fi && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
