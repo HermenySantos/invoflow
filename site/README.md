@@ -1,0 +1,81 @@
+# Pilot page
+
+This folder is a static page for the Invoflow pilot. It does not change the app at `/`. Cloudflare Pages can host it on a `*.pages.dev` subdomain. A custom domain such as invoflow.pt is optional and is not required for the test.
+
+The page stores nothing while `FORM_ENDPOINT` is empty. There is no account, no secret, and no third-party script in the default configuration.
+
+## Deploy on Cloudflare Pages
+
+1. In the Cloudflare dashboard, create a Pages project from this Git repository.
+2. Set the root directory to `site`.
+3. Leave the build command empty. Set the output directory to the project root (`.`).
+4. Deploy. Pages assigns a `*.pages.dev` hostname.
+5. To use invoflow.pt later, add that domain on the same project and follow the DNS prompt. The page works without it.
+
+A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only.
+
+## Configure the form
+
+Edit `js/config.js`. Publish a new deployment after each change.
+
+| Constant | Default | What to set |
+| --- | --- | --- |
+| `FORM_ENDPOINT` | empty | `/api/signup` after the function below has a binding. Any other URL also works if you widen `connect-src` in `_headers`. |
+| `DEPOSIT_ENABLED` | `false` | `true` only when you also set the Stripe link. |
+| `STRIPE_PAYMENT_LINK` | empty | A Stripe Payment Link for the €19 refundable reservation. The amount is taken off the first quarter. |
+| `ANALYTICS` | empty | `plausible` to load Plausible. |
+| `PLAUSIBLE_DOMAIN` | empty | The domain Plausible should record. |
+| `META_PIXEL_ID` | empty | The numeric Meta pixel id for the ad test. |
+
+While `FORM_ENDPOINT` is empty, the page shows a notice and does not send or store the submission.
+
+While `DEPOSIT_ENABLED` is false, the page does not mention the €19 reservation.
+
+## Analytics events
+
+Nothing is sent until `ANALYTICS` or `META_PIXEL_ID` is set.
+
+| Event | When it fires |
+| --- | --- |
+| `visit` | The page script starts. |
+| `cta_click` | A person follows a "Reservar" link to the form. |
+| `form_submit` | The form is valid. This includes the case where the endpoint is empty and nothing is stored. |
+| `qualified_submit` | The same moment, and only when the request is qualified. |
+
+Qualified means quarterly VAT, 20 or more invoices a month, and an accountant. Consent is required to submit and is not part of that rule.
+
+Plausible, when enabled, receives the event names above. The Meta pixel, when enabled, records a page view. Adding either one needs a wider content security policy in `_headers`:
+
+- Plausible: `script-src` and `connect-src` must allow `https://plausible.io`.
+- Meta: `script-src` must allow `https://connect.facebook.net`. `connect-src` and `img-src` must allow `https://www.facebook.com`.
+
+## Signup function
+
+`functions/api/signup.js` is an optional Pages Function. It is not bound to a Cloudflare account in this repository.
+
+It accepts the form JSON and writes one record.
+
+- KV binding: `SIGNUPS`. The key is a random id. The value is the JSON record.
+- D1 binding: `DB`. Create the table, then the function inserts a row.
+
+```sql
+CREATE TABLE signups (
+  id TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  received_at TEXT NOT NULL
+);
+```
+
+If neither binding exists, the function returns HTTP 501 and writes nothing. Point `FORM_ENDPOINT` at `/api/signup` only after one binding is in place.
+
+The function calculates `qualified` again. A value sent by the browser does not override that result.
+
+## Check
+
+From the repository root:
+
+```bash
+node site/check.mjs
+```
+
+CI runs the same command. It rejects banned marketing lines, unexpected euro amounts, and a second copy of the qualification rule.
