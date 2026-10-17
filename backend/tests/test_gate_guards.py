@@ -27,7 +27,9 @@ def test_tesseract_without_a_binary_refuses_startup(monkeypatch):
 def test_health_is_degraded_when_tesseract_is_missing(client: TestClient, monkeypatch):
     monkeypatch.setattr(get_settings(), "ocr_backend", "tesseract")
     monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: False)
-    health = client.get("/health").json()
+    health_response = client.get("/health")
+    assert health_response.status_code == 503
+    health = health_response.json()
     assert health["status"] == "degraded"
     assert health["ocr_backend"] == "tesseract"
     assert health["tesseract"] is False
@@ -80,3 +82,42 @@ def test_exe_disguised_as_pdf_is_rejected(client: TestClient):
         headers=headers,
     )
     assert response.status_code == 415
+
+
+def test_polyglot_uploads_are_rejected():
+    assert allowed_upload(b"BM" + b"MZ" + b"\x00" * 64) is False
+    assert allowed_upload(b"%PDF-1.1\n" + b"MZ\x90\x00" + b"\x00" * 32) is False
+    assert allowed_upload(b"GIF89a" + b"<svg xmlns='http://www.w3.org/2000/svg'></svg>") is False
+    assert allowed_upload(b"\xff\xd8\xff\xd9") is True
+
+
+def test_missing_or_forged_storage_key_creates_nothing(client: TestClient):
+    headers = {"X-Mock-User-Id": f"key-{uuid.uuid4().hex[:8]}"}
+    missing = client.post(
+        "/api/documents",
+        json={
+            "storage_key": f"{headers['X-Mock-User-Id']}/2026/01/never-uploaded.png",
+            "original_filename": "never.png",
+            "mime_type": "image/png",
+            "file_size": 4,
+        },
+        headers=headers,
+    )
+    assert missing.status_code in {400, 404}
+    dotted = client.post(
+        "/api/documents",
+        json={
+            "storage_key": f"{headers['X-Mock-User-Id']}/../secrets.png",
+            "original_filename": "secrets.png",
+            "mime_type": "image/png",
+            "file_size": 4,
+        },
+        headers=headers,
+    )
+    assert dotted.status_code in {400, 404}
+    assert client.get("/api/documents", headers=headers).json()["documents"] == []
+
+
+def test_mock_user_id_with_a_path_separator_is_rejected(client: TestClient):
+    response = client.get("/api/documents", headers={"X-Mock-User-Id": "attacker/../../etc"})
+    assert response.status_code == 400

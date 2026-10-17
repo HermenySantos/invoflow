@@ -81,6 +81,8 @@ describe('summary IVA limits', () => {
     );
 
     expect(await screen.findByText('Estimativa. Este valor ignora o IVA das vendas.')).toBeInTheDocument();
+    expect(screen.getByText(/Prazo de entrega/)).toBeInTheDocument();
+    expect(screen.queryByText(/Prazo de pagamento/)).not.toBeInTheDocument();
     if (isDemoMode) {
       expect(screen.getByText(/armazenamento de ficheiros são simulados/)).toBeInTheDocument();
     }

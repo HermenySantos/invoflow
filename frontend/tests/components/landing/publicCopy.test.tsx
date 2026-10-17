@@ -87,6 +87,13 @@ describe('privacy notice', () => {
     expect(screen.getAllByText(/Clerk/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Sentry/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('heading', { name: 'Direitos' })).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('pt');
+    fireEvent.click(screen.getByRole('button', { name: 'EN' }));
+    expect(document.documentElement.lang).toBe('en');
+    fireEvent.click(screen.getByRole('button', { name: 'PT' }));
+    expect(document.documentElement.lang).toBe('pt');
+    fireEvent.click(screen.getByRole('button', { name: 'EN' }));
+    expect(document.documentElement.lang).toBe('en');
   });
 
   it('switches to the English notice', () => {
