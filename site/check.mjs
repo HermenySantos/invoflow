@@ -49,10 +49,10 @@ for (const pattern of banned) {
 }
 
 const amounts = [...visible.matchAll(/€\s*(\d+)|(\d+)\s*€/g)].map((match) => match[1] || match[2]);
-assert.deepEqual([...new Set(amounts)].sort(), []);
+assert.deepEqual([...new Set(amounts)].sort(), ['190']);
 
 const home = read('index.html');
-for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'consentBody', 'thanksTitle']) {
+for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'pilotPrice', 'consentBody', 'thanksTitle']) {
   assert.ok(home.includes(copy.pt[key]), key);
 }
 assert.ok(home.includes('href="/privacy"'));
@@ -70,7 +70,8 @@ const privacy = read('privacy/index.html');
 assert.ok(privacy.includes('href="/"'));
 assert.ok(privacy.includes('Hermenegildo Jerónimo dos Santos'));
 assert.equal(privacy.includes('hermeny7@hotmail.com'), false);
-assert.ok(privacy.includes('contacto@invoflow.pt'));
+assert.equal(privacy.includes('contacto@invoflow.pt'), false);
+assert.ok(privacy.includes('contact@invoflow.pt'));
 assert.ok(privacy.includes('É uma estimativa, não um cálculo oficial. Não substitui o contabilista e nada é enviado às Finanças.'));
 assert.equal(privacy.includes('Este valor ignora o IVA das vendas.'), false);
 assert.ok(privacy.includes('Guardamos apenas o email da lista de interesse'));
@@ -118,17 +119,44 @@ for (const phrase of [
 ]) {
   assert.equal(visitor.includes(phrase), false, phrase);
 }
-assert.equal(home.includes('id="piloto"'), false);
-assert.equal(home.includes('data-i18n="termGetTitle"'), false);
-assert.equal(visitor.includes('What you get'), false);
-assert.equal(visitor.includes('€190'), false);
+assert.ok(home.includes('id="piloto"'));
+assert.ok(home.includes('data-i18n="termGetTitle"'));
+assert.ok(visitor.includes('What you get'));
+assert.ok(visitor.includes('Pack IVA: €190/trimestre.'));
+assert.ok(visitor.includes('Pack IVA: €190 per quarter.'));
+assert.ok(home.includes('mailto:contact@invoflow.pt'));
+assert.equal(home.includes('contacto@invoflow.pt'), false);
 assert.equal(visitor.includes('Reservar lugar no piloto'), false);
 assert.ok(visitor.includes('Avisem-me'));
 assert.ok(visitor.includes('Notify me'));
 assert.ok(visitor.includes('Quero receber novidades sobre a Invoflow e o piloto por email. Posso cancelar a qualquer momento.'));
 assert.ok(visitor.includes('I want email news about Invoflow and the pilot. I can unsubscribe at any time.'));
-assert.ok(visitor.includes('Obrigado! Vamos enviar-lhe novidades sobre o piloto.'));
-assert.ok(visitor.includes("Thank you! We'll send you news about the pilot."));
+assert.ok(visitor.includes('Obrigado, recebemos o seu pedido. Entraremos em contacto por email.'));
+assert.ok(visitor.includes("Thank you, we've received your request. We'll get in touch by email."));
+assert.equal(visitor.includes('Obrigado! Vamos enviar-lhe novidades sobre o piloto.'), false);
+for (const gone of [
+  '[desconto',
+  '[discount',
+  '[trimestre do piloto',
+  '[pilot quarter',
+  '[canal de suporte',
+  '[support channel',
+  '[formato do feedback',
+  '[feedback format',
+  '[dias até à resposta]',
+  '[days to reply]',
+  'Feito na Covilhã',
+  'Made in Covilhã',
+  '[nome do fundador]',
+  '[foto]',
+  'tokMadeIn',
+  'data-gated="founder"',
+  'primeiro trimestre com desconto',
+  'first quarter discounted',
+  'first quarter is discounted',
+]) {
+  assert.equal(visitor.includes(gone), false, gone);
+}
 assert.ok(visitor.includes('Inscrições abrem em breve.'));
 assert.ok(visitor.includes('Sign-ups open soon.'));
 assert.equal(visitor.includes('Registration opens soon.'), false);
