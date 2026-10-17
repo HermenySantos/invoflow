@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import re
+import html
 import unicodedata
 from io import BytesIO
 from urllib.parse import unquote
@@ -46,12 +46,12 @@ _DANGEROUS_PDF_NAMES = {
 }
 # /GoTo and these /Named values are the initial view and auto-print that
 # invoice tools write. /Thread, /Hide, /SetOCGState and /Trans only change
-# what is already on the page. /URI is limited to http, https, mailto, and
-# a relative or fragment link. Every other /S, and any other /Named /N, is refused.
+# what is already on the page. /URI is limited to http, https, mailto, tel,
+# sms, callto, and a relative or fragment link. Every other /S, and any
+# other /Named /N, is refused.
 _ALLOWED_ACTIONS = {"/GoTo", "/URI", "/Named", "/Thread", "/Hide", "/SetOCGState", "/Trans"}
 _NAMED_ACTIONS = {"/NextPage", "/PrevPage", "/FirstPage", "/LastPage", "/Print"}
-_URI_SCHEMES = {"http", "https", "mailto"}
-_URI_SCHEME = re.compile(r"^([a-z][a-z0-9+.-]*):")
+_URI_SCHEMES = {"http", "https", "mailto", "tel", "sms", "callto"}
 
 UNSUPPORTED_TYPE_DETAIL = (
     "Formato não suportado. Envie um JPEG, PNG, GIF, BMP, TIFF, WEBP, HEIC ou PDF."
@@ -96,14 +96,37 @@ def _without_controls(text: str) -> str:
 
 
 def _normalize_uri(text: str) -> str:
-    """Strip controls, percent-decode, then lowercase. Decoding can put a control back."""
-    cleaned = _without_controls(text)
+    """Strip controls, percent-decode, unescape, NFKC, then lowercase.
+
+    Decoding and ``&#x09;`` can put a control character back between the
+    letters, and a fullwidth letter or colon survives until NFKC.
+    """
+    cleaned = text
     for _ in range(8):
-        decoded = _without_controls(unquote(cleaned))
+        decoded = _without_controls(cleaned)
+        decoded = unquote(decoded)
+        decoded = _without_controls(decoded)
+        decoded = html.unescape(decoded)
+        decoded = _without_controls(decoded)
+        decoded = unicodedata.normalize("NFKC", decoded)
+        decoded = _without_controls(decoded)
         if decoded == cleaned:
             break
         cleaned = decoded
     return cleaned.strip().lower()
+
+
+def _uri_scheme(value: str) -> str | None:
+    """Scheme when ':' comes before the first '/', '?' or '#'. Otherwise relative."""
+    head = value
+    for mark in "/?#":
+        index = head.find(mark)
+        if index != -1:
+            head = head[:index]
+    colon = head.find(":")
+    if colon == -1:
+        return None
+    return head[:colon]
 
 
 def _deref(obj, seen: set):
@@ -129,10 +152,10 @@ def _uri_is_dangerous(value, seen: set) -> bool:
     value = _deref(value, seen)
     if not isinstance(value, str):
         return True
-    match = _URI_SCHEME.match(_normalize_uri(value))
-    if match is None:
+    scheme = _uri_scheme(_normalize_uri(value))
+    if scheme is None:
         return False
-    return match.group(1) not in _URI_SCHEMES
+    return scheme not in _URI_SCHEMES
 
 
 def _action_is_dangerous(obj, seen: set) -> bool:
