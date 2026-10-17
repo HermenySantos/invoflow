@@ -6,6 +6,8 @@ import { CONFIG } from './public/js/config.js';
 import { copy } from './public/js/copy.js';
 import { isQualified, parseAnswers, readUtm } from './public/js/qualify.js';
 import { onRequestPost } from './functions/api/signup.js';
+import { onRequest as onAsset } from './functions/assets/[[path]].js';
+import { onRequest as onGuard } from './functions/_middleware.js';
 import { captionFiles } from './tools/captions.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +22,11 @@ assert.equal(existsSync(join(pub, 'tools')), false, 'tools stays out of public')
 assert.equal(existsSync(join(root, 'README.md')), true, 'README stays in site');
 assert.equal(existsSync(join(root, 'check.mjs')), true, 'check stays in site');
 assert.equal(existsSync(join(root, 'tools', 'captions.mjs')), true, 'captions stay in tools');
+assert.equal(existsSync(join(root, 'tools', 'record-demo.mjs')), true, 'recorder stays in tools');
+assert.equal(existsSync(join(pub, 'vercel.json')), false, 'vercel.json stays out of public');
+assert.equal(existsSync(join(root, 'vercel.json')), true, 'vercel.json stays in site');
+assert.equal(existsSync(join(pub, 'assets', 'demo-timeline.json')), false, 'timeline stays out of public');
+assert.equal(existsSync(join(root, 'tools', 'demo-timeline.json')), true, 'timeline stays in tools');
 
 const pages = ['index.html', 'privacy/index.html', 'js/copy.js', 'js/main.js', 'css/site.css'].map(read);
 const visible = pages.join('\n');
@@ -354,7 +361,7 @@ assert.match(read('privacy/index.html'), /The next request deletes summaries old
 assert.equal(/expira ao fim de uma hora/i.test(read('privacy/index.html')), false);
 assert.equal(/expires after one hour/i.test(read('privacy/index.html')), false);
 
-const timeline = JSON.parse(read('assets/demo-timeline.json'));
+const timeline = JSON.parse(readFileSync(join(root, 'tools/demo-timeline.json'), 'utf8'));
 const duration = mp4DurationSeconds(join(pub, 'assets/demo-short.mp4'));
 assert.ok(duration > 0, 'mp4 duration');
 const ptCues = parseVtt(read('assets/captions-pt.vtt'));
@@ -402,7 +409,78 @@ const headerFile = read('_headers');
 assert.match(headerFile, /^ {2}Strict-Transport-Security: max-age=31536000; includeSubDomains$/m);
 assert.equal(/preload/i.test(headerFile), false);
 
+const clip = Uint8Array.from({ length: 10 }, (_, index) => index);
+const assetEnv = {
+  ASSETS: {
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith('.missing.mp4')) return new Response(null, { status: 404 });
+      const type = url.pathname.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
+      return new Response(clip, { status: 200, headers: { 'content-type': type } });
+    },
+  },
+};
+
+const ranged = await assetCall('/assets/demo-short.mp4', { range: 'bytes=0-1' });
+assert.equal(ranged.status, 206);
+assert.equal(ranged.headers.get('accept-ranges'), 'bytes');
+assert.equal(ranged.headers.get('content-range'), 'bytes 0-1/10');
+assert.equal(ranged.headers.get('content-type'), 'video/mp4');
+assert.deepEqual([...new Uint8Array(await ranged.arrayBuffer())], [0, 1]);
+
+const whole = await assetCall('/assets/demo-short.mp4');
+assert.equal(whole.status, 200);
+assert.equal(whole.headers.get('accept-ranges'), 'bytes');
+assert.equal(Number(whole.headers.get('content-length')), 10);
+assert.equal((await whole.arrayBuffer()).byteLength, 10);
+
+const head = await assetCall('/assets/demo-short.mp4', { method: 'HEAD' });
+assert.equal(head.status, 200);
+assert.equal(head.headers.get('accept-ranges'), 'bytes');
+assert.equal(Number(head.headers.get('content-length')), 10);
+assert.equal((await head.arrayBuffer()).byteLength, 0);
+
+const headRange = await assetCall('/assets/demo-short.mp4', { method: 'HEAD', range: 'bytes=0-1' });
+assert.equal(headRange.status, 206);
+assert.equal(headRange.headers.get('content-range'), 'bytes 0-1/10');
+assert.equal((await headRange.arrayBuffer()).byteLength, 0);
+
+const invalid = await assetCall('/assets/demo-short.mp4', { range: 'bytes=20-30' });
+assert.equal(invalid.status, 416);
+assert.equal(invalid.headers.get('content-range'), 'bytes */10');
+assert.equal(invalid.headers.get('accept-ranges'), 'bytes');
+
+const poster = await assetCall('/assets/poster.jpg', { range: 'bytes=0-1' });
+assert.equal(poster.status, 200);
+assert.equal(poster.headers.get('content-type'), 'image/jpeg');
+
+for (const path of ['/.env', '/.git/config', '/admin', '/privacy//']) {
+  const response = await onGuard({
+    request: new Request(`https://pilot.test${path}`),
+    next() {
+      return new Response('page', { status: 200 });
+    },
+  });
+  assert.equal(response.status, 404, path);
+}
+const privacyPage = await onGuard({
+  request: new Request('https://pilot.test/privacy/'),
+  next() {
+    return new Response('page', { status: 200 });
+  },
+});
+assert.equal(privacyPage.status, 200);
+
 console.log('site checks passed');
+
+function assetCall(path, { method = 'GET', range } = {}) {
+  const headers = new Headers();
+  if (range) headers.set('range', range);
+  return onAsset({
+    request: new Request(`https://pilot.test${path}`, { method, headers }),
+    env: assetEnv,
+  });
+}
 
 function memoryKv() {
   const rows = new Map();
