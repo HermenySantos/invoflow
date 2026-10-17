@@ -90,6 +90,27 @@ const elsewhere = ['index.html', 'js/main.js', 'js/copy.js', 'functions/api/sign
   .join('\n');
 assert.equal(elsewhere.includes("regime === 'trimestral'"), false);
 
+const visitor = [home, read('js/copy.js'), read('js/main.js')].join('\n');
+for (const phrase of [
+  'Os lugares no piloto são limitados',
+  'Pilot places are limited',
+  'O que a página promete',
+  'What this page promises',
+  'Endpoint por configurar',
+  'Endpoint not configured',
+]) {
+  assert.equal(visitor.includes(phrase), false, phrase);
+}
+assert.ok(visitor.includes('O que recebe'));
+assert.ok(visitor.includes('What you get'));
+assert.ok(visitor.includes('Inscrições abrem em breve.'));
+assert.ok(visitor.includes('Registration opens soon.'));
+assert.match(home, /id="submit-pilot"[^>]*disabled/);
+
+const captions = `${read('assets/captions-pt.vtt')}\n${read('assets/captions-en.vtt')}`;
+assert.equal(/prazo de pagamento/i.test(captions), false);
+assert.equal(/continente/i.test(captions), false);
+
 const validBody = {
   ...base,
   utm_source: 'meta',
