@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { SignIn } from "@clerk/nextjs";
 import { useAuth } from '@/components/providers/AuthProvider';
+import { safeNextPath } from '@/lib/safeNext';
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
@@ -13,12 +14,12 @@ function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signIn } = useAuth();
-  const next = searchParams.get('next') || '/upload';
+  const next = safeNextPath(searchParams.get('next'));
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     signIn(email || 'demo@invoflow.test');
-    router.push(next.startsWith('/') ? next : '/upload');
+    router.push(next);
   };
 
   return (

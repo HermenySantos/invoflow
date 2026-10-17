@@ -14,7 +14,7 @@ def test_delete_hides_the_receipt_but_keeps_the_original(client: TestClient, db)
     headers = {"X-Mock-User-Id": f"test-user-{uuid.uuid4().hex[:8]}"}
     storage = get_storage_service()
     key = f"{headers['X-Mock-User-Id']}/2026/09/{uuid.uuid4().hex[:8]}_recibo.jpg"
-    client.put(storage.get_upload_url(key, "image/jpeg"), content=b"original")
+    client.put(storage.get_upload_url(key, "image/jpeg"), content=b"\xff\xd8\xff\xd9")
     created = client.post(
         "/api/documents",
         json={"storage_key": key, "original_filename": "recibo.jpg", "file_size": 8, "mime_type": "image/jpeg"},
@@ -26,7 +26,7 @@ def test_delete_hides_the_receipt_but_keeps_the_original(client: TestClient, db)
     assert client.get(f"/api/documents/{created['id']}", headers=headers).status_code == 404
     assert created["id"] not in [d["id"] for d in client.get("/api/documents", headers=headers).json()["documents"]]
     assert db.get(Document, created["id"]).deleted_at is not None
-    assert storage.get_file(key) == b"original"
+    assert storage.get_file(key) == b"\xff\xd8\xff\xd9"
 
 
 def test_an_original_cannot_be_overwritten(client: TestClient):

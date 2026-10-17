@@ -61,13 +61,14 @@ def test_originals_are_included_outside_mock_storage():
 
 
 def test_csv_uses_portuguese_number_format():
-    header, row = read_csv(export([receipt()]))
+    rows = read_csv(export([receipt()]))
+    header, row = rows[0], rows[1]
     assert row[header.index("Gross (EUR)")] == "35,20"
     assert row[header.index("VAT (EUR)")] == "5,20"
 
 
 def test_csv_neutralises_formula_cells():
     rows = read_csv(export([receipt(vendor_name='=HYPERLINK("http://x","y")', invoice_number="+1+1")]))
-    header, row = rows
+    header, row = rows[0], rows[1]
     assert row[header.index("Vendor")] == '\'=HYPERLINK("http://x","y")'
     assert row[header.index("Invoice #")] == "'+1+1"

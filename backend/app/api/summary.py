@@ -28,6 +28,7 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
+from app.services.iva_adjust import contributions, credit_note_warnings, duplicate_warnings
 from app.services.validation import validate_period_documents
 
 router = APIRouter()
@@ -130,15 +131,23 @@ async def get_summary(
     
     # ── Totals (only ready + needs_review) ──
     valid_docs = [d for d in documents if d.status in ("ready", "needs_review", "accountant_review")]
-    
-    total_gross = sum(d.gross_amount or Decimal(0) for d in valid_docs)
-    total_net = sum(d.net_amount or Decimal(0) for d in valid_docs)
-    total_vat = sum(d.vat_amount or Decimal(0) for d in valid_docs)
+    library = (
+        db.query(Document)
+        .filter(Document.deleted_at.is_(None))
+        .filter(Document.user_id == user.id)
+        .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
+        .all()
+    )
+
+    counted = contributions(valid_docs, library)
+    total_gross = sum((row.gross for row in counted), Decimal(0))
+    total_net = sum((row.net for row in counted), Decimal(0))
+    total_vat = sum((row.vat for row in counted), Decimal(0))
     
     # ── Deductible VAT (per-category percentage) ──
     # Only checked receipts count toward the estimate; unreviewed OCR values
     # are reported separately.
-    deductible_vat, deductible_vat_pending = deductible_vat_split(valid_docs)
+    deductible_vat, deductible_vat_pending = deductible_vat_split(valid_docs, library)
     
     # ── VAT on sales (manual input) ──
     vat_on_sales = _get_vat_on_sales(db, user.id, period_type, year, period_value)
@@ -175,16 +184,19 @@ async def get_summary(
         })
     # Flatten to string list for the response (keep simple for V1)
     warnings = [w["message"] for w in warning_objects]
+    warnings.extend(credit_note_warnings(valid_docs, library))
+    warnings.extend(duplicate_warnings(valid_docs, library))
     
     # ── Category breakdowns ──
     expense_totals: dict[str, dict] = defaultdict(lambda: {"count": 0, "total": Decimal(0), "vat": Decimal(0), "deductible": Decimal(0)})
     irs_totals: dict[str, dict] = defaultdict(lambda: {"count": 0, "total": Decimal(0)})
     
-    for d in valid_docs:
+    for row in counted:
+        d = row.document
         cat = d.expense_category or "other"
         sect = d.irs_sector or "geral"
-        amount = d.gross_amount or Decimal(0)
-        vat = d.vat_amount or Decimal(0)
+        amount = row.gross
+        vat = row.vat
         pct = effective_deductible_pct(d)
         
         expense_totals[cat]["count"] += 1

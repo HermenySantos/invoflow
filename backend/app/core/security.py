@@ -4,6 +4,7 @@ Supports both Clerk JWT validation and mock mode for development.
 """
 
 import logging
+import re
 import time
 import httpx
 import jwt
@@ -15,6 +16,8 @@ from app.core.config import get_settings
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
+# Mock ids become storage-key prefixes. A slash or ".." would escape that folder.
+_MOCK_USER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+-]{0,80}$")
 
 
 # JWKS cache
@@ -99,6 +102,11 @@ async def get_current_user(
     if settings.auth_mock_mode:
         mock_user_id = request.headers.get("X-Mock-User-Id", "mock-user-001")
         mock_email = request.headers.get("X-Mock-User-Email", "dev@invoflow.test")
+        if ".." in mock_user_id or _MOCK_USER_ID.fullmatch(mock_user_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid mock user id",
+            )
         return CurrentUser(user_id=mock_user_id, email=mock_email, is_mock=True)
     
     if not credentials:

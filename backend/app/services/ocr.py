@@ -81,19 +81,18 @@ def tesseract_available() -> bool:
 
 def resolve_ocr_backend() -> str:
     """Pick a runnable backend. Azure is opt-in only."""
-    requested = (settings.ocr_backend or "auto").strip().lower()
+    current = get_settings()
+    requested = (current.ocr_backend or "auto").strip().lower()
     if requested in {"mock", "tesseract", "azure", "auto"}:
         backend = requested
-    elif settings.ocr_mock_mode:
+    elif current.ocr_mock_mode:
         backend = "mock"
     else:
         backend = "auto"
 
     if backend == "auto":
         backend = "tesseract" if tesseract_available() else "mock"
-    if backend == "tesseract" and not tesseract_available():
-        backend = "mock"
-    if backend == "azure" and (not settings.azure_doc_endpoint or not settings.azure_doc_key):
+    if backend == "azure" and (not current.azure_doc_endpoint or not current.azure_doc_key):
         backend = "tesseract" if tesseract_available() else "mock"
     return backend
 
@@ -142,12 +141,11 @@ class OCRService:
         days_ago = random.randint(0, 30)
         doc_date = date.today() - timedelta(days=days_ago)
         confidence = random.uniform(0.7, 0.99)
-        needs_review = confidence < 0.85 or random.random() < 0.15
+        needs_review = True
         if random.random() < 0.1:
             vendor_nif = None
         if random.random() < 0.05:
             doc_date = None
-            needs_review = True
 
         return OCRResult(
             vendor_name=vendor_name,
@@ -505,6 +503,8 @@ def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
     # Everything but the vendor name came from the issuer, so only a missing
     # name still needs a person.
     result.needs_review = not result.vendor_name
+    if result.backend == "mock":
+        result.needs_review = True
 
     try:
         raw = json.loads(result.raw_response) if result.raw_response else {}
@@ -512,7 +512,15 @@ def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
             raw = {"ocr": raw}
     except ValueError:
         raw = {"ocr": result.raw_response}
-    raw["qr"] = {"payload": qr.payload, "atcud": qr.atcud, "vat_breakdown": qr.breakdown}
+    if result.backend == "mock":
+        raw["mock"] = True
+    raw["qr"] = {
+        "payload": qr.payload,
+        "atcud": qr.atcud,
+        "vat_breakdown": qr.breakdown,
+        "document_type": qr.document_type,
+        "fiscal_status": qr.fiscal_status,
+    }
     result.raw_response = json.dumps(raw, ensure_ascii=False)
     return result
 
@@ -587,6 +595,17 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
 
 
 _ocr_service: Optional[OCRService] = None
+
+
+def ocr_runtime_status() -> dict:
+    requested = (get_settings().ocr_backend or "auto").strip().lower()
+    available = tesseract_available()
+    degraded = requested == "tesseract" and not available
+    return {
+        "status": "degraded" if degraded else "healthy",
+        "ocr_backend": resolve_ocr_backend(),
+        "tesseract": available,
+    }
 
 
 def get_ocr_service() -> OCRService:

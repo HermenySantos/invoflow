@@ -63,6 +63,13 @@ def validate_configuration() -> List[str]:
         )
     
     # OCR: Tesseract is the default. Azure is required only when explicitly selected.
+    from app.services.ocr import tesseract_available
+
+    if settings.ocr_backend.strip().lower() == "tesseract" and not tesseract_available():
+        errors.append(
+            "OCR_BACKEND is tesseract but the tesseract binary is not installed. "
+            "Install tesseract, or set OCR_BACKEND=mock or OCR_BACKEND=auto."
+        )
     if settings.ocr_backend == "azure":
         if not settings.azure_doc_endpoint or not settings.azure_doc_key:
             errors.append(

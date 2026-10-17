@@ -26,10 +26,16 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
+from app.services.deadlines import deadline_line
+from app.services.iva_adjust import contributions, credit_note_warnings, duplicate_warnings
 
 
 # A cell starting with one of these runs as a formula in Excel/LibreOffice.
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_RECEIPT_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf",
+    ".bmp", ".tif", ".tiff", ".heic", ".heif",
+}
 
 
 def _csv_text(value: Optional[str]) -> str:
@@ -84,26 +90,24 @@ class ExportService:
         # Create ZIP in memory
         zip_buffer = io.BytesIO()
         
+        library = self._library(db, user_id, documents)
+        counted = contributions(documents, library)
+        warnings = credit_note_warnings(documents, library) + duplicate_warnings(documents, library)
+        counted_ids = {id(row.document) for row in counted}
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            # Add original files
             for doc in documents:
+                if id(doc) not in counted_ids:
+                    continue
                 file_content = self._get_file_content(doc.storage_key)
                 if file_content:
-                    # Organize by month
-                    month_folder = doc.period_tag
-                    safe_vendor = self._safe_filename(doc.vendor_name or "unknown")
-                    doc_id_short = str(doc.id)[:8] if doc.id else "unknown"
-                    filename = f"{doc.document_date or 'nodate'}_{safe_vendor}_{doc_id_short}"
-                    ext = Path(doc.original_filename).suffix or ".jpg"
-                    
-                    zf.writestr(f"receipts/{month_folder}/{filename}{ext}", file_content)
+                    zf.writestr(self._receipt_entry(doc), file_content)
             
             # Generate and add summary CSV
-            csv_content = self._generate_csv(documents)
+            csv_content = self._generate_csv(documents, warnings, library)
             zf.writestr("summary.csv", csv_content)
             
             # Generate and add summary PDF
-            pdf_content = self._generate_pdf(documents, period)
+            pdf_content = self._generate_pdf(documents, period, warnings, library)
             zf.writestr("summary.pdf", pdf_content)
         
         zip_buffer.seek(0)
@@ -123,8 +127,37 @@ class ExportService:
     def _safe_filename(self, name: str) -> str:
         """Convert string to safe filename."""
         return "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:50]
-    
-    def _generate_csv(self, documents: list[Document]) -> str:
+
+    def _library(self, db: Optional[Session], user_id: str, documents: list[Document]) -> list[Document]:
+        if db is None:
+            return documents
+        return (
+            db.query(Document)
+            .filter(Document.deleted_at.is_(None))
+            .filter(Document.user_id == user_id)
+            .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
+            .all()
+        )
+
+    def _receipt_entry(self, doc: Document) -> str:
+        """Zip path with no directory parts from the uploaded name, and a known extension."""
+        raw_month = doc.period_tag if doc.document_date or doc.created_at else "undated"
+        month = "".join(ch for ch in str(raw_month) if ch.isdigit() or ch == "-") or "undated"
+        vendor = self._safe_filename(doc.vendor_name or "unknown")
+        short = str(doc.id)[:8] if doc.id else "unknown"
+        when = doc.document_date.isoformat() if doc.document_date else "nodate"
+        uploaded = str(doc.original_filename or "").replace("\\", "/")
+        suffix = Path(uploaded).suffix.lower()
+        ext = suffix if suffix in _RECEIPT_EXTENSIONS else ".bin"
+        leaf = f"{when}_{vendor}_{short}{ext}".replace("\\", "").replace("..", "")
+        return f"receipts/{month}/{leaf}"
+
+    def _generate_csv(
+        self,
+        documents: list[Document],
+        warnings: Optional[list[str]] = None,
+        library: Optional[list[Document]] = None,
+    ) -> str:
         """CSV summary for Portuguese Excel: ';' separated, comma decimals, UTF-8 BOM."""
         output = io.StringIO()
         output.write("\ufeff")
@@ -149,11 +182,12 @@ class ExportService:
             "Filename",
         ])
         
-        # Data rows
-        for doc in documents:
+        counted = contributions(documents, library)
+        for row in counted:
+            doc = row.document
             cat = doc.expense_category or "other"
             pct = effective_deductible_pct(doc)
-            vat = doc.vat_amount or Decimal(0)
+            vat = row.vat
             deductible = (vat * pct / 100).quantize(Decimal("0.01"))
             writer.writerow([
                 str(doc.id),
@@ -161,9 +195,9 @@ class ExportService:
                 _csv_text(doc.vendor_name),
                 _csv_text(doc.vendor_nif),
                 _csv_text(doc.invoice_number),
-                _csv_amount(doc.net_amount),
-                _csv_amount(doc.vat_amount),
-                _csv_amount(doc.gross_amount),
+                _csv_amount(row.net),
+                _csv_amount(row.vat),
+                _csv_amount(row.gross),
                 _csv_amount(doc.vat_rate),
                 get_expense_category_label(cat),
                 get_irs_sector_label(doc.irs_sector or "geral"),
@@ -172,10 +206,31 @@ class ExportService:
                 doc.status,
                 _csv_text(doc.original_filename),
             ])
+
+        if counted:
+            writer.writerow([
+                "Total",
+                "",
+                "",
+                "",
+                "",
+                _csv_amount(sum((row.net for row in counted), Decimal(0))),
+                _csv_amount(sum((row.vat for row in counted), Decimal(0))),
+                _csv_amount(sum((row.gross for row in counted), Decimal(0))),
+            ])
+
+        for warning in warnings or []:
+            writer.writerow(["Avisos", warning])
         
         return output.getvalue()
     
-    def _generate_pdf(self, documents: list[Document], period: str) -> bytes:
+    def _generate_pdf(
+        self,
+        documents: list[Document],
+        period: str,
+        warnings: Optional[list[str]] = None,
+        library: Optional[list[Document]] = None,
+    ) -> bytes:
         """Generate PDF summary."""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
@@ -199,14 +254,16 @@ class ExportService:
             f"Gerado em: {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}",
             styles['Normal']
         ))
-        elements.append(Paragraph(f"Total de documentos: {len(documents)}", styles['Normal']))
+        filing = deadline_line(period)
+        if filing:
+            elements.append(Paragraph(filing, styles["Normal"]))
+        counted = contributions(documents, library)
+        elements.append(Paragraph(f"Total de documentos: {len(counted)}", styles['Normal']))
         elements.append(Spacer(1, 20))
-        
-        # Calculate totals with per-category deductible
-        total_gross = sum(d.gross_amount or Decimal(0) for d in documents)
-        total_vat = sum(d.vat_amount or Decimal(0) for d in documents)
-        total_net = sum(d.net_amount or Decimal(0) for d in documents)
-        deductible_vat, deductible_vat_pending = deductible_vat_split(documents)
+        total_gross = sum((row.gross for row in counted), Decimal(0))
+        total_vat = sum((row.vat for row in counted), Decimal(0))
+        total_net = sum((row.net for row in counted), Decimal(0))
+        deductible_vat, deductible_vat_pending = deductible_vat_split(documents, library)
         
         # Summary table
         elements.append(Paragraph("Resumo", styles['Heading2']))
@@ -238,18 +295,19 @@ class ExportService:
         elements.append(Paragraph("Documentos", styles['Heading2']))
         
         doc_data = [["Data", "Fornecedor", "Categoria", "Bruto", "IVA", "Estado"]]
-        for d in documents[:50]:  # Limit to 50 for PDF readability
+        for row in counted[:50]:
+            d = row.document
             doc_data.append([
                 d.document_date.strftime("%d/%m/%Y") if d.document_date else "-",
                 (d.vendor_name or "Desconhecido")[:25],
                 get_expense_category_label(d.expense_category or "other")[:15],
-                _pdf_eur(d.gross_amount) if d.gross_amount else "-",
-                _pdf_eur(d.vat_amount) if d.vat_amount else "-",
+                _pdf_eur(row.gross),
+                _pdf_eur(row.vat),
                 STATUS_LABELS.get(d.status, d.status),
             ])
         
-        if len(documents) > 50:
-            doc_data.append(["...", f"+ {len(documents) - 50} mais", "", "", "", ""])
+        if len(counted) > 50:
+            doc_data.append(["...", f"+ {len(counted) - 50} mais", "", "", "", ""])
         
         doc_table = Table(doc_data, colWidths=[2*cm, 5*cm, 2.5*cm, 2*cm, 2*cm, 2*cm])
         doc_table.setStyle(TableStyle([
@@ -264,6 +322,12 @@ class ExportService:
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
         ]))
         elements.append(doc_table)
+        if warnings:
+            elements.append(Spacer(1, 16))
+            elements.append(Paragraph("Avisos", styles["Heading2"]))
+            for warning in warnings:
+                safe = warning.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                elements.append(Paragraph(safe, styles["Normal"]))
         
         # Build PDF
         doc.build(elements)

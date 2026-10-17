@@ -18,7 +18,7 @@ def user_headers():
 
 def upload_document(client: TestClient, headers: dict) -> dict:
     key = f"{headers['X-Mock-User-Id']}/2026/10/ab12cd34_recibo.jpg"
-    client.put(get_storage_service().get_upload_url(key, "image/jpeg"), content=b"fake image")
+    client.put(get_storage_service().get_upload_url(key, "image/jpeg"), content=b"\xff\xd8\xff\xd9")
     response = client.post(
         "/api/documents",
         json={"storage_key": key, "original_filename": "recibo.jpg", "file_size": 10, "mime_type": "image/jpeg"},
@@ -62,7 +62,7 @@ def test_mock_file_routes_reject_expired_links(client: TestClient):
 def test_signed_download_link_serves_the_file(client: TestClient):
     storage = get_storage_service()
     key = "u1/2026/10/ab12cd34_signed.jpg"
-    client.put(storage.get_upload_url(key, "image/jpeg"), content=b"fake image")
+    client.put(storage.get_upload_url(key, "image/jpeg"), content=b"\xff\xd8\xff\xd9")
     assert client.get(storage.get_download_url(key)).status_code == 200
 
 

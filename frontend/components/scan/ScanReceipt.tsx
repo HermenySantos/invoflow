@@ -69,7 +69,13 @@ export function ScanReceipt() {
       }, 800);
     } catch (err) {
       console.error('Upload failed:', err);
-      setError('O carregamento falhou. Tente outra vez.');
+      const message =
+        typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string'
+          ? err.message
+          : '';
+      const status =
+        typeof err === 'object' && err !== null && 'status' in err ? Number(err.status) : 0;
+      setError(status === 415 && message ? message : 'O carregamento falhou. Tente outra vez.');
       setState('error');
     }
   };
