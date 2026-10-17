@@ -48,12 +48,12 @@ assert.ok(privacy.includes('href="/"'));
 assert.ok(privacy.includes('Hermenegildo Jerónimo dos Santos'));
 assert.ok(privacy.includes('hermeny7@hotmail.com'));
 assert.ok(privacy.includes('É uma estimativa. Este valor ignora o IVA das vendas.'));
-assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy"'));
-assert.ok(privacy.includes('property="og:url" content="https://invoflow.pt/privacy"'));
+assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy/"'));
+assert.ok(privacy.includes('property="og:url" content="https://invoflow.pt/privacy/"'));
 
 const sitemap = read('sitemap.xml');
 assert.ok(sitemap.includes('<loc>https://invoflow.pt/</loc>'));
-assert.ok(sitemap.includes('<loc>https://invoflow.pt/privacy</loc>'));
+assert.ok(sitemap.includes('<loc>https://invoflow.pt/privacy/</loc>'));
 assert.ok(read('robots.txt').includes('Sitemap: https://invoflow.pt/sitemap.xml'));
 
 assert.equal(CONFIG.FORM_ENDPOINT, '');
@@ -119,6 +119,7 @@ assert.match(read('assets/captions-pt.vtt'), /NIF 999 999 990/);
 assert.match(read('assets/captions-en.vtt'), /Filing deadline: 20 May 2026/);
 assert.match(read('assets/captions-en.vtt'), /Filing deadline: 22 February 2027/);
 
+
 const validBody = {
   ...base,
   utm_source: 'meta',
@@ -127,56 +128,221 @@ const validBody = {
   qualified: false,
 };
 
-const missing = await onRequestPost({
-  request: new Request('https://pilot.test/api/signup', {
-    method: 'POST',
-    body: JSON.stringify({ email: 'ana@example.com' }),
-  }),
-  env: {},
-});
+const unconfigured = await post(validBody, {});
+assert.equal(unconfigured.status, 501);
+
+const secretOnly = await post(validBody, { IP_HASH_SECRET: 'test-secret' });
+assert.equal(secretOnly.status, 501);
+
+const kvOnly = memoryKv();
+const kvResponse = await post(validBody, { IP_HASH_SECRET: 'test-secret', SIGNUPS: kvOnly });
+assert.equal(kvResponse.status, 501);
+assert.equal(kvOnly.rows.size, 0);
+
+const missing = await post({ email: 'ana@example.com' }, { DB: memoryDb() });
 assert.equal(missing.status, 400);
 
-const unbound = await onRequestPost({
-  request: new Request('https://pilot.test/api/signup', {
-    method: 'POST',
-    body: JSON.stringify(validBody),
-  }),
-  env: {},
+const db = memoryDb();
+const env = { DB: db };
+const saved = await post({ ...validBody, regime: 'mensal', qualified: true, password: 'secret' }, env, {
+  'cf-connecting-ip': '198.51.100.4',
 });
-assert.equal(unbound.status, 501);
-
-const savedKv = memoryKv();
-const saved = await post(
-  { ...validBody, regime: 'mensal', qualified: true },
-  { SIGNUPS: savedKv },
-  { 'cf-connecting-ip': '198.51.100.4' },
-);
 assert.equal(saved.status, 200);
-const stored = kvSignups(savedKv)[0];
-assert.equal(stored.qualified, false);
-assert.equal(stored.utm_source, 'meta');
-assert.equal(Object.hasOwn(stored, 'password'), false);
+assert.equal(saved.headers.get('x-content-type-options'), 'nosniff');
+assert.equal(saved.headers.get('cache-control'), 'no-store');
+const savedText = await saved.text();
+assert.equal(savedText, '{"ok":true}');
+const stored = db.signups.map((row) => JSON.parse(row.payload));
+assert.equal(stored.length, 1);
+assert.equal(stored[0].qualified, false);
+assert.equal(stored[0].utm_source, 'meta');
+assert.equal(stored[0].email, 'ana@example.com');
+assert.equal(Object.hasOwn(stored[0], 'password'), false);
+assert.equal(JSON.stringify(db.rates).includes('198.51.100.4'), false);
 
-await assertSignupGuards('kv', () => {
-  const kv = memoryKv();
-  return { env: { SIGNUPS: kv }, list: () => kvSignups(kv), rates: () => kvRateRows(kv) };
+const duplicate = await post(
+  { ...validBody, name: 'Outra Pessoa', email: '  Ana@Example.com ' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.5' },
+);
+assert.equal(duplicate.status, 200);
+const duplicateText = await duplicate.text();
+assert.equal(duplicateText, savedText);
+assert.equal(db.signups.filter((row) => JSON.parse(row.payload).email === 'ana@example.com').length, 1);
+assert.equal(JSON.parse(db.signups[0].payload).name, 'Ana Costa');
+
+const dotted = await post(
+  { ...validBody, email: 'User@Example.com.' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.6' },
+);
+assert.equal(dotted.status, 200);
+assert.equal(JSON.parse(db.signups.at(-1).payload).email, 'user@example.com');
+
+const wideAt = await post(
+  { ...validBody, email: '\uFF34este@Ex\u00E4mple.com.' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.7' },
+);
+assert.equal(wideAt.status, 200);
+const wideEmail = JSON.parse(db.signups.at(-1).payload).email;
+assert.equal(wideEmail, `teste@${new URL('http://ex\u00E4mple.com').hostname}`);
+assert.equal(wideEmail.includes('\u00E4'), false);
+
+const beforeHoneypot = db.statements.length;
+const honeypot = await post({ extra: 'https://spam.example' }, env, { 'cf-connecting-ip': '198.51.100.8' });
+assert.equal(honeypot.status, 200);
+assert.equal(await honeypot.text(), savedText);
+assert.equal(db.signups.some((row) => JSON.parse(row.payload).email === ''), false);
+const honeypotSql = db.statements.slice(beforeHoneypot);
+const beforeDuplicateSql = db.statements.length;
+await post({ ...validBody, email: 'ana@example.com' }, env, { 'cf-connecting-ip': '198.51.100.9' });
+const duplicateSql = db.statements.slice(beforeDuplicateSql);
+const beforeFresh = db.statements.length;
+await post({ ...validBody, email: 'fresh-round@example.com' }, env, { 'cf-connecting-ip': '198.51.100.15' });
+const freshSql = db.statements.slice(beforeFresh);
+assert.deepEqual(honeypotSql, duplicateSql);
+assert.deepEqual(duplicateSql, freshSql);
+assert.ok(freshSql.some((sql) => sql.includes('count + 1') && sql.includes('RETURNING') && sql.includes('reset_at')));
+
+const blankHoneypot = await post(
+  { ...validBody, email: 'empty-hp@example.com', extra: '   ' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.40' },
+);
+assert.equal(blankHoneypot.status, 200);
+const kept = db.signups.map((row) => JSON.parse(row.payload)).find((record) => record.email === 'empty-hp@example.com');
+assert.ok(kept);
+assert.equal(Object.hasOwn(kept, 'extra'), false);
+
+const quotaDb = memoryDb();
+const quotaEnv = { DB: quotaDb };
+const quotaIp = '198.51.100.10';
+for (let index = 0; index < 5; index += 1) {
+  const response = await post({ ...validBody, email: `quota-${index}@example.com` }, quotaEnv, {
+    'cf-connecting-ip': quotaIp,
+  });
+  assert.equal(response.status, 200, `quota ${index}`);
+}
+const blocked = await post({ ...validBody, email: 'quota-blocked@example.com' }, quotaEnv, {
+  'cf-connecting-ip': quotaIp,
 });
-await assertSignupGuards('d1', () => {
-  const db = memoryDb();
-  return {
-    env: { DB: db },
-    list: () => db.signups.map((row) => JSON.parse(row.payload)),
-    rates: () => db.rates,
-  };
+assert.equal(blocked.status, 429);
+assert.equal(blocked.headers.get('cache-control'), 'no-store');
+assert.equal(blocked.headers.get('x-content-type-options'), 'nosniff');
+const blockedBody = await blocked.json();
+assert.equal(blockedBody.ok, false);
+assert.match(blockedBody.message.pt, /hora/);
+assert.match(blockedBody.message.en, /hour/);
+assert.equal(quotaDb.signups.length, 5);
+assert.equal([...quotaDb.rates.values()][0].count, 6);
+
+const parallelDb = memoryDb();
+const parallel = await Promise.all(
+  Array.from({ length: 20 }, (_, index) =>
+    post({ ...validBody, email: `parallel-${index}@example.com` }, { DB: parallelDb }, {
+      'cf-connecting-ip': '198.51.100.20',
+    }),
+  ),
+);
+const parallelStatuses = await Promise.all(parallel.map(async (response) => response.status));
+assert.equal(parallelStatuses.filter((status) => status === 200).length, 5);
+assert.equal(parallelStatuses.filter((status) => status === 429).length, 15);
+assert.equal(parallelDb.signups.length, 5);
+assert.equal([...parallelDb.rates.values()][0].count, 20);
+
+const sameEmailDb = memoryDb();
+const twins = await Promise.all([
+  post({ ...validBody, email: 'Twin@Example.com' }, { DB: sameEmailDb }, { 'cf-connecting-ip': '198.51.100.21' }),
+  post({ ...validBody, email: 'twin@example.com.' }, { DB: sameEmailDb }, { 'cf-connecting-ip': '198.51.100.22' }),
+]);
+assert.deepEqual(await Promise.all(twins.map(async (response) => response.status)), [200, 200]);
+assert.equal(sameEmailDb.signups.length, 1);
+
+quotaDb.rates.set('stale-other', { count: 4, resetAt: Date.now() - 1000 });
+const currentKey = [...quotaDb.rates.keys()].find((key) => key !== 'stale-other');
+quotaDb.rates.get(currentKey).resetAt = Date.now() - 1000;
+const afterHour = await post({ ...validBody, email: 'after-hour@example.com' }, quotaEnv, {
+  'cf-connecting-ip': quotaIp,
 });
+assert.equal(afterHour.status, 200);
+assert.equal(quotaDb.rates.has('stale-other'), false);
+assert.equal(quotaDb.rates.get(currentKey).count, 1);
+
+const v6Db = memoryDb();
+for (let index = 0; index < 5; index += 1) {
+  const response = await post({ ...validBody, email: `v6-${index}@example.com` }, { DB: v6Db }, {
+    'cf-connecting-ip': '2001:db8:85a3::8a2e:370:7334',
+  });
+  assert.equal(response.status, 200, `v6 ${index}`);
+}
+const v6Blocked = await post({ ...validBody, email: 'v6-other@example.com' }, { DB: v6Db }, {
+  'cf-connecting-ip': '2001:db8:85a3:0:ffff::1',
+});
+assert.equal(v6Blocked.status, 429);
+assert.equal(v6Db.rates.size, 1);
+const v6Other = await post({ ...validBody, email: 'v6-prefix@example.com' }, { DB: v6Db }, {
+  'cf-connecting-ip': '2001:db8:85a3:1::1',
+});
+assert.equal(v6Other.status, 200);
+
+const forwarded = await post(validBody, { DB: memoryDb() }, {
+  'x-forwarded-for': '203.0.113.9',
+  'cf-connecting-ip': '',
+});
+assert.equal(forwarded.status, 400);
+
+const typed = await post(
+  JSON.stringify({ ...validBody, email: 'typed@example.com' }),
+  { DB: memoryDb() },
+  { 'content-type': 'application/json; charset=utf-8', 'cf-connecting-ip': '198.51.100.30' },
+);
+assert.equal(typed.status, 200);
+const plain = await post(validBody, { DB: memoryDb() }, {
+  'content-type': 'text/plain',
+  'cf-connecting-ip': '198.51.100.31',
+});
+assert.equal(plain.status, 400);
+
+const foreign = await post(validBody, { DB: memoryDb() }, {
+  origin: 'https://evil.test',
+  'cf-connecting-ip': '198.51.100.32',
+});
+assert.equal(foreign.status, 403);
+const allowed = await post(
+  { ...validBody, email: 'allowed@example.com' },
+  { DB: memoryDb(), SIGNUP_ORIGINS: 'https://invoflow.pt, https://preview.test' },
+  { origin: 'https://preview.test', 'cf-connecting-ip': '198.51.100.33' },
+);
+assert.equal(allowed.status, 200);
+
+const wide = JSON.stringify({ ...validBody, email: 'wide@example.com', note: 'é'.repeat(4000) });
+assert.ok(wide.length < 8192);
+assert.ok(new TextEncoder().encode(wide).byteLength > 8192);
+const wideBody = await post(wide, { DB: memoryDb() }, { 'cf-connecting-ip': '198.51.100.34' });
+assert.equal(wideBody.status, 413);
+assert.equal(wideBody.headers.get('x-content-type-options'), 'nosniff');
+
+const longName = await post(
+  { ...validBody, name: 'A'.repeat(201), email: 'long@example.com' },
+  { DB: memoryDb() },
+  { 'cf-connecting-ip': '198.51.100.35' },
+);
+assert.equal(longName.status, 400);
 
 const homeSource = read('index.html');
-assert.match(homeSource, /class="honeypot"[\s\S]*name="leave_blank"/);
-assert.match(homeSource, /id="leave_blank"[^>]*type="text"/);
-assert.match(read('js/main.js'), /leave_blank: form\.leave_blank\.value/);
+assert.match(homeSource, /class="honeypot"[\s\S]*name="extra"/);
+assert.match(homeSource, /id="extra"[^>]*type="text"[^>]*autocomplete="off"/);
+assert.equal(/website/i.test(homeSource), false);
+assert.match(read('js/main.js'), /extra: form\.extra\.value/);
+assert.match(read('js/main.js'), /response\.status === 429/);
 assert.match(read('css/site.css'), /\.honeypot\s*\{/);
 assert.match(read('privacy/index.html'), /O endereço IP não é guardado\./);
+assert.match(read('privacy/index.html'), /O pedido seguinte apaga os resumos com mais de uma hora\./);
 assert.match(read('privacy/index.html'), /The IP address is not stored\./);
+assert.match(read('privacy/index.html'), /The next request deletes summaries older than one hour\./);
+assert.equal(/expira ao fim de uma hora/i.test(read('privacy/index.html')), false);
+assert.equal(/expires after one hour/i.test(read('privacy/index.html')), false);
 
 const timeline = JSON.parse(read('assets/demo-timeline.json'));
 const duration = mp4DurationSeconds(join(root, 'assets/demo-short.mp4'));
@@ -208,12 +374,15 @@ assert.ok(Math.abs(q4Cue.end - q4.end / 1000) < 0.05);
 const expectedCaptions = captionFiles(timeline);
 assert.equal(read('assets/captions-pt.vtt'), expectedCaptions.pt);
 assert.equal(read('assets/captions-en.vtt'), expectedCaptions.en);
+assert.equal(read('assets/captions-pt.vtt').includes('exemplo ilustrativo'), false);
+assert.match(read('assets/captions-pt.vtt'), /Enviar ao contabilista\./);
+assert.equal(read('assets/captions-pt.vtt').includes('Contabilista'), false);
 
 for (const code of ['pt-PT', 'en', 'x-default']) {
   assert.match(homeSource, new RegExp(`<link rel="alternate" hreflang="${code}" href="https://invoflow.pt/"\\s*/>`));
   assert.match(
     read('privacy/index.html'),
-    new RegExp(`<link rel="alternate" hreflang="${code}" href="https://invoflow.pt/privacy"\\s*/>`),
+    new RegExp(`<link rel="alternate" hreflang="${code}" href="https://invoflow.pt/privacy/"\\s*/>`),
   );
 }
 
@@ -225,82 +394,69 @@ console.log('site checks passed');
 
 function memoryKv() {
   const rows = new Map();
-  const puts = [];
   return {
     rows,
-    puts,
-    async get(key) {
-      return rows.has(key) ? rows.get(key) : null;
+    async get() {
+      return null;
     },
-    async put(key, value, opts) {
+    async put(key, value) {
       rows.set(key, value);
-      puts.push({ key, value, opts });
     },
   };
-}
-
-function kvSignups(kv) {
-  const records = [];
-  for (const value of kv.rows.values()) {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === 'object' && typeof parsed.email === 'string') records.push(parsed);
-    } catch {
-      continue;
-    }
-  }
-  return records;
-}
-
-function kvRateRows(kv) {
-  const rates = new Map();
-  for (const [key, value] of kv.rows) {
-    if (!key.startsWith('rate:')) continue;
-    rates.set(key.slice('rate:'.length), JSON.parse(value));
-  }
-  return rates;
 }
 
 function memoryDb() {
   const signups = [];
   const rates = new Map();
+  const statements = [];
   return {
     signups,
     rates,
+    statements,
     prepare(sql) {
       const text = sql.replace(/\s+/g, ' ').trim();
       return {
         bind(...args) {
+          const exec = async () => {
+            await Promise.resolve();
+            statements.push(text);
+            if (text.startsWith('DELETE FROM signup_rates')) {
+              const now = Number(args[0]);
+              const keep = args[1];
+              for (const [key, row] of [...rates]) {
+                if (Number(row.resetAt) <= now && key !== keep) rates.delete(key);
+              }
+              return null;
+            }
+            if (text.includes('ON CONFLICT(ip_hash)')) {
+              const hash = args[0];
+              const windowEnd = Number(args[1]);
+              const now = Number(args[2]);
+              const current = rates.get(hash);
+              const fresh = !current || Number(current.resetAt) <= now;
+              const next = fresh
+                ? { count: 1, resetAt: windowEnd }
+                : { count: Number(current.count) + 1, resetAt: Number(current.resetAt) };
+              rates.set(hash, next);
+              return { count: next.count, reset_at: next.resetAt };
+            }
+            if (text.startsWith('INSERT INTO signups')) {
+              const flag = Number(args[4]);
+              const email = args[1];
+              if (flag === 1 && email && !signups.some((row) => row.email === email)) {
+                signups.push({ id: args[0], email, payload: args[2], receivedAt: args[3] });
+              }
+              return null;
+            }
+            throw new Error(`unexpected sql ${text}`);
+          };
           return {
             async first() {
-              if (text.startsWith('SELECT count, reset_at FROM signup_rates')) {
-                const row = rates.get(args[0]);
-                return row ? { count: row.count, reset_at: row.resetAt } : null;
-              }
-              if (text.startsWith('SELECT id FROM signups')) {
-                const found = signups.find((row) => row.email === args[0]);
-                return found ? { id: found.id } : null;
-              }
-              throw new Error(`unexpected read ${text}`);
+              return exec();
             },
             async run() {
-              if (text.startsWith('INSERT INTO signup_rates')) {
-                rates.set(args[0], { count: args[1], resetAt: args[2] });
-                return {};
-              }
-              if (text.startsWith('UPDATE signup_rates')) {
-                const row = rates.get(args[1]);
-                row.count = args[0];
-                return {};
-              }
-              if (text.startsWith('INSERT INTO signups')) {
-                if (signups.some((row) => row.email === args[1])) {
-                  throw new Error('UNIQUE constraint failed: signups.email');
-                }
-                signups.push({ id: args[0], email: args[1], payload: args[2], receivedAt: args[3] });
-                return {};
-              }
-              throw new Error(`unexpected write ${text}`);
+              await exec();
+              return {};
             },
           };
         },
@@ -309,120 +465,25 @@ function memoryDb() {
   };
 }
 
-function post(body, env, headers = {}) {
+function post(body, env = {}, headers = {}) {
+  const requestHeaders = {
+    'content-type': 'application/json',
+    origin: 'https://pilot.test',
+    'cf-connecting-ip': '198.51.100.10',
+    ...headers,
+  };
+  if (requestHeaders['content-type'] === '') delete requestHeaders['content-type'];
+  if (requestHeaders['cf-connecting-ip'] === '') delete requestHeaders['cf-connecting-ip'];
+  if (requestHeaders.origin === '') delete requestHeaders.origin;
+  const merged = { IP_HASH_SECRET: 'test-secret', ...env };
   return onRequestPost({
     request: new Request('https://pilot.test/api/signup', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
+      headers: requestHeaders,
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
-    env,
+    env: merged,
   });
-}
-
-async function sha256(value) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-async function assertSignupGuards(label, open) {
-  const { env, list, rates } = open();
-  const ip = '198.51.100.10';
-  const headers = { 'cf-connecting-ip': ip };
-  const honeypot = await post({ leave_blank: 'https://spam.example' }, env, headers);
-  assert.equal(honeypot.status, 200, label);
-  assert.deepEqual(await honeypot.json(), { ok: true });
-  assert.equal(list().length, 0, label);
-
-  const emptyHoneypot = await post(
-    { ...validBody, email: 'empty-hp@example.com', leave_blank: '   ' },
-    env,
-    { 'cf-connecting-ip': '198.51.100.40' },
-  );
-  assert.equal(emptyHoneypot.status, 200, label);
-  const kept = list().find((record) => record.email === 'empty-hp@example.com');
-  assert.ok(kept, label);
-  assert.equal(Object.hasOwn(kept, 'leave_blank'), false);
-
-  const first = await post(
-    { ...validBody, email: '  Ana@Example.com ', password: 'secret' },
-    env,
-    { 'cf-connecting-ip': '198.51.100.41' },
-  );
-  assert.equal(first.status, 200, label);
-  const again = await post(
-    { ...validBody, name: 'Outra Pessoa', email: 'ana@example.com' },
-    env,
-    { 'cf-connecting-ip': '198.51.100.42' },
-  );
-  assert.equal(again.status, 200, label);
-  assert.deepEqual(await again.json(), { ok: true });
-  const duplicates = list().filter((record) => record.email === 'ana@example.com');
-  assert.equal(duplicates.length, 1, label);
-  assert.equal(duplicates[0].name, 'Ana Costa');
-  assert.equal(Object.hasOwn(duplicates[0], 'password'), false);
-
-  for (let index = 0; index < 5; index += 1) {
-    const response = await post({ ...validBody, email: `quota-${label}-${index}@example.com` }, env, headers);
-    assert.equal(response.status, 200, `${label} ${index}`);
-  }
-  const beforeBlock = list().length;
-  const blocked = await post({ ...validBody, email: `quota-${label}-blocked@example.com` }, env, headers);
-  assert.equal(blocked.status, 429, label);
-  assert.equal(list().length, beforeBlock, label);
-
-  const other = await post(
-    { ...validBody, email: `other-${label}@example.com` },
-    env,
-    { 'cf-connecting-ip': '198.51.100.11' },
-  );
-  assert.equal(other.status, 200, label);
-
-  const hash = await sha256(ip);
-  const window = rates().get(hash);
-  assert.ok(window, label);
-  assert.equal(JSON.stringify([...rates().keys()]).includes(ip), false, label);
-  assert.equal(JSON.stringify(list()).includes(ip), false, label);
-  assert.ok(window.resetAt - Date.now() <= 60 * 60 * 1000, label);
-  assert.ok(window.resetAt - Date.now() > 59 * 60 * 1000, label);
-  if (label === 'kv') {
-    const ttl = env.SIGNUPS.puts.filter((item) => item.key === `rate:${hash}`).map((item) => item.opts?.expirationTtl);
-    assert.ok(ttl.length >= 1, label);
-    assert.ok(ttl.every((value) => value >= 60 && value <= 3600), label);
-  }
-  window.resetAt = Date.now() - 1;
-  if (label === 'kv') env.SIGNUPS.rows.set(`rate:${hash}`, JSON.stringify(window));
-  const afterHour = await post({ ...validBody, email: `after-hour-${label}@example.com` }, env, headers);
-  assert.equal(afterHour.status, 200, label);
-
-  const bulky = await post(
-    JSON.stringify({ ...validBody, email: 'bulk@example.com', note: 'x'.repeat(9000) }),
-    env,
-    { 'cf-connecting-ip': '198.51.100.43' },
-  );
-  assert.equal(bulky.status, 413, label);
-  assert.equal(list().some((record) => record.email === 'bulk@example.com'), false, label);
-
-  const missing = await post('null', env, { 'cf-connecting-ip': '198.51.100.44' });
-  assert.equal(missing.status, 400, label);
-  const longName = await post(
-    { ...validBody, name: 'A'.repeat(201), email: 'long@example.com' },
-    env,
-    { 'cf-connecting-ip': '198.51.100.45' },
-  );
-  assert.equal(longName.status, 400, label);
-
-  const forwarded = await post(
-    { ...validBody, email: `forward-${label}@example.com`, utm_source: 'u'.repeat(500) },
-    env,
-    { 'x-forwarded-for': '203.0.113.9, 10.0.0.8' },
-  );
-  assert.equal(forwarded.status, 200, label);
-  const forwardedRow = list().find((record) => record.email === `forward-${label}@example.com`);
-  assert.equal(forwardedRow.utm_source.length, 200);
-  assert.equal(JSON.stringify(list()).includes('203.0.113.9'), false);
-  const forwardedHash = await sha256('203.0.113.9');
-  assert.ok(rates().has(forwardedHash), label);
 }
 
 function parseStamp(value) {
