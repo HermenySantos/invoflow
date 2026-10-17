@@ -15,7 +15,7 @@ The published files are in `public/`. There is no compile step. In both dashboar
 
 On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null) and turns on clean URLs, so `/privacy` matches the Cloudflare path.
 
-Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. `functions/assets/[[path]].js` answers `Range` on `.mp4` files with status 206. `/.env`, `/.git/config`, `/admin`, and a path that contains `//` return status 404. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
+Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. `functions/assets/[[path]].js` answers `Range` on `.mp4` files with status 206. `/.env`, `/.git/config`, `/admin`, and a path that contains `//` return status 404. `public/_routes.json` includes every path, so the guard sees `/privacy//`, `//`, and `/css//site.css`. An exclude of the collapsed file would let Pages serve that doubled path as the static file. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
 
 A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only. Attaching invoflow.pt is a dashboard and DNS step, and it is outside this repository.
 
@@ -75,7 +75,7 @@ CREATE TABLE signup_rates (
 );
 ```
 
-Set `IP_HASH_SECRET` in the Cloudflare environment. The function uses it as the HMAC-SHA-256 key for the address summary. Do not commit a value for that secret. If `DB` or `IP_HASH_SECRET` is missing, the function returns HTTP 501 and writes nothing. Point `FORM_ENDPOINT` at `/api/signup` only after both are in place.
+Set `IP_HASH_SECRET` in the Cloudflare environment. The function uses it as the HMAC-SHA-256 key for the address summary. Do not commit a value for that secret. The function checks `Content-Type: application/json` and `Origin` before it looks at the bindings. A cross-origin request returns HTTP 403, and a non-JSON request returns HTTP 400, including when `DB` or `IP_HASH_SECRET` is missing. If those bindings are missing and the request is allowed, the function returns HTTP 501 and writes nothing. Point `FORM_ENDPOINT` at `/api/signup` only after both are in place.
 
 `SIGNUP_ORIGINS` is optional. When it is set, it is a comma-separated list of allowed `Origin` values, matched exactly. When it is unset, the `Origin` host must equal the host of the request URL. A missing or other origin returns HTTP 403.
 
@@ -89,7 +89,7 @@ The email is stored after Unicode NFKC, lowercasing, and punycode on the domain.
 
 The form includes a hidden `extra` field. When that field has text, the function still touches the database and returns the same HTTP 200 body, `{"ok":true}`, with no id. A first accepted signup returns that same body.
 
-A body larger than 8192 bytes returns HTTP 413. A body that is not a JSON object, or that fails the form rules, returns HTTP 400. Function responses send `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+A body larger than 8192 bytes returns HTTP 413. A body that is not a JSON object, or that fails the form rules, returns HTTP 400. Function responses, including the guard 404, the signup responses, and the video range responses, send the same security headers as `public/_headers`. Signup responses also send `Cache-Control: no-store`.
 
 ## Check
 

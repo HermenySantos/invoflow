@@ -8,6 +8,7 @@ import { readUtm } from './public/js/qualify.js';
 import { onRequestPost } from './functions/api/signup.js';
 import { onRequest as onAsset } from './functions/assets/[[path]].js';
 import { onRequest as onGuard } from './functions/_middleware.js';
+import { SECURITY_HEADERS } from './functions/security.js';
 import { captionFiles } from './tools/captions.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -157,6 +158,14 @@ const validBody = {
 
 const unconfigured = await post(validBody, {});
 assert.equal(unconfigured.status, 501);
+assertSecurity(unconfigured, 'signup 501');
+
+const offOrigin = await post(validBody, { IP_HASH_SECRET: '' }, { origin: 'https://evil.test' });
+assert.equal(offOrigin.status, 403);
+assertSecurity(offOrigin, 'signup off origin');
+const offType = await post(validBody, { IP_HASH_SECRET: '' }, { 'content-type': 'text/plain' });
+assert.equal(offType.status, 400);
+assertSecurity(offType, 'signup off type');
 
 const secretOnly = await post(validBody, { IP_HASH_SECRET: 'test-secret' });
 assert.equal(secretOnly.status, 501);
@@ -179,6 +188,7 @@ const saved = await post(
 assert.equal(saved.status, 200);
 assert.equal(saved.headers.get('x-content-type-options'), 'nosniff');
 assert.equal(saved.headers.get('cache-control'), 'no-store');
+assertSecurity(saved, 'signup 200');
 const savedText = await saved.text();
 assert.equal(savedText, '{"ok":true}');
 const stored = db.signups.map((row) => JSON.parse(row.payload));
@@ -340,6 +350,7 @@ const foreign = await post(validBody, { DB: memoryDb() }, {
   'cf-connecting-ip': '198.51.100.32',
 });
 assert.equal(foreign.status, 403);
+assertSecurity(foreign, 'signup 403');
 const allowed = await post(
   { ...validBody, email: 'allowed@example.com' },
   { DB: memoryDb(), SIGNUP_ORIGINS: 'https://invoflow.pt, https://preview.test' },
@@ -353,6 +364,7 @@ assert.ok(new TextEncoder().encode(wide).byteLength > 8192);
 const wideBody = await post(wide, { DB: memoryDb() }, { 'cf-connecting-ip': '198.51.100.34' });
 assert.equal(wideBody.status, 413);
 assert.equal(wideBody.headers.get('x-content-type-options'), 'nosniff');
+assertSecurity(wideBody, 'signup 413');
 
 const longNameDb = memoryDb();
 const longName = await post(
@@ -432,6 +444,20 @@ assert.match(read('js/not-found.js'), /Este endereço não existe\./);
 const headerFile = read('_headers');
 assert.match(headerFile, /^ {2}Strict-Transport-Security: max-age=31536000; includeSubDomains$/m);
 assert.equal(/preload/i.test(headerFile), false);
+const fileHeaders = {};
+for (const line of headerFile.split('\n')) {
+  const match = line.match(/^ {2}([^:]+):\s*(.+)$/);
+  if (match) fileHeaders[match[1].toLowerCase()] = match[2].trim();
+}
+assert.deepEqual(SECURITY_HEADERS, fileHeaders);
+
+const routes = JSON.parse(read('_routes.json'));
+assert.deepEqual(routes.include, ['/*']);
+for (const path of ['//', '/privacy//', '/css//site.css', '/js//main.js', '/fonts//inter-var-latin.woff2', '/assets//poster-review.webp']) {
+  assert.equal(routes.exclude.some((rule) => routeRuleMatches(path, rule)), false, path);
+  const collapsed = path.replace(/\/{2,}/g, '/');
+  assert.equal(routes.exclude.some((rule) => routeRuleMatches(collapsed, rule)), false, collapsed);
+}
 
 const clip = Uint8Array.from({ length: 10 }, (_, index) => index);
 const assetEnv = {
@@ -450,6 +476,7 @@ assert.equal(ranged.status, 206);
 assert.equal(ranged.headers.get('accept-ranges'), 'bytes');
 assert.equal(ranged.headers.get('content-range'), 'bytes 0-1/10');
 assert.equal(ranged.headers.get('content-type'), 'video/mp4');
+assertSecurity(ranged, 'range 206');
 assert.deepEqual([...new Uint8Array(await ranged.arrayBuffer())], [0, 1]);
 
 const whole = await assetCall('/assets/demo-short.mp4');
@@ -473,12 +500,13 @@ const invalid = await assetCall('/assets/demo-short.mp4', { range: 'bytes=20-30'
 assert.equal(invalid.status, 416);
 assert.equal(invalid.headers.get('content-range'), 'bytes */10');
 assert.equal(invalid.headers.get('accept-ranges'), 'bytes');
+assertSecurity(invalid, 'range 416');
 
 const poster = await assetCall('/assets/poster.jpg', { range: 'bytes=0-1' });
 assert.equal(poster.status, 200);
 assert.equal(poster.headers.get('content-type'), 'image/jpeg');
 
-for (const path of ['/.env', '/.git/config', '/admin', '/privacy//', '/_routes.json']) {
+for (const path of ['/.env', '/.git/config', '/admin', '//', '/privacy//', '/css//site.css', '/js//main.js', '/_routes.json']) {
   const response = await onGuard({
     request: new Request(`https://pilot.test${path}`),
     next() {
@@ -486,6 +514,8 @@ for (const path of ['/.env', '/.git/config', '/admin', '/privacy//', '/_routes.j
     },
   });
   assert.equal(response.status, 404, path);
+  assert.equal(await response.text(), 'Not found\n', path);
+  assertSecurity(response, path);
 }
 const privacyPage = await onGuard({
   request: new Request('https://pilot.test/privacy/'),
@@ -504,6 +534,23 @@ if (process.argv.includes('--release')) {
 }
 
 console.log('site checks passed');
+
+function assertSecurity(response, label) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    assert.equal(response.headers.get(name), value, `${label} ${name}`);
+  }
+}
+
+function routeRuleMatches(pathname, rule) {
+  let transformed;
+  if (rule === '/' || rule === '/*') transformed = rule;
+  else if (rule.endsWith('/*')) transformed = `${rule.slice(0, -2)}(/*)?`;
+  else if (rule.endsWith('/')) transformed = `${rule.slice(0, -1)}(/)?`;
+  else if (rule.endsWith('*')) transformed = rule;
+  else transformed = `${rule}(/)?`;
+  const source = `^${transformed.replaceAll('.', '\\.').replaceAll('*', '.*')}$`;
+  return new RegExp(source).test(pathname);
+}
 
 function assetCall(path, { method = 'GET', range } = {}) {
   const headers = new Headers();

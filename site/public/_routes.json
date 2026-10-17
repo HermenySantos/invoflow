@@ -1,22 +1,5 @@
 {
   "version": 1,
   "include": ["/*"],
-  "exclude": [
-    "/",
-    "/css/*",
-    "/js/*",
-    "/assets/poster.jpg",
-    "/assets/poster-review.jpg",
-    "/assets/poster-review.webp",
-    "/assets/favicon.svg",
-    "/fonts/*",
-    "/assets/captions-pt.vtt",
-    "/assets/captions-en.vtt",
-    "/privacy",
-    "/privacy/",
-    "/404",
-    "/404.html",
-    "/sitemap.xml",
-    "/robots.txt"
-  ]
+  "exclude": []
 }

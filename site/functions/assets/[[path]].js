@@ -1,3 +1,5 @@
+import { withSecurity } from '../security.js';
+
 function parseRange(header, size) {
   const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
   if (!match) return null;
@@ -21,14 +23,14 @@ function withLength(headers, length) {
   next.delete('content-length');
   next.set('accept-ranges', 'bytes');
   next.set('content-length', String(length));
-  return next;
+  return withSecurity(next);
 }
 
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   if (!url.pathname.toLowerCase().endsWith('.mp4')) return env.ASSETS.fetch(request);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } });
+    return new Response(null, { status: 405, headers: withSecurity({ allow: 'GET, HEAD' }) });
   }
 
   const assetUrl = new URL(request.url);

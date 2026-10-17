@@ -1,3 +1,5 @@
+import { withSecurity } from '../security.js';
+
 const MAX_BODY = 8192;
 const LIMIT = 5;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -25,11 +27,10 @@ const RATE_MESSAGE = {
 function reply(status, body) {
   return new Response(status === 200 ? OK_BODY : JSON.stringify(body), {
     status,
-    headers: {
+    headers: withSecurity({
       'content-type': 'application/json; charset=utf-8',
-      'x-content-type-options': 'nosniff',
       'cache-control': 'no-store',
-    },
+    }),
   });
 }
 
@@ -52,7 +53,7 @@ function originAllowed(request, env) {
     return false;
   }
   if (parsed.origin !== header) return false;
-  const allow = String(env.SIGNUP_ORIGINS ?? '')
+  const allow = String(env?.SIGNUP_ORIGINS ?? '')
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
@@ -151,11 +152,12 @@ function interestFrom(raw, email, consentAt) {
 }
 
 export async function onRequestPost({ request, env }) {
+  if (!jsonType(request)) return reply(400, { ok: false });
+  if (!originAllowed(request, env)) return reply(403, { ok: false });
+
   const secret = String(env?.IP_HASH_SECRET ?? '').trim();
   const db = env?.DB;
   if (!secret || typeof db?.prepare !== 'function') return reply(501, { ok: false });
-  if (!jsonType(request)) return reply(400, { ok: false });
-  if (!originAllowed(request, env)) return reply(403, { ok: false });
 
   const ip = request.headers.get('cf-connecting-ip')?.trim() ?? '';
   const bucket = ip ? bucketIp(ip) : null;
