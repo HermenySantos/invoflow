@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/lib/api';
-import { DEMO_AUTH_KEY, demoUserId, readDemoUser } from '@/lib/demoUser';
+import { DEMO_AUTH_KEY, demoUserId, isDemoModeEnabled, readDemoUser } from '@/lib/demoUser';
 
 // Node's own (empty) localStorage global hides jsdom's, so use an in-memory one.
 function memoryStorage(): Storage {
@@ -23,6 +23,18 @@ describe('demo users', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('is on only when the demo flag is set and the Clerk key is absent', () => {
+    expect(isDemoModeEnabled({})).toBe(false);
+    expect(isDemoModeEnabled({ NEXT_PUBLIC_DEMO_AUTH: '0' })).toBe(false);
+    expect(isDemoModeEnabled({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: '' })).toBe(false);
+    expect(isDemoModeEnabled({ NEXT_PUBLIC_DEMO_AUTH: '1' })).toBe(true);
+    expect(isDemoModeEnabled({ NEXT_PUBLIC_DEMO_AUTH: ' yes ' })).toBe(true);
+    expect(isDemoModeEnabled({
+      NEXT_PUBLIC_DEMO_AUTH: '1',
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_x',
+    })).toBe(false);
   });
 
   it('gives each email its own stable id', () => {

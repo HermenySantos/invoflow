@@ -101,3 +101,15 @@ def test_csv_neutralises_formula_cells():
     header, row = rows[0], rows[1]
     assert row[header.index("Fornecedor")] == '\'=HYPERLINK("http://x","y")'
     assert row[header.index("N.º da fatura")] == "'+1+1"
+
+
+def test_csv_neutralises_disguised_formulas():
+    rows = read_csv(export([receipt(
+        vendor_name="\u00a0=CMD()",
+        invoice_number="\uff1d1+1",
+        vendor_nif=" \uff0b1",
+    )]))
+    header, row = rows[0], rows[1]
+    assert row[header.index("Fornecedor")] == "'\u00a0=CMD()"
+    assert row[header.index("N.º da fatura")] == "'\uff1d1+1"
+    assert row[header.index("NIF")] == "' \uff0b1"
