@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { parseAmountInput } from "@/lib/amount";
 import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { isDemoMode } from "@/lib/demoUser";
+import { paymentDeadline } from "@/lib/deadlines";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
 import {
   Download,
@@ -75,19 +76,8 @@ function getPeriodLabel(periodType: 'month' | 'quarter', year: number, periodVal
   return `${MONTH_NAMES_PT[periodValue - 1]} ${year}`;
 }
 
-/** Calculate the payment deadline date for a given period */
 function getDeadlineDate(periodType: 'month' | 'quarter', year: number, periodValue: number): Date {
-  if (periodType === 'quarter') {
-    // Q1 → 20 May, Q2 → 20 Aug, Q3 → 20 Nov, Q4 → 20 Feb next year
-    const deadlineMonth = [4, 7, 10, 1]; // 0-indexed months
-    const deadlineYear = periodValue === 4 ? year + 1 : year;
-    return new Date(deadlineYear, deadlineMonth[periodValue - 1], 20);
-  }
-  // Monthly: 20th of the next month
-  const nextMonth = periodValue; // periodValue is 1-indexed, Date month is 0-indexed, so periodValue = next month's 0-index
-  const deadlineYear = periodValue === 12 ? year + 1 : year;
-  const monthIdx = periodValue === 12 ? 0 : nextMonth;
-  return new Date(deadlineYear, monthIdx, 20);
+  return paymentDeadline(periodType, year, periodValue);
 }
 
 function getDaysRemaining(deadline: Date): number {
@@ -351,7 +341,7 @@ export default function SummaryPage() {
               </p>
               {isDemoMode ? (
                 <p className="text-sm text-gray-600 mt-1">
-                  Modo de demonstração: o início de sessão e o armazenamento de ficheiros são simulados.
+                  Modo de demonstração: o início de sessão e o armazenamento de ficheiros são simulados. O OCR é simulado: os valores lidos são fictícios.
                 </p>
               ) : null}
 

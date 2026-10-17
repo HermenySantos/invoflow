@@ -345,15 +345,20 @@ CONFIRMED_STATUSES = ("ready", "accountant_review")
 
 
 def deductible_vat_split(documents) -> tuple[Decimal, Decimal]:
-    """Deductible VAT as (confirmed, pending review) for the given documents."""
+    """Deductible VAT as (confirmed, pending review) for the given documents.
+
+    Credit notes, cancelled invoices and duplicate files are applied first,
+    so a stored positive vat_amount is not added twice or added for a credit.
+    """
+    from app.services.iva_adjust import contributions
+
     confirmed = Decimal("0")
     pending = Decimal("0")
-    for document in documents:
-        vat = document.vat_amount or Decimal("0")
-        deductible = vat * effective_deductible_pct(document) / 100
-        if document.status in CONFIRMED_STATUSES:
+    for row in contributions(documents):
+        deductible = row.vat * effective_deductible_pct(row.document) / 100
+        if row.document.status in CONFIRMED_STATUSES:
             confirmed += deductible
-        elif document.status == "needs_review":
+        elif row.document.status == "needs_review":
             pending += deductible
     return confirmed.quantize(Decimal("0.01")), pending.quantize(Decimal("0.01"))
 

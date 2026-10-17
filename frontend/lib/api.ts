@@ -324,6 +324,7 @@ export interface Document {
   ocr_confidence: string | null;
   field_confidence: FieldConfidence | null;
   validation_warnings: ValidationWarning[];
+  fictional?: boolean;
   review_notes: string | null;
   expense_category: string | null;
   irs_sector: string | null;

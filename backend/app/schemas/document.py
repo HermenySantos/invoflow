@@ -7,7 +7,7 @@ from decimal import Decimal
 class UploadUrlRequest(BaseModel):
     """Request for a presigned upload URL."""
     filename: str = Field(..., min_length=1, max_length=255)
-    content_type: str = Field(..., pattern=r"^(image|application)/.+$")
+    content_type: str = Field(..., pattern=r"^(image/[A-Za-z0-9.+-]+|application/pdf)$")
 
 
 class UploadUrlResponse(BaseModel):
@@ -21,7 +21,7 @@ class DocumentCreate(BaseModel):
     """Create a new document after file upload."""
     storage_key: str = Field(..., min_length=1)
     original_filename: str = Field(..., min_length=1, max_length=255)
-    mime_type: str = Field(..., pattern=r"^(image|application)/.+$")
+    mime_type: str = Field(..., pattern=r"^(image/[A-Za-z0-9.+-]+|application/pdf)$")
     file_size: Optional[int] = None
 
 
@@ -90,6 +90,7 @@ class DocumentResponse(BaseModel):
     
     # Validation warnings (populated per-request)
     validation_warnings: list[dict] = []
+    fictional: bool = False
     
     # Computed
     period_tag: str

@@ -378,6 +378,9 @@ export default function ReceiptsPage() {
                           </span>
                           {statusInfo.icon}
                           <span className="sr-only">{statusInfo.label}</span>
+                          {doc.fictional ? (
+                            <span className="text-xs text-amber-800">dados fictícios</span>
+                          ) : null}
                           {hasError && (
                             <AlertTriangle
                               className="w-4 h-4 text-red-500 flex-shrink-0"

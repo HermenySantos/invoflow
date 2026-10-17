@@ -37,6 +37,8 @@ from app.services.audit import (
     log_document_delete,
 )
 from app.services.validation import validate_document, detect_duplicates
+from app.services.iva_adjust import reading_is_fictional
+from app.services.uploads import allowed_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -153,6 +155,7 @@ def build_document_response(
         deductible_pct=effective_deductible_pct(document),
         deductible_pct_override=document.deductible_pct_override,
         validation_warnings=warnings,
+        fictional=reading_is_fictional(document.ocr_raw_response),
         period_tag=document.period_tag,
         quarter_tag=document.quarter_tag,
         file_url=file_url,
@@ -234,6 +237,12 @@ async def create_document(
 
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
+    stored = storage.get_file(doc_create.storage_key)
+    if stored is not None and not allowed_upload(stored):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only image and PDF files are accepted",
+        )
 
     try:
         document = Document(

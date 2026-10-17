@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -23,7 +24,7 @@ from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
 from app.core.rate_limit import limiter
 from app.core.startup import get_environment_status, run_startup_checks
-from app.services.ocr import resolve_ocr_backend, tesseract_available
+from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_available
 from app.services.processing import read_receipt, stuck_document_ids
 
 settings = get_settings()
@@ -203,8 +204,23 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+class HideEfaturaWhenDisabled(BaseHTTPMiddleware):
+    """The pull route is absent unless the flag is on. Every method is 404."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path == "/api/efatura" or path.startswith("/api/efatura/"):
+            if not get_settings().efatura_pull_enabled:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"detail": "e-Fatura pull is disabled"},
+                )
+        return await call_next(request)
+
+
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(HideEfaturaWhenDisabled)
 
 allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 allowed_headers = [
@@ -226,6 +242,28 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
+def custom_openapi():
+    enabled = bool(get_settings().efatura_pull_enabled)
+    if app.openapi_schema is not None and getattr(app, "_openapi_efatura", None) is enabled:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    if not enabled:
+        schema["paths"] = {
+            path: item for path, item in schema.get("paths", {}).items() if "/efatura" not in path
+        }
+    app.openapi_schema = schema
+    app._openapi_efatura = enabled
+    return schema
+
+
+app.openapi = custom_openapi
+
+
 @app.get("/")
 async def root():
     backend = resolve_ocr_backend()
@@ -245,11 +283,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "ocr_backend": resolve_ocr_backend(),
-        "tesseract": tesseract_available(),
-    }
+    return ocr_runtime_status()
 
 
 @app.get("/health/detailed")

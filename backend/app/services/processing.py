@@ -9,6 +9,8 @@ database session from the factory it is given.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from typing import Callable
 
@@ -67,7 +69,7 @@ async def _read_into(db: Session, document: Document) -> None:
     document.gross_amount = result.gross_amount
     document.vat_rate = result.vat_rate
     document.ocr_confidence = result.confidence
-    document.ocr_raw_response = result.raw_response
+    document.ocr_raw_response = _with_file_hash(result.raw_response, file_content)
     document.expense_category, document.irs_sector = categorize_document(
         result.vendor_name, result.vendor_nif
     )
@@ -100,6 +102,19 @@ async def _read_into(db: Session, document: Document) -> None:
             expense_category=document.expense_category,
             irs_sector=document.irs_sector or "geral",
         )
+
+
+def _with_file_hash(raw: str | None, file_content: bytes | None) -> str | None:
+    if not file_content:
+        return raw
+    try:
+        payload = json.loads(raw) if raw else {}
+        if not isinstance(payload, dict):
+            payload = {"ocr": raw}
+    except json.JSONDecodeError:
+        payload = {"ocr": raw}
+    payload["file_sha256"] = hashlib.sha256(file_content).hexdigest()
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def stuck_document_ids(db: Session) -> list[str]:

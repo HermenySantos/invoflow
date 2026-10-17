@@ -26,6 +26,7 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
+from app.services.iva_adjust import contributions, fiscal_mark
 
 
 # A cell starting with one of these runs as a formula in Excel/LibreOffice.
@@ -85,8 +86,12 @@ class ExportService:
         zip_buffer = io.BytesIO()
         
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            # Add original files
+            counted_ids = {id(row.document) for row in contributions(documents)}
             for doc in documents:
+                mark = fiscal_mark(doc)
+                credit_note = mark.document_type == "NC" and mark.fiscal_status != "A"
+                if id(doc) not in counted_ids and not credit_note:
+                    continue
                 file_content = self._get_file_content(doc.storage_key)
                 if file_content:
                     # Organize by month
@@ -149,11 +154,11 @@ class ExportService:
             "Filename",
         ])
         
-        # Data rows
-        for doc in documents:
+        for row in contributions(documents):
+            doc = row.document
             cat = doc.expense_category or "other"
             pct = effective_deductible_pct(doc)
-            vat = doc.vat_amount or Decimal(0)
+            vat = row.vat
             deductible = (vat * pct / 100).quantize(Decimal("0.01"))
             writer.writerow([
                 str(doc.id),
@@ -161,9 +166,9 @@ class ExportService:
                 _csv_text(doc.vendor_name),
                 _csv_text(doc.vendor_nif),
                 _csv_text(doc.invoice_number),
-                _csv_amount(doc.net_amount),
-                _csv_amount(doc.vat_amount),
-                _csv_amount(doc.gross_amount),
+                _csv_amount(row.net),
+                _csv_amount(row.vat),
+                _csv_amount(row.gross),
                 _csv_amount(doc.vat_rate),
                 get_expense_category_label(cat),
                 get_irs_sector_label(doc.irs_sector or "geral"),
@@ -202,10 +207,10 @@ class ExportService:
         elements.append(Paragraph(f"Total de documentos: {len(documents)}", styles['Normal']))
         elements.append(Spacer(1, 20))
         
-        # Calculate totals with per-category deductible
-        total_gross = sum(d.gross_amount or Decimal(0) for d in documents)
-        total_vat = sum(d.vat_amount or Decimal(0) for d in documents)
-        total_net = sum(d.net_amount or Decimal(0) for d in documents)
+        counted = contributions(documents)
+        total_gross = sum((row.gross for row in counted), Decimal(0))
+        total_vat = sum((row.vat for row in counted), Decimal(0))
+        total_net = sum((row.net for row in counted), Decimal(0))
         deductible_vat, deductible_vat_pending = deductible_vat_split(documents)
         
         # Summary table
@@ -238,18 +243,19 @@ class ExportService:
         elements.append(Paragraph("Documentos", styles['Heading2']))
         
         doc_data = [["Data", "Fornecedor", "Categoria", "Bruto", "IVA", "Estado"]]
-        for d in documents[:50]:  # Limit to 50 for PDF readability
+        for row in counted[:50]:
+            d = row.document
             doc_data.append([
                 d.document_date.strftime("%d/%m/%Y") if d.document_date else "-",
                 (d.vendor_name or "Desconhecido")[:25],
                 get_expense_category_label(d.expense_category or "other")[:15],
-                _pdf_eur(d.gross_amount) if d.gross_amount else "-",
-                _pdf_eur(d.vat_amount) if d.vat_amount else "-",
+                _pdf_eur(row.gross),
+                _pdf_eur(row.vat),
                 STATUS_LABELS.get(d.status, d.status),
             ])
         
-        if len(documents) > 50:
-            doc_data.append(["...", f"+ {len(documents) - 50} mais", "", "", "", ""])
+        if len(counted) > 50:
+            doc_data.append(["...", f"+ {len(counted) - 50} mais", "", "", "", ""])
         
         doc_table = Table(doc_data, colWidths=[2*cm, 5*cm, 2.5*cm, 2*cm, 2*cm, 2*cm])
         doc_table.setStyle(TableStyle([

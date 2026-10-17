@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { isDemoMode } from '@/lib/demoUser';
 import { FlowDiagram } from './FlowDiagram';
+import { formatPaymentDeadline, paymentDeadline } from '@/lib/deadlines';
 import { LANG_KEY, LandingLang, landingCopy } from './copy';
 
 export function LandingPage() {
@@ -12,6 +13,7 @@ export function LandingPage() {
   const [lang, setLang] = useState<LandingLang>('pt');
   const t = landingCopy[lang];
   const startHref = isAuthenticated ? '/upload' : '/sign-in?next=/upload';
+  const exampleDue = formatPaymentDeadline(paymentDeadline('quarter', 2026, 1), lang);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(LANG_KEY);
@@ -90,7 +92,7 @@ export function LandingPage() {
                 <p className="landing-kicker">{t.ivaKicker}</p>
                 <p className="landing-iva-label">{t.ivaLabel}</p>
                 <p className="landing-iva-amount">{t.ivaAmount}</p>
-                <p className="landing-iva-due">{t.ivaDue}</p>
+                <p className="landing-iva-due">{exampleDue}</p>
                 <p className="landing-iva-detail">{t.ivaDetail}</p>
               </article>
 

@@ -4,18 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { LANG_KEY, LandingLang } from '@/components/landing/copy';
 import { isDemoMode } from '@/lib/demoUser';
+import { controllerConfig } from './controller';
 import { privacyCopy } from './copy';
-
-const CONTACT_EMAIL = 'hermeny7@hotmail.com';
-
-function Todo({ children }: { children: string }) {
-  return (
-    <li>
-      <span className="landing-todo">TODO</span>
-      {children}
-    </li>
-  );
-}
 
 export function PrivacyPage() {
   const [lang, setLang] = useState<LandingLang>('pt');
@@ -59,13 +49,18 @@ export function PrivacyPage() {
         <p>{t.controllerBody}</p>
         <ul>
           <li>{t.controllerName}</li>
-          <Todo>{t.controllerAddress}</Todo>
-          <Todo>{t.controllerNif}</Todo>
+          {controllerConfig.address && controllerConfig.nif ? (
+            <>
+              <li>{controllerConfig.address}</li>
+              <li>{controllerConfig.nif}</li>
+            </>
+          ) : (
+            <li>{t.missingControllerDetails}</li>
+          )}
         </ul>
         <p>
           {t.contactLabel}:{' '}
-          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>{' '}
-          <span className="landing-confirm">({t.contactNote})</span>
+          <a href={`mailto:${controllerConfig.email}`}>{controllerConfig.email}</a>
         </p>
 
         <h2>{t.dataHeading}</h2>
@@ -90,7 +85,6 @@ export function PrivacyPage() {
           {t.retention.map((item) => (
             <li key={item}>{item}</li>
           ))}
-          <Todo>{t.retentionTodo}</Todo>
         </ul>
 
         <h2>{t.processorsHeading}</h2>
@@ -99,8 +93,10 @@ export function PrivacyPage() {
           {t.processors.map((item) => (
             <li key={item}>{item}</li>
           ))}
-          <Todo>{t.processorsTodo}</Todo>
         </ul>
+
+        <h2>{t.transfersHeading}</h2>
+        <p>{t.transfersBody}</p>
 
         <h2>{t.rightsHeading}</h2>
         <p>{t.rightsBody}</p>
@@ -113,8 +109,7 @@ export function PrivacyPage() {
 
         <h2>{t.contactHeading}</h2>
         <p>
-          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>{' '}
-          <span className="landing-confirm">({t.contactNote})</span>
+          <a href={`mailto:${controllerConfig.email}`}>{controllerConfig.email}</a>
         </p>
       </main>
     </div>
