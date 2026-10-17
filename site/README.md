@@ -13,7 +13,7 @@ The published files are in `public/`. There is no compile step. In both dashboar
 | Cloudflare Pages | empty | `public` |
 | Vercel | empty | `public` |
 
-On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null) and turns on clean URLs, so `/privacy` matches the Cloudflare path.
+On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null), turns on clean URLs, and keeps a trailing slash. `/privacy` is one 308 to `/privacy/`. The same hop is in `public/_redirects` and in the Pages middleware, so Cloudflare does not add a second redirect.
 
 Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. `functions/assets/[[path]].js` answers `Range` on `.mp4` files with status 206. `/.env`, `/.git/config`, `/admin`, and a path that contains `//` return status 404. `public/_routes.json` includes every path, so the guard sees `/privacy//`, `//`, and `/css//site.css`. An exclude of the collapsed file would let Pages serve that doubled path as the static file. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
 

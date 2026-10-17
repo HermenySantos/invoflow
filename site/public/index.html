@@ -41,7 +41,7 @@
             <button type="button" class="lang__opt" data-lang="pt" aria-pressed="true" lang="pt-PT">PT</button>
             <button type="button" class="lang__opt" data-lang="en" aria-pressed="false" lang="en">EN</button>
           </div>
-          <a class="btn btn--primary btn--sm" href="#lista" data-cta data-i18n="cta">Avisem-me</a>
+          <a class="btn btn--outline btn--sm" href="#lista" data-cta data-i18n="cta">Avisem-me</a>
         </div>
       </div>
     </header>
@@ -54,12 +54,12 @@
             <h1 id="hero-title" class="display" data-i18n="heroTitle">Acabe com as surpresas de IVA no fim do trimestre.</h1>
             <p class="lede" data-i18n="heroSub">Fotografe as faturas ao longo do trimestre. A Invoflow lê os dados, mostra uma estimativa do IVA e organiza um pack para enviar ao seu contabilista.</p>
             <div class="hero__actions">
-              <a class="btn btn--primary" href="#lista" data-cta data-i18n="cta">Avisem-me</a>
+              <div class="hero__cta">
+                <a class="btn btn--primary" href="#lista" data-cta data-i18n="cta">Avisem-me</a>
+                <p class="friction" data-i18n="friction">Só pedimos o email. Sem compromisso.</p>
+                <p class="caveat" data-i18n="caveat">É uma estimativa. Não substitui o contabilista.</p>
+              </div>
               <a class="btn btn--quiet" href="#demonstracao"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 5.2v5.6L11 8z" fill="currentColor"/></svg><span data-i18n="seeDemo">Ver a demonstração (18 s)</span></a>
-            </div>
-            <div class="hero__fine">
-              <p class="friction" data-i18n="friction">Só pedimos o email. Sem compromisso.</p>
-              <p class="caveat" data-i18n="caveat">É uma estimativa. Não substitui o contabilista.</p>
             </div>
           </div>
 
@@ -106,7 +106,7 @@
       <section class="section pain" aria-labelledby="pain-title">
         <div class="wrap">
           <header class="section__head">
-            <p class="kicker" aria-hidden="true">01</p>
+            <p class="kicker" aria-hidden="true">02</p>
             <h2 id="pain-title" class="h2" data-i18n="painTitle">Conhece este fim de trimestre?</h2>
           </header>
           <ol class="slips">
@@ -123,7 +123,7 @@
         <div class="wrap how__grid">
           <div class="how__copy">
             <header class="section__head">
-              <p class="kicker" aria-hidden="true">02</p>
+              <p class="kicker" aria-hidden="true">03</p>
               <h2 id="how-title" class="h2" data-i18n="howTitle">Como a Invoflow ajuda</h2>
             </header>
             <ol class="steps">
@@ -159,7 +159,7 @@
       <section class="section gains" aria-labelledby="gains-title">
         <div class="wrap">
           <header class="section__head">
-            <p class="kicker" aria-hidden="true">03</p>
+            <p class="kicker" aria-hidden="true">04</p>
             <h2 id="gains-title" class="h2" data-i18n="gainsTitle">O que muda para si</h2>
           </header>
           <ul class="gains__grid">
@@ -188,27 +188,27 @@
       </section>
 
       <section class="limits" id="limites" aria-labelledby="limits-title">
-        <div class="wrap">
+        <div class="wrap limits__grid">
           <header class="limits__head">
-            <p class="kicker kicker--on-deep" aria-hidden="true">04</p>
+            <p class="kicker kicker--on-deep" aria-hidden="true">05</p>
             <h2 id="limits-title" class="h2 h2--on-deep" data-i18n="limitsTitle">Limites, com honestidade</h2>
             <p class="limits__intro" data-i18n="limIntro">Antes de deixar o email, saiba o que a Invoflow faz e o que não faz.</p>
           </header>
-          <ul class="limits__list">
-            <li><strong data-i18n="lim1a">É uma estimativa.</strong> <span data-i18n="lim1b">O IVA das vendas é introduzido por si. A Invoflow subtrai-lhe o IVA das suas faturas de despesas e mostra o resultado como estimativa. Não é uma declaração nem um valor oficial.</span></li>
-            <li><strong data-i18n="lim2a">A leitura automática pode errar.</strong> <span data-i18n="lim2b">Talões desbotados, escritos à mão ou com um código QR pequeno podem sair mal lidos. As leituras claras ficam logo prontas; as outras ficam assinaladas. Pode rever e corrigir qualquer fatura.</span></li>
-            <li><strong data-i18n="lim3a">Não substitui o contabilista</strong> <span data-i18n="lim3b">e não é aconselhamento fiscal.</span></li>
-            <li><strong data-i18n="lim4a">Não envia nada às Finanças</strong> <span data-i18n="lim4b">e não está ligada ao e-Fatura.</span></li>
-            <li><strong data-i18n="lim5a">Funciona no navegador,</strong> <span data-i18n="lim5b">também no telemóvel, e pode adicioná-la ao ecrã principal. Não há app nas lojas.</span></li>
-            <li><strong data-i18n="lim6a">Pensada para o IVA trimestral.</strong> <span data-i18n="lim6b">Se entrega o IVA todos os meses, deixe o email na mesma: a Invoflow também mostra períodos mensais, mas foi pensada para o fim do trimestre.</span></li>
-          </ul>
+          <ol class="terms">
+            <li class="term reveal"><span class="term__no" aria-hidden="true">i</span><p><strong class="term__lead" data-i18n="lim1a">É uma estimativa.</strong> <span data-i18n="lim1b">O IVA das vendas é introduzido por si. A Invoflow subtrai-lhe o IVA das suas faturas de despesas e mostra o resultado como estimativa. Não é uma declaração nem um valor oficial.</span></p></li>
+            <li class="term reveal"><span class="term__no" aria-hidden="true">ii</span><p><strong class="term__lead" data-i18n="lim2a">A leitura automática pode errar.</strong> <span data-i18n="lim2b">Talões desbotados, escritos à mão ou com um código QR pequeno podem sair mal lidos. As leituras claras ficam logo prontas; as outras ficam assinaladas. Pode rever e corrigir qualquer fatura.</span></p></li>
+            <li class="term reveal"><span class="term__no" aria-hidden="true">iii</span><p><strong class="term__lead" data-i18n="lim3a">Não substitui o contabilista</strong> <span data-i18n="lim3b">e não é aconselhamento fiscal.</span></p></li>
+            <li class="term reveal"><span class="term__no" aria-hidden="true">iv</span><p><strong class="term__lead" data-i18n="lim4a">Não envia nada às Finanças</strong> <span data-i18n="lim4b">e não está ligada ao e-Fatura.</span></p></li>
+            <li class="term reveal"><span class="term__no" aria-hidden="true">v</span><p><strong class="term__lead" data-i18n="lim5a">Funciona no navegador,</strong> <span data-i18n="lim5b">também no telemóvel, e pode adicioná-la ao ecrã principal. Não há app nas lojas.</span></p></li>
+            <li class="term reveal"><span class="term__no" aria-hidden="true">vi</span><p><strong class="term__lead" data-i18n="lim6a">Pensada para o IVA trimestral.</strong> <span data-i18n="lim6b">Se entrega o IVA todos os meses, deixe o email na mesma: a Invoflow também mostra períodos mensais, mas foi pensada para o fim do trimestre.</span></p></li>
+          </ol>
         </div>
       </section>
 
       <section class="section faq" id="perguntas" aria-labelledby="faq-title">
         <div class="wrap faq__grid">
           <header class="section__head faq__head">
-            <p class="kicker" aria-hidden="true">05</p>
+            <p class="kicker" aria-hidden="true">06</p>
             <h2 id="faq-title" class="h2" data-i18n="faqTitle">Perguntas frequentes</h2>
           </header>
           <div class="accordion">
@@ -219,7 +219,7 @@
             <details class="qa"><summary data-i18n="faq5Q">Também funciona com as faturas que recebo em PDF por email?</summary><div class="qa__a"><p data-i18n="faq5A">Sim. Pode carregar o PDF tal como chegou, ou uma fotografia.</p></div></details>
             <details class="qa"><summary data-i18n="faq6Q">O que recebe o meu contabilista?</summary><div class="qa__a"><p data-i18n="faq6A">Um ficheiro ZIP com os originais das faturas, um resumo em CSV (para abrir numa folha de cálculo) e um resumo em PDF. As faturas que ainda não reviu vão marcadas como tal. O seu contabilista não precisa de conta nem de instalar nada, e não tem acesso à Invoflow: recebe apenas o ficheiro que lhe enviar.</p></div></details>
             <details class="qa"><summary data-i18n="faq7Q">Quanto vai custar?</summary><div class="qa__a"><p data-i18n="faq7A">Ainda não há preço público. Quando houver, quem está na lista sabe por email. Deixar o email não o compromete a nada, e esta página não cobra nada.</p></div></details>
-            <details class="qa"><summary data-i18n="faq8Q">Onde ficam os meus dados?</summary><div class="qa__a"><p><span class="token" data-i18n="tokHosting">[alojamento e retenção: local de alojamento, tempo de conservação, quem tem acesso — aguarda decisão do Gildo]</span>. <span data-i18n="faq8A">O email que deixar aqui serve apenas para lhe escrevermos sobre a Invoflow, e pode sair da lista a qualquer momento. Mais detalhes na</span> <a href="/privacy" data-i18n="faq8Link">política de privacidade</a>.</p></div></details>
+            <details class="qa"><summary data-i18n="faq8Q">Onde ficam os meus dados?</summary><div class="qa__a"><p><span class="token" data-i18n="tokHosting">[alojamento e retenção: local de alojamento, tempo de conservação, quem tem acesso — aguarda decisão do Gildo]</span>. <span data-i18n="faq8A">O email que deixar aqui serve apenas para lhe escrevermos sobre a Invoflow, e pode sair da lista a qualquer momento. Mais detalhes na</span> <a href="/privacy/" data-i18n="faq8Link">política de privacidade</a>.</p></div></details>
           </div>
         </div>
       </section>
@@ -227,12 +227,12 @@
       <section class="section signup" id="lista" aria-labelledby="form-title">
         <div class="wrap signup__grid">
           <div class="signup__intro">
-            <p class="kicker" aria-hidden="true">06</p>
-            <h2 id="form-title" class="h2" data-i18n="formTitle">Quer saber quando a Invoflow abrir?</h2>
+            <p class="kicker" aria-hidden="true">07</p>
+            <h2 id="form-title" class="h2 h2--xl" data-i18n="formTitle">Quer saber quando a Invoflow abrir?</h2>
             <p class="signup__lede" data-i18n="formIntro">Deixe o seu email. Escrevemos-lhe quando houver novidades e quando a Invoflow abrir.</p>
             <div class="gets">
               <h3 class="gets__title" data-i18n="termGetTitle">O que recebe</h3>
-              <ul>
+              <ul class="gets__list">
                 <li data-i18n="termGet1">Alguns emails curtos sobre como a Invoflow funciona.</li>
                 <li data-i18n="termGet2">O aviso quando a Invoflow abrir.</li>
                 <li data-i18n="termGet3">Uma forma simples de sair da lista, em qualquer email.</li>
@@ -263,7 +263,7 @@
                 </div>
                 <label class="consent">
                   <input id="consent" name="consent" type="checkbox" required aria-describedby="err-consent" />
-                  <span><span data-i18n="consentBody">Aceito receber emails da Invoflow sobre o produto e o seu lançamento. Posso sair da lista a qualquer momento. Li a</span> <a href="/privacy" data-i18n="consentLink">política de privacidade</a>.</span>
+                  <span><span data-i18n="consentBody">Aceito receber emails da Invoflow sobre o produto e o seu lançamento. Posso sair da lista a qualquer momento. Li a</span> <a href="/privacy/" data-i18n="consentLink">política de privacidade</a>.</span>
                 </label>
                 <p class="error" id="err-consent" data-error-for="consent" role="alert"></p>
                 <p class="error" id="err-form" data-error-for="form" role="alert"></p>
@@ -285,7 +285,7 @@
       <div class="wrap footer__grid">
         <p class="footer__brand"><span class="wordmark wordmark--small">Invoflow</span></p>
         <p class="footer__line" data-i18n="footerLine">Invoflow: estimativa de IVA e pack de faturas para o seu contabilista. Não é aconselhamento fiscal.</p>
-        <p class="footer__links"><a href="/privacy" data-i18n="footerPrivacy">Privacidade</a> <span aria-hidden="true">·</span> <span data-i18n="footerContact">Contacto:</span> <a href="mailto:contacto@invoflow.pt">contacto@invoflow.pt</a></p>
+        <p class="footer__links"><a href="/privacy/" data-i18n="footerPrivacy">Privacidade</a> <span aria-hidden="true">·</span> <span data-i18n="footerContact">Contacto:</span> <a href="mailto:contacto@invoflow.pt">contacto@invoflow.pt</a></p>
         <p class="footer__legal"><span class="token" data-i18n="tokEntity">[entidade e NIF]</span></p>
       </div>
     </footer>

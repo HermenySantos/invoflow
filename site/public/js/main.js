@@ -79,6 +79,13 @@ function clearErrors() {
   });
 }
 
+function clearField(name) {
+  const slot = document.querySelector(`[data-error-for="${name}"]`);
+  if (slot) slot.textContent = '';
+  const field = document.getElementById(name);
+  if (field) field.removeAttribute('aria-invalid');
+}
+
 function fieldMessage(form, name) {
   if (name === 'email') {
     const value = form.email.value.trim();
@@ -197,6 +204,17 @@ function mountUtm() {
   form.utm_campaign.value = utm.utm_campaign;
 }
 
+function mountLiveErrors(form) {
+  form.email.addEventListener('input', () => {
+    if (!form.email.hasAttribute('aria-invalid')) return;
+    if (!fieldMessage(form, 'email')) clearField('email');
+  });
+  form.consent.addEventListener('change', () => {
+    if (!form.consent.hasAttribute('aria-invalid')) return;
+    if (!fieldMessage(form, 'consent')) clearField('consent');
+  });
+}
+
 function mountClosed() {
   const notice = document.querySelector('#closed-notice');
   const button = document.querySelector('#submit-pilot');
@@ -244,10 +262,12 @@ document.querySelectorAll('[data-cta]').forEach((node) => {
   node.addEventListener('click', () => track('cta_click'));
 });
 
-document.querySelector('#pilot-form').addEventListener('submit', (event) => {
+const pilotForm = document.querySelector('#pilot-form');
+pilotForm.addEventListener('submit', (event) => {
   event.preventDefault();
   submitForm(event.currentTarget);
 });
+mountLiveErrors(pilotForm);
 
 const queryLang = new URLSearchParams(window.location.search).get('lang');
 try {

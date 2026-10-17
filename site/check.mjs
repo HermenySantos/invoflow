@@ -60,7 +60,25 @@ assert.equal(/\b\d[\d.,]*\s*(?:\/\s*trimestre|por\s+trimestre|per\s+quarter)\b/i
 assert.equal(outsideLabels.includes('Pack IVA'), false);
 assert.match(home, /data-label="example"[\s\S]*Exemplo, Lda[\s\S]*23,00[\s\S]*41,86[\s\S]*230,00/);
 assert.match(home, /data-label="estimate"[\s\S]*188,14/);
-assert.ok(home.includes('href="/privacy"'));
+assert.match(home, /<a class="btn btn--outline btn--sm" href="#lista" data-cta/);
+assert.equal(home.includes('btn btn--primary btn--sm'), false);
+assert.match(home, /<div class="hero__cta">[\s\S]*?<a class="btn btn--primary" href="#lista"/);
+assert.match(home, /<p class="kicker" aria-hidden="true">02<\/p>/);
+assert.match(home, /<p class="kicker" aria-hidden="true">03<\/p>/);
+assert.match(home, /<p class="kicker" aria-hidden="true">04<\/p>/);
+assert.match(home, /<p class="kicker kicker--on-deep" aria-hidden="true">05<\/p>/);
+assert.match(home, /<p class="kicker" aria-hidden="true">06<\/p>/);
+assert.match(home, /<p class="kicker" aria-hidden="true">07<\/p>/);
+assert.equal(/<p class="kicker[^"]*" aria-hidden="true">01<\/p>/.test(home), false);
+assert.match(home, /<ol class="terms">/);
+for (const numeral of ['i', 'ii', 'iii', 'iv', 'v', 'vi']) {
+  assert.match(home, new RegExp(`<span class="term__no" aria-hidden="true">${numeral}</span>`));
+}
+assert.match(home, /<h2 id="form-title" class="h2 h2--xl"/);
+assert.match(read('js/main.js'), /addEventListener\('input'/);
+assert.equal((home.match(/href="\/privacy\/"/g) || []).length, 3);
+assert.equal(/href="\/privacy"(?!\/)/.test(home), false);
+assert.equal(/https:\/\/invoflow\.pt\/privacy(?!\/)/.test(home), false);
 assert.ok(home.includes('rel="canonical" href="https://invoflow.pt/"'));
 assert.ok(home.includes('property="og:url" content="https://invoflow.pt/"'));
 assert.ok(home.includes('pack para enviar ao seu contabilista'));
@@ -94,10 +112,20 @@ assert.ok(privacy.includes('<span class="token">[IP address wording — awaiting
 assert.equal(privacy.includes('<span class="token">[prazo]</span>'), false);
 assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy/"'));
 assert.ok(privacy.includes('property="og:url" content="https://invoflow.pt/privacy/"'));
+assert.equal(/href="\/privacy"(?!\/)/.test(privacy), false);
+assert.equal(/https:\/\/invoflow\.pt\/privacy(?!\/)/.test(privacy), false);
 
 const sitemap = read('sitemap.xml');
 assert.ok(sitemap.includes('<loc>https://invoflow.pt/</loc>'));
 assert.ok(sitemap.includes('<loc>https://invoflow.pt/privacy/</loc>'));
+assert.equal(/https:\/\/invoflow\.pt\/privacy(?!\/)/.test(sitemap), false);
+assert.equal(/hreflang/i.test(sitemap), false);
+const redirects = read('_redirects').trim();
+assert.equal(redirects, '/privacy /privacy/ 308');
+const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'));
+assert.equal(vercel.cleanUrls, true);
+assert.equal(vercel.trailingSlash, true);
+assert.equal(Object.hasOwn(vercel, 'redirects'), false);
 assert.ok(read('robots.txt').includes('Sitemap: https://invoflow.pt/sitemap.xml'));
 
 assert.equal(CONFIG.FORM_ENDPOINT, '');
@@ -603,6 +631,23 @@ const privacyPage = await onGuard({
   },
 });
 assert.equal(privacyPage.status, 200);
+const privacyRedirect = await onGuard({
+  request: new Request('https://pilot.test/privacy'),
+  next() {
+    return new Response('should-not-run', { status: 200 });
+  },
+});
+assert.equal(privacyRedirect.status, 308);
+assert.equal(privacyRedirect.headers.get('location'), '/privacy/');
+assert.equal(await privacyRedirect.text(), '');
+assertSecurity(privacyRedirect, 'privacy 308');
+const privacyExtra = await onGuard({
+  request: new Request('https://pilot.test/privacy/extra'),
+  next() {
+    return new Response('page', { status: 200 });
+  },
+});
+assert.equal(privacyExtra.status, 200);
 
 if (process.argv.includes('--release')) {
   for (const file of ['index.html', 'js/copy.js', 'privacy/index.html']) {
