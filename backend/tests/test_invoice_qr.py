@@ -84,6 +84,19 @@ def test_upload_reads_an_at_qr_embedded_in_a_pdf(client: TestClient):
     assert document["net_amount"] == "30.00"
 
 
+def test_missing_poppler_logs_a_warning(monkeypatch, caplog):
+    import pdf2image
+    from pdf2image.exceptions import PDFInfoNotInstalledError
+
+    def boom(*_args, **_kwargs):
+        raise PDFInfoNotInstalledError("poppler is not installed")
+
+    monkeypatch.setattr(pdf2image, "convert_from_bytes", boom)
+    with caplog.at_level(logging.WARNING, logger="app.services.ocr"):
+        assert _pdf_first_page_image(b"%PDF-1.4") is None
+    assert any("poppler" in record.message.lower() for record in caplog.records)
+
+
 def test_missing_pdf2image_logs_a_warning(monkeypatch, caplog):
     real_import = builtins.__import__
 

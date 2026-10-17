@@ -477,14 +477,24 @@ def _extract_pdf_text(file_content: bytes) -> str:
 
 
 def _pdf_first_page_image(file_content: bytes) -> Optional[Image.Image]:
-    """Best-effort rasterization; returns None if pdf2image/poppler are missing."""
     try:
         from pdf2image import convert_from_bytes
+        from pdf2image.exceptions import PDFInfoNotInstalledError
     except ImportError:
+        logger.warning(
+            "PDF QR read skipped: pdf2image is not installed. "
+            "Pin it in requirements.txt."
+        )
         return None
     try:
         images = convert_from_bytes(file_content, first_page=1, last_page=1)
         return images[0] if images else None
+    except PDFInfoNotInstalledError:
+        logger.warning(
+            "PDF QR read skipped: poppler-utils is not installed. "
+            "The backend image pins that package."
+        )
+        return None
     except Exception:
         return None
 

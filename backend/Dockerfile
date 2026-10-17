@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-por \
     tesseract-ocr-eng \
+    poppler-utils=25.03.0-5+deb13u4 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
