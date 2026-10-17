@@ -38,7 +38,7 @@ from app.services.audit import (
 )
 from app.services.validation import validate_document, detect_duplicates
 from app.services.iva_adjust import reading_is_fictional
-from app.services.uploads import allowed_upload
+from app.services.uploads import prepare_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -258,11 +258,14 @@ async def create_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Uploaded file was not found",
         )
-    if not allowed_upload(stored):
+    prepared = prepare_upload(stored)
+    if prepared is None:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Only image and PDF files are accepted",
         )
+    if prepared != stored:
+        storage.replace_file(storage_key, prepared)
 
     try:
         document = Document(

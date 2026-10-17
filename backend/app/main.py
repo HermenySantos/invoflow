@@ -264,37 +264,56 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
+def _runtime_status_code(payload: dict) -> int:
+    if payload["status"] == "degraded":
+        return status.HTTP_503_SERVICE_UNAVAILABLE
+    return status.HTTP_200_OK
+
+
 @app.get("/")
 async def root():
-    backend = resolve_ocr_backend()
-    return {
-        "name": settings.app_name,
-        "product": "Invoflow",
-        "version": "0.2.0",
-        "status": "healthy",
-        "ocr_backend": backend,
-        "mock_mode": {
-            "auth": settings.auth_mock_mode,
-            "storage": settings.storage_mock_mode,
-            "ocr": backend == "mock",
+    runtime = ocr_runtime_status()
+    return JSONResponse(
+        status_code=_runtime_status_code(runtime),
+        content={
+            "name": settings.app_name,
+            "product": "Invoflow",
+            "version": "0.2.0",
+            "status": runtime["status"],
+            "ocr_backend": runtime["ocr_backend"],
+            "mock_mode": {
+                "auth": settings.auth_mock_mode,
+                "storage": settings.storage_mock_mode,
+                "ocr": runtime["ocr_backend"] == "mock",
+            },
         },
-    }
+    )
 
 
 @app.get("/health")
 async def health_check():
     payload = ocr_runtime_status()
-    code = status.HTTP_503_SERVICE_UNAVAILABLE if payload["status"] == "degraded" else status.HTTP_200_OK
-    return JSONResponse(status_code=code, content=payload)
+    return JSONResponse(status_code=_runtime_status_code(payload), content=payload)
 
 
 @app.get("/health/detailed")
 async def detailed_health_check():
     """Detailed health check. Full environment status is only returned in debug mode."""
+    runtime = ocr_runtime_status()
+    code = _runtime_status_code(runtime)
     if not settings.app_debug:
-        return {"status": "healthy", "message": "Detailed health checks disabled in production"}
+        return JSONResponse(
+            status_code=code,
+            content={
+                "status": runtime["status"],
+                "message": "Detailed health checks disabled in production",
+            },
+        )
 
-    return {
-        "status": "healthy",
-        "environment": get_environment_status(),
-    }
+    return JSONResponse(
+        status_code=code,
+        content={
+            "status": runtime["status"],
+            "environment": get_environment_status(),
+        },
+    )

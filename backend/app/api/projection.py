@@ -15,7 +15,7 @@ from app.models.document import Document
 from app.models.vat_sales import VatSalesEntry
 from app.schemas.projection import ProjectionResponse
 from app.services.categorization import deductible_vat_split
-from app.services.iva_adjust import credit_note_warnings
+from app.services.iva_adjust import credit_note_warnings, duplicate_warnings
 from app.services.iva_projection import QuarterProjectionInput, project_quarter_to_date
 
 router = APIRouter()
@@ -67,7 +67,6 @@ async def get_projection(
         .all()
     )
     clipped = [document for document in documents if _effective_date(document) <= as_of]
-    confirmed, _pending = deductible_vat_split(clipped)
     library = (
         db.query(Document)
         .filter(Document.deleted_at.is_(None))
@@ -75,7 +74,8 @@ async def get_projection(
         .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
         .all()
     )
-    credit_warnings = credit_note_warnings(clipped, library)
+    confirmed, _pending = deductible_vat_split(clipped, library)
+    credit_warnings = credit_note_warnings(clipped, library) + duplicate_warnings(clipped, library)
 
     entry = (
         db.query(VatSalesEntry)

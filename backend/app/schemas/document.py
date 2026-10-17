@@ -19,7 +19,7 @@ class UploadUrlResponse(BaseModel):
 
 class DocumentCreate(BaseModel):
     """Create a new document after file upload."""
-    storage_key: str = Field(..., min_length=1)
+    storage_key: str = Field(..., min_length=1, max_length=500)
     original_filename: str = Field(..., min_length=1, max_length=255)
     mime_type: str = Field(..., pattern=r"^(image/[A-Za-z0-9.+-]+|application/pdf)$")
     file_size: Optional[int] = None

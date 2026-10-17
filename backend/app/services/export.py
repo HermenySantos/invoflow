@@ -26,7 +26,8 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
-from app.services.iva_adjust import contributions, credit_note_warnings
+from app.services.deadlines import deadline_line
+from app.services.iva_adjust import contributions, credit_note_warnings, duplicate_warnings
 
 
 # A cell starting with one of these runs as a formula in Excel/LibreOffice.
@@ -89,8 +90,9 @@ class ExportService:
         # Create ZIP in memory
         zip_buffer = io.BytesIO()
         
-        counted = contributions(documents)
-        warnings = credit_note_warnings(documents, self._library(db, user_id, documents))
+        library = self._library(db, user_id, documents)
+        counted = contributions(documents, library)
+        warnings = credit_note_warnings(documents, library) + duplicate_warnings(documents, library)
         counted_ids = {id(row.document) for row in counted}
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             for doc in documents:
@@ -101,11 +103,11 @@ class ExportService:
                     zf.writestr(self._receipt_entry(doc), file_content)
             
             # Generate and add summary CSV
-            csv_content = self._generate_csv(documents, warnings)
+            csv_content = self._generate_csv(documents, warnings, library)
             zf.writestr("summary.csv", csv_content)
             
             # Generate and add summary PDF
-            pdf_content = self._generate_pdf(documents, period, warnings)
+            pdf_content = self._generate_pdf(documents, period, warnings, library)
             zf.writestr("summary.pdf", pdf_content)
         
         zip_buffer.seek(0)
@@ -150,7 +152,12 @@ class ExportService:
         leaf = f"{when}_{vendor}_{short}{ext}".replace("\\", "").replace("..", "")
         return f"receipts/{month}/{leaf}"
 
-    def _generate_csv(self, documents: list[Document], warnings: Optional[list[str]] = None) -> str:
+    def _generate_csv(
+        self,
+        documents: list[Document],
+        warnings: Optional[list[str]] = None,
+        library: Optional[list[Document]] = None,
+    ) -> str:
         """CSV summary for Portuguese Excel: ';' separated, comma decimals, UTF-8 BOM."""
         output = io.StringIO()
         output.write("\ufeff")
@@ -175,7 +182,7 @@ class ExportService:
             "Filename",
         ])
         
-        counted = contributions(documents)
+        counted = contributions(documents, library)
         for row in counted:
             doc = row.document
             cat = doc.expense_category or "other"
@@ -217,7 +224,13 @@ class ExportService:
         
         return output.getvalue()
     
-    def _generate_pdf(self, documents: list[Document], period: str, warnings: Optional[list[str]] = None) -> bytes:
+    def _generate_pdf(
+        self,
+        documents: list[Document],
+        period: str,
+        warnings: Optional[list[str]] = None,
+        library: Optional[list[Document]] = None,
+    ) -> bytes:
         """Generate PDF summary."""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
@@ -241,13 +254,16 @@ class ExportService:
             f"Gerado em: {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}",
             styles['Normal']
         ))
-        counted = contributions(documents)
+        filing = deadline_line(period)
+        if filing:
+            elements.append(Paragraph(filing, styles["Normal"]))
+        counted = contributions(documents, library)
         elements.append(Paragraph(f"Total de documentos: {len(counted)}", styles['Normal']))
         elements.append(Spacer(1, 20))
         total_gross = sum((row.gross for row in counted), Decimal(0))
         total_vat = sum((row.vat for row in counted), Decimal(0))
         total_net = sum((row.net for row in counted), Decimal(0))
-        deductible_vat, deductible_vat_pending = deductible_vat_split(documents)
+        deductible_vat, deductible_vat_pending = deductible_vat_split(documents, library)
         
         # Summary table
         elements.append(Paragraph("Resumo", styles['Heading2']))

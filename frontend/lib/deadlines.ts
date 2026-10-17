@@ -127,7 +127,7 @@ export function paymentDeadline(
 export function formatPaymentDeadline(date: Date, lang: 'pt' | 'en'): string {
   const day = date.getDate();
   if (lang === 'pt') {
-    return `Prazo ${day} de ${MONTHS_PT[date.getMonth()]} de ${date.getFullYear()}`;
+    return `Prazo de entrega: ${day} de ${MONTHS_PT[date.getMonth()]} de ${date.getFullYear()}`;
   }
-  return `Due ${day} ${MONTHS_EN[date.getMonth()]} ${date.getFullYear()}`;
+  return `Filing deadline: ${day} ${MONTHS_EN[date.getMonth()]} ${date.getFullYear()}`;
 }

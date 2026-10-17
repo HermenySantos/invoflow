@@ -94,6 +94,7 @@ def _when(document):
 # same supplier NIF is the link a person can actually see.
 ORPHAN_CREDIT_WARNING = "nota de crédito sem fatura associada"
 OTHER_PERIOD_CREDIT_WARNING = "nota de crédito referente a uma fatura de outro período"
+DUPLICATE_OTHER_PERIOD_WARNING = "ficheiro duplicado já contado noutro período"
 
 
 def _nif(document) -> str:
@@ -123,17 +124,27 @@ def _signed(document, mark: FiscalMark) -> Counted:
     )
 
 
-def contributions(documents) -> list[Counted]:
-    """One row per counted document.
+def _in_period(document, period_ids: set, period_tokens: set) -> bool:
+    ident = getattr(document, "id", None)
+    return id(document) in period_tokens or (ident is not None and ident in period_ids)
 
-    Purchases stay positive. A credit note is its own row for the full
-    amount, negative, including the part above the invoice it refers to.
-    A cancelled invoice is left out. The same file counts once: the reviewed
-    copy beats an unreviewed copy, and the newer copy beats an older one.
-    """
-    marked = [(document, fiscal_mark(document)) for document in documents if _bucket(document)]
+
+def _pool(documents, library):
+    pool = list(library) if library is not None else list(documents)
+    known = {getattr(document, "id", None) or id(document) for document in pool}
+    for document in documents:
+        key = getattr(document, "id", None) or id(document)
+        if key not in known:
+            pool.append(document)
+            known.add(key)
+    return pool
+
+
+def _select(pool) -> tuple[dict[str, tuple], list[tuple]]:
+    """One winner per file hash. Documents without a hash stay in the loose list."""
     chosen: dict[str, tuple] = {}
     loose: list[tuple] = []
+    marked = [(document, fiscal_mark(document)) for document in pool if _bucket(document)]
     for document, mark in marked:
         if mark.fiscal_status == "A":
             continue
@@ -144,9 +155,37 @@ def contributions(documents) -> list[Counted]:
         current = chosen.get(digest)
         if current is None or _prefer(document, current[0]):
             chosen[digest] = (document, mark)
-    rows = [_signed(document, mark) for document, mark in list(chosen.values()) + loose]
+    return chosen, loose
+
+
+def contributions(documents, library=None) -> list[Counted]:
+    """One row per counted document.
+
+    Purchases stay positive. A credit note is its own row for the full
+    amount, negative, including the part above the invoice it refers to.
+    A cancelled invoice is left out. The same file counts once across the
+    library: the reviewed copy beats an unreviewed copy, and the newer copy
+    beats an older one. Pass the user's other periods as library so a copy
+    re-dated into a second quarter is not counted twice.
+    """
+    period_ids = {getattr(document, "id", None) for document in documents}
+    period_ids.discard(None)
+    period_tokens = {id(document) for document in documents}
+    chosen, loose = _select(_pool(documents, library))
+    rows = [
+        _signed(document, mark)
+        for document, mark in list(chosen.values()) + loose
+        if _in_period(document, period_ids, period_tokens)
+    ]
     rows.sort(key=lambda row: _when(row.document))
     return rows
+
+
+def _document_label(document) -> str:
+    number = (getattr(document, "invoice_number", None) or "").strip() or "sem número"
+    when = getattr(document, "document_date", None)
+    when_text = when.isoformat() if hasattr(when, "isoformat") else "sem data"
+    return f"{number}, {when_text}"
 
 
 def _is_purchase(document) -> bool:
@@ -177,11 +216,32 @@ def credit_note_warnings(period_documents, library) -> list[str]:
             in_period.add(nif)
 
     warnings: list[str] = []
-    for row in contributions(period_documents):
+    for row in contributions(period_documents, library):
         if fiscal_mark(row.document).document_type != "NC":
             continue
         nif = _nif(row.document)
         if nif and nif in in_period:
             continue
-        warnings.append(OTHER_PERIOD_CREDIT_WARNING if nif and nif in anywhere else ORPHAN_CREDIT_WARNING)
+        base = OTHER_PERIOD_CREDIT_WARNING if nif and nif in anywhere else ORPHAN_CREDIT_WARNING
+        warnings.append(f"{base} ({_document_label(row.document)})")
+    return warnings
+
+
+def duplicate_warnings(period_documents, library) -> list[str]:
+    """Warn when this period holds a copy of a file already counted elsewhere."""
+    period_ids = {getattr(document, "id", None) for document in period_documents}
+    period_ids.discard(None)
+    period_tokens = {id(document) for document in period_documents}
+    chosen, _loose = _select(_pool(period_documents, library))
+    warnings: list[str] = []
+    for document in period_documents:
+        digest = fiscal_mark(document).file_sha256
+        if not digest or digest not in chosen:
+            continue
+        winner = chosen[digest][0]
+        if getattr(winner, "id", None) == getattr(document, "id", None):
+            continue
+        if _in_period(winner, period_ids, period_tokens):
+            continue
+        warnings.append(f"{DUPLICATE_OTHER_PERIOD_WARNING} ({_document_label(document)})")
     return warnings

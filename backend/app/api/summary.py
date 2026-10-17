@@ -28,7 +28,7 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
-from app.services.iva_adjust import contributions, credit_note_warnings
+from app.services.iva_adjust import contributions, credit_note_warnings, duplicate_warnings
 from app.services.validation import validate_period_documents
 
 router = APIRouter()
@@ -131,8 +131,15 @@ async def get_summary(
     
     # ── Totals (only ready + needs_review) ──
     valid_docs = [d for d in documents if d.status in ("ready", "needs_review", "accountant_review")]
-    
-    counted = contributions(valid_docs)
+    library = (
+        db.query(Document)
+        .filter(Document.deleted_at.is_(None))
+        .filter(Document.user_id == user.id)
+        .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
+        .all()
+    )
+
+    counted = contributions(valid_docs, library)
     total_gross = sum((row.gross for row in counted), Decimal(0))
     total_net = sum((row.net for row in counted), Decimal(0))
     total_vat = sum((row.vat for row in counted), Decimal(0))
@@ -140,7 +147,7 @@ async def get_summary(
     # ── Deductible VAT (per-category percentage) ──
     # Only checked receipts count toward the estimate; unreviewed OCR values
     # are reported separately.
-    deductible_vat, deductible_vat_pending = deductible_vat_split(valid_docs)
+    deductible_vat, deductible_vat_pending = deductible_vat_split(valid_docs, library)
     
     # ── VAT on sales (manual input) ──
     vat_on_sales = _get_vat_on_sales(db, user.id, period_type, year, period_value)
@@ -177,14 +184,8 @@ async def get_summary(
         })
     # Flatten to string list for the response (keep simple for V1)
     warnings = [w["message"] for w in warning_objects]
-    library = (
-        db.query(Document)
-        .filter(Document.deleted_at.is_(None))
-        .filter(Document.user_id == user.id)
-        .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
-        .all()
-    )
     warnings.extend(credit_note_warnings(valid_docs, library))
+    warnings.extend(duplicate_warnings(valid_docs, library))
     
     # ── Category breakdowns ──
     expense_totals: dict[str, dict] = defaultdict(lambda: {"count": 0, "total": Decimal(0), "vat": Decimal(0), "deductible": Decimal(0)})

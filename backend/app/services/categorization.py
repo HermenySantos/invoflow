@@ -344,7 +344,7 @@ def effective_deductible_pct(document) -> int:
 CONFIRMED_STATUSES = ("ready", "accountant_review")
 
 
-def deductible_vat_split(documents) -> tuple[Decimal, Decimal]:
+def deductible_vat_split(documents, library=None) -> tuple[Decimal, Decimal]:
     """Deductible VAT as (confirmed, pending review) for the given documents.
 
     Credit notes contribute their full VAT as a negative row. Cancelled
@@ -354,7 +354,7 @@ def deductible_vat_split(documents) -> tuple[Decimal, Decimal]:
 
     confirmed = Decimal("0")
     pending = Decimal("0")
-    for row in contributions(documents):
+    for row in contributions(documents, library):
         deductible = row.vat * effective_deductible_pct(row.document) / 100
         if row.document.status in CONFIRMED_STATUSES:
             confirmed += deductible
