@@ -5,8 +5,18 @@
 
 export const DEMO_AUTH_KEY = 'invoflow_mock_auth';
 
-/** Clerk key absent: this build uses mock sign-in and local mock storage. */
-export const isDemoMode = !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const DEMO_ON = new Set(['1', 'true', 'yes', 'on']);
+
+/** Demo copy needs the explicit flag and no Clerk publishable key. */
+export function isDemoModeEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const demo = DEMO_ON.has(String(env.NEXT_PUBLIC_DEMO_AUTH ?? '').trim().toLowerCase());
+  const key = String(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '').trim();
+  return demo && key.length === 0;
+}
+
+export const isDemoMode = isDemoModeEnabled();
 
 export interface DemoUser {
   id: string;

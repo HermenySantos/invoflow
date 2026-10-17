@@ -17,6 +17,7 @@ import json
 import logging
 import random
 import shutil
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -28,7 +29,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 from app.core.config import get_settings
 from app.services.ocr_extract import ExtractedFields, extract_fields, extracted_to_json
-from app.services.pt_qr import InvoiceQR, read_invoice_qr_from_file
+from app.services.pt_qr import InvoiceQR, read_invoice_qr, read_invoice_qr_from_file
 
 logger = logging.getLogger(__name__)
 
@@ -108,16 +109,21 @@ class OCRService:
     async def process_document(self, file_content: bytes, mime_type: str) -> OCRResult:
         backend = resolve_ocr_backend()
         self.backend = backend
-        if backend == "mock":
-            result = self._generate_mock_result(mime_type)
-        elif backend == "azure":
-            result = await self._process_with_azure(file_content, mime_type)
-        else:
-            result = await self._process_with_tesseract(file_content, mime_type)
-
-        qr = await asyncio.to_thread(
-            read_invoice_qr_from_file, file_content, mime_type, _pdf_first_page_image
-        )
+        result: Optional[OCRResult] = None
+        try:
+            if backend == "mock":
+                result = self._generate_mock_result(mime_type)
+            elif backend == "azure":
+                result = await self._process_with_azure(file_content, mime_type)
+            else:
+                result = await self._process_with_tesseract(file_content, mime_type)
+            qr = await asyncio.to_thread(_invoice_qr, file_content, mime_type)
+        except PdfRasterLimited:
+            if result is None:
+                result = OCRResult(confidence=0, needs_review=True, backend=backend)
+            result.needs_review = True
+            result.error = None
+            return result
         return _apply_invoice_qr(result, qr) if qr else result
 
     def _generate_mock_result(self, mime_type: str) -> OCRResult:
@@ -165,6 +171,8 @@ class OCRService:
     async def _process_with_tesseract(self, file_content: bytes, mime_type: str) -> OCRResult:
         try:
             text = await asyncio.to_thread(self._read_document_text, file_content, mime_type)
+        except PdfRasterLimited:
+            raise
         except Exception as exc:
             return OCRResult(
                 error=f"Tesseract read error: {exc}",
@@ -476,10 +484,55 @@ def _extract_pdf_text(file_content: bytes) -> str:
     return "\n".join(pages)
 
 
+class PdfRasterLimited(Exception):
+    """Poppler timed out or the page is over the raster cap."""
+
+
+_PDF_RASTER_DPI = 200
+_PDF_RASTER_MAX_SIDE_PT = 2000
+_PDF_RASTER_MAX_PIXELS = 25_000_000
+_PDF_RASTER_PAGES = 1
+_PDF_RASTER_TIMEOUT_SECONDS = 30
+_PDF_RASTER_SLOTS = threading.Semaphore(2)
+
+
+def _first_page_size_pt(file_content: bytes) -> Optional[tuple[float, float]]:
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(BytesIO(file_content))
+        if not reader.pages:
+            return None
+        box = reader.pages[0].mediabox
+        return abs(float(box.width)), abs(float(box.height))
+    except Exception:
+        return None
+
+
+def _raster_dpi(width_pt: float, height_pt: float) -> int:
+    width_px = width_pt / 72 * _PDF_RASTER_DPI
+    height_px = height_pt / 72 * _PDF_RASTER_DPI
+    pixels = width_px * height_px
+    if pixels <= _PDF_RASTER_MAX_PIXELS:
+        return _PDF_RASTER_DPI
+    reduced = int(_PDF_RASTER_DPI * (_PDF_RASTER_MAX_PIXELS / pixels) ** 0.5)
+    while reduced > 1:
+        width_px = width_pt / 72 * reduced
+        height_px = height_pt / 72 * reduced
+        if width_px * height_px <= _PDF_RASTER_MAX_PIXELS:
+            break
+        reduced -= 1
+    return max(reduced, 1)
+
+
 def _pdf_first_page_image(file_content: bytes) -> Optional[Image.Image]:
+    size = _first_page_size_pt(file_content)
+    if size is not None and max(size) > _PDF_RASTER_MAX_SIDE_PT:
+        raise PdfRasterLimited("page exceeds the raster cap")
+    dpi = _raster_dpi(*size) if size is not None else _PDF_RASTER_DPI
     try:
         from pdf2image import convert_from_bytes
-        from pdf2image.exceptions import PDFInfoNotInstalledError
+        from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPopplerTimeoutError
     except ImportError:
         logger.warning(
             "PDF QR read skipped: pdf2image is not installed. "
@@ -487,8 +540,17 @@ def _pdf_first_page_image(file_content: bytes) -> Optional[Image.Image]:
         )
         return None
     try:
-        images = convert_from_bytes(file_content, first_page=1, last_page=1)
+        with _PDF_RASTER_SLOTS:
+            images = convert_from_bytes(
+                file_content,
+                dpi=dpi,
+                first_page=1,
+                last_page=_PDF_RASTER_PAGES,
+                timeout=_PDF_RASTER_TIMEOUT_SECONDS,
+            )
         return images[0] if images else None
+    except PDFPopplerTimeoutError as exc:
+        raise PdfRasterLimited("poppler timed out") from exc
     except PDFInfoNotInstalledError:
         logger.warning(
             "PDF QR read skipped: poppler-utils is not installed. "
@@ -497,6 +559,13 @@ def _pdf_first_page_image(file_content: bytes) -> Optional[Image.Image]:
         return None
     except Exception:
         return None
+
+
+def _invoice_qr(file_content: bytes, mime_type: str) -> Optional[InvoiceQR]:
+    if (mime_type or "").lower() == "application/pdf" or file_content[:4] == b"%PDF":
+        image = _pdf_first_page_image(file_content)
+        return read_invoice_qr(image) if image is not None else None
+    return read_invoice_qr_from_file(file_content, mime_type, _pdf_first_page_image)
 
 
 def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:

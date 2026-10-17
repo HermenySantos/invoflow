@@ -5,10 +5,24 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 _MOCK_AUTH_ON = {"1", "true", "yes", "on"}
+_MOCK_AUTH_ENVS = {"development", "test"}
+_KNOWN_APP_ENVS = _MOCK_AUTH_ENVS | {"production"}
+
+
+def app_env_name(app_env: str) -> str:
+    return app_env.strip().lower()
 
 
 def mock_auth_requested(mock_auth: str) -> bool:
     return mock_auth.strip().lower() in _MOCK_AUTH_ON
+
+
+def mock_auth_env_allowed(app_env: str) -> bool:
+    return app_env_name(app_env) in _MOCK_AUTH_ENVS
+
+
+def known_app_env(app_env: str) -> bool:
+    return app_env_name(app_env) in _KNOWN_APP_ENVS
 
 
 class Settings(BaseSettings):
@@ -70,8 +84,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def enable_mock_auth_only_when_asked(self):
-        if mock_auth_requested(self.mock_auth):
-            self.auth_mock_mode = True
+        requested = bool(self.auth_mock_mode) or mock_auth_requested(self.mock_auth)
+        object.__setattr__(self, "_mock_auth_requested", requested)
+        self.auth_mock_mode = requested and mock_auth_env_allowed(self.app_env)
         return self
 
     @field_validator("efatura_pull_enabled", mode="before")

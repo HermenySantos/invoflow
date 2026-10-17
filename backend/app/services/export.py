@@ -5,6 +5,7 @@ Creates ZIP archives with original documents and summary files.
 
 import io
 import csv
+import unicodedata
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +43,10 @@ def _csv_text(value: Optional[str]) -> str:
     """OCR'd text, neutralised so it can't run as a spreadsheet formula."""
     if not value:
         return ""
-    return f"'{value}" if value.startswith(_FORMULA_PREFIXES) else value
+    normalized = unicodedata.normalize("NFKC", value)
+    probe = normalized.lstrip()
+    disguised = probe[:1] in _FORMULA_PREFIXES or normalized[:1] in _FORMULA_PREFIXES
+    return f"'{value}" if disguised else value
 
 
 def _csv_amount(value: Optional[Decimal]) -> str:

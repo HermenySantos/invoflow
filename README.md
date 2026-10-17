@@ -56,7 +56,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` signs in without Clerk. `npm run build` fails unless `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set, or `NEXT_PUBLIC_DEMO_AUTH=1` is set on purpose.
+`npm run dev` signs in without Clerk. Demo notes on the page need `NEXT_PUBLIC_DEMO_AUTH=1` and an empty Clerk key. `npm run build` fails unless `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set, or `NEXT_PUBLIC_DEMO_AUTH=1` is set on purpose.
 
 Open http://localhost:3000
 

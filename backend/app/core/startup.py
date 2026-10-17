@@ -5,7 +5,7 @@ Ensures required configuration is present before the application starts.
 
 import logging
 from typing import List, Tuple
-from app.core.config import get_settings
+from app.core.config import get_settings, known_app_env, mock_auth_env_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def validate_configuration() -> List[str]:
         if not settings.clerk_secret_key:
             errors.append(
                 "CLERK_SECRET_KEY is not set. "
-                "Set it, or set MOCK_AUTH=1 when APP_ENV is not production."
+                "Set it, or set MOCK_AUTH=1 when APP_ENV is development or test."
             )
         if not settings.clerk_frontend_api:
             warnings.append(
@@ -111,7 +111,12 @@ def validate_configuration() -> List[str]:
             "Disable for production!"
         )
     
-    if settings.app_env.strip().lower() == "production" and settings.auth_mock_mode:
+    if not known_app_env(settings.app_env):
+        errors.append(
+            f"APP_ENV must be development, test, or production (got {settings.app_env!r})."
+        )
+    mock_requested = bool(getattr(settings, "_mock_auth_requested", False) or settings.auth_mock_mode)
+    if mock_requested and not mock_auth_env_allowed(settings.app_env):
         errors.append(
             f"MOCK_AUTH and AUTH_MOCK_MODE must be off when APP_ENV is {settings.app_env}."
         )
