@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from io import BytesIO
+from urllib.parse import unquote
 
 from PIL import Image, ImageOps, ImageSequence
 from pypdf import PdfReader
@@ -42,8 +44,14 @@ _DANGEROUS_PDF_NAMES = {
     "/Sound",
     "/RichMediaExecute",
 }
-_VIEW_ACTIONS = {"/GoTo", "/URI"}
-_SCRIPT_SCHEMES = ("javascript:", "data:", "vbscript:")
+# /GoTo and these /Named values are the initial view and auto-print that
+# invoice tools write. /Thread, /Hide, /SetOCGState and /Trans only change
+# what is already on the page. /URI is limited to http, https, mailto, and
+# a relative or fragment link. Every other /S, and any other /Named /N, is refused.
+_ALLOWED_ACTIONS = {"/GoTo", "/URI", "/Named", "/Thread", "/Hide", "/SetOCGState", "/Trans"}
+_NAMED_ACTIONS = {"/NextPage", "/PrevPage", "/FirstPage", "/LastPage", "/Print"}
+_URI_SCHEMES = {"http", "https", "mailto"}
+_URI_SCHEME = re.compile(r"^([a-z][a-z0-9+.-]*):")
 
 UNSUPPORTED_TYPE_DETAIL = (
     "Formato não suportado. Envie um JPEG, PNG, GIF, BMP, TIFF, WEBP, HEIC ou PDF."
@@ -82,14 +90,20 @@ def _pdf_name(obj) -> str | None:
     return None
 
 
-def _trimmed(text: str) -> str:
-    start = 0
-    end = len(text)
-    while start < end and (text[start].isspace() or unicodedata.category(text[start]) == "Cc"):
-        start += 1
-    while end > start and (text[end - 1].isspace() or unicodedata.category(text[end - 1]) == "Cc"):
-        end -= 1
-    return text[start:end]
+def _without_controls(text: str) -> str:
+    """Drop ASCII tab, CR, LF, and every other Unicode control character."""
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cc")
+
+
+def _normalize_uri(text: str) -> str:
+    """Strip controls, percent-decode, then lowercase. Decoding can put a control back."""
+    cleaned = _without_controls(text)
+    for _ in range(8):
+        decoded = _without_controls(unquote(cleaned))
+        if decoded == cleaned:
+            break
+        cleaned = decoded
+    return cleaned.strip().lower()
 
 
 def _deref(obj, seen: set):
@@ -115,16 +129,21 @@ def _uri_is_dangerous(value, seen: set) -> bool:
     value = _deref(value, seen)
     if not isinstance(value, str):
         return True
-    return _trimmed(value).lower().startswith(_SCRIPT_SCHEMES)
+    match = _URI_SCHEME.match(_normalize_uri(value))
+    if match is None:
+        return False
+    return match.group(1) not in _URI_SCHEMES
 
 
 def _action_is_dangerous(obj, seen: set) -> bool:
-    """A /GoTo or an ordinary /URI is a view. Anything else in the chain is not."""
+    """A view action is allowed. Any other /S, or a /Named action with a bad /N, is not."""
     obj = _deref(obj, seen)
     if obj is None or not isinstance(obj, DictionaryObject):
         return True
     subtype = _pdf_name(obj.get("/S"))
-    if subtype not in _VIEW_ACTIONS:
+    if subtype not in _ALLOWED_ACTIONS:
+        return True
+    if subtype == "/Named" and _pdf_name(_deref(obj.get("/N"), seen)) not in _NAMED_ACTIONS:
         return True
     if subtype == "/URI" and _uri_is_dangerous(obj.get("/URI"), seen):
         return True
