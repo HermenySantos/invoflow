@@ -70,7 +70,7 @@
               <track kind="captions" src="/assets/captions-en.vtt" srclang="en" label="English" />
             </video>
             <figcaption id="demo-caption" data-i18n="demoCaption">
-              Demonstração do produto. A gravação não é um exemplo de dedução, nem um montante devido.
+              Exemplo ilustrativo. Carregar, rever, estimativa de IVA e o pack para o contabilista.
             </figcaption>
           </figure>
         </div>
@@ -101,7 +101,7 @@
 
       <section class="section" aria-labelledby="benefits-heading">
         <div class="wrap">
-          <h2 id="benefits-heading" data-i18n="benefitsTitle">O que a página promete</h2>
+          <h2 id="benefits-heading" data-i18n="benefitsTitle">O que recebe</h2>
           <ul class="benefits">
             <li class="benefit">
               <h3 data-i18n="benefit1Title">Estimativa ao longo do trimestre</h3>
@@ -179,10 +179,8 @@
         <div class="wrap">
           <div class="form-card">
             <h2 id="form-heading" data-i18n="formTitle">Reservar lugar no piloto</h2>
-            <p class="form-intro" data-i18n="formIntro">Os lugares no piloto são limitados. Se avançar, entramos em contacto.</p>
-            <p class="notice" id="dev-notice" tabindex="-1" data-i18n="devNotice">
-              Endpoint por configurar. O formulário não é enviado e não fica guardado neste browser.
-            </p>
+            <p class="form-intro" data-i18n="formIntro">Se avançar, entramos em contacto.</p>
+            <p class="notice" id="closed-notice" data-i18n="closedNotice">Inscrições abrem em breve.</p>
             <noscript>
               <p class="notice" data-i18n="noscript">
                 Active o JavaScript para usar o formulário. Com o endpoint vazio, nada é guardado.
@@ -232,11 +230,11 @@
               <input type="hidden" name="utm_source" />
               <input type="hidden" name="utm_medium" />
               <input type="hidden" name="utm_campaign" />
-              <button class="button" id="submit-pilot" type="submit" data-i18n="cta">Reservar lugar no piloto</button>
+              <button class="button" id="submit-pilot" type="submit" data-i18n="cta" disabled>Reservar lugar no piloto</button>
             </form>
             <div class="thanks" id="thanks" tabindex="-1" hidden>
               <h2 data-i18n="thanksTitle">Pedido recebido</h2>
-              <p data-i18n="thanksBody">Os lugares no piloto são limitados. Entramos em contacto consigo.</p>
+              <p data-i18n="thanksBody">Entramos em contacto consigo.</p>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { parseAnswers, readUtm } from './qualify.js';
 import { mountAnalytics, track } from './analytics.js';
 
 const LANG_KEY = 'invoflow_demand_lang';
+const CLOSED_LOG = 'FORM_ENDPOINT is empty. The form is not sent and nothing is stored.';
 
 const fields = [
   ['name', 'errorName'],
@@ -120,9 +121,7 @@ async function submitForm(form) {
   if (answers.qualified) track('qualified_submit');
 
   if (!CONFIG.FORM_ENDPOINT) {
-    const notice = document.querySelector('#dev-notice');
-    notice.hidden = false;
-    notice.focus();
+    console.info(CLOSED_LOG);
     return;
   }
 
@@ -179,9 +178,13 @@ function mountUtm() {
   form.utm_campaign.value = utm.utm_campaign;
 }
 
-function mountDevNotice() {
-  const notice = document.querySelector('#dev-notice');
-  notice.hidden = Boolean(CONFIG.FORM_ENDPOINT);
+function mountClosed() {
+  const notice = document.querySelector('#closed-notice');
+  const button = document.querySelector('#submit-pilot');
+  const closed = !CONFIG.FORM_ENDPOINT;
+  notice.hidden = !closed;
+  button.disabled = closed;
+  if (closed) console.info(CLOSED_LOG);
 }
 
 document.querySelector('#lang-toggle').addEventListener('click', () => {
@@ -208,6 +211,6 @@ applyCopy();
 mountDeposit();
 mountVideo();
 mountUtm();
-mountDevNotice();
+mountClosed();
 mountAnalytics();
 track('visit');

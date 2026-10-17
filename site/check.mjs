@@ -110,6 +110,13 @@ assert.match(home, /id="submit-pilot"[^>]*disabled/);
 const captions = `${read('assets/captions-pt.vtt')}\n${read('assets/captions-en.vtt')}`;
 assert.equal(/prazo de pagamento/i.test(captions), false);
 assert.equal(/continente/i.test(captions), false);
+assert.match(read('assets/captions-pt.vtt'), /Prazo de entrega: 20 de Maio de 2026/);
+assert.match(read('assets/captions-pt.vtt'), /Prazo de entrega: 22 de Fevereiro de 2027/);
+assert.match(read('assets/captions-pt.vtt'), /exemplo ilustrativo/i);
+assert.match(read('assets/captions-pt.vtt'), /IVA estimativa 23,00 €/);
+assert.match(read('assets/captions-pt.vtt'), /NIF 999 999 990/);
+assert.match(read('assets/captions-en.vtt'), /Filing deadline: 20 May 2026/);
+assert.match(read('assets/captions-en.vtt'), /Filing deadline: 22 February 2027/);
 
 const validBody = {
   ...base,

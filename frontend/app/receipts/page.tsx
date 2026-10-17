@@ -379,7 +379,7 @@ export default function ReceiptsPage() {
                           {statusInfo.icon}
                           <span className="sr-only">{statusInfo.label}</span>
                           {doc.fictional ? (
-                            <span className="text-xs text-amber-800">dados fictícios</span>
+                            <span className="text-xs text-amber-800">exemplo ilustrativo</span>
                           ) : null}
                           {hasError && (
                             <AlertTriangle

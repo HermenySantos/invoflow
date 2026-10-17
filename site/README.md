@@ -83,4 +83,8 @@ From the repository root:
 node site/check.mjs
 ```
 
-CI runs the same command. It rejects banned marketing lines, unexpected euro amounts, and a second copy of the qualification rule.
+CI runs the same command. It rejects banned marketing lines, unexpected euro amounts, a second copy of the qualification rule, and the scarcity line.
+
+## Demo recording
+
+`tools/record-demo.mjs` drives the local app in mock mode and writes `assets/demo-short.mp4`, `assets/poster.jpg`, and the caption tracks. Install Playwright in this folder first (`npm install playwright`), with the app already running at `http://127.0.0.1:3000`. The script signs in as `demo@invoflow.test`, uploads one fictional invoice, and checks the picture for the filing dates and the estimate label.
