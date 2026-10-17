@@ -163,23 +163,22 @@ class ExportService:
         output.write("\ufeff")
         writer = csv.writer(output, delimiter=";")
         
-        # Header
         writer.writerow([
             "ID",
-            "Date",
-            "Vendor",
+            "Data",
+            "Fornecedor",
             "NIF",
-            "Invoice #",
-            "Net (EUR)",
-            "VAT (EUR)",
-            "Gross (EUR)",
-            "VAT %",
-            "Category",
-            "IRS Sector",
-            "Deductible %",
-            "Deductible VAT (EUR)",
-            "Status",
-            "Filename",
+            "N.º da fatura",
+            "Líquido (EUR)",
+            "IVA (EUR)",
+            "Bruto (EUR)",
+            "IVA %",
+            "Categoria",
+            "Setor IRS",
+            "% dedutível",
+            "IVA dedutível (EUR)",
+            "Estado",
+            "Ficheiro",
         ])
         
         counted = contributions(documents, library)
