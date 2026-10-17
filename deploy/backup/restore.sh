@@ -6,7 +6,7 @@ set -eu
 
 : "${BACKUP_BUCKET:?set BACKUP_BUCKET}"
 export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:?}" AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:?}" AWS_DEFAULT_REGION=auto
-ENDPOINT="${BACKUP_ENDPOINT_URL:-https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com}"
+ENDPOINT="${BACKUP_ENDPOINT_URL:-https://${R2_ACCOUNT_ID}.eu.r2.cloudflarestorage.com}"
 s3() { aws --endpoint-url "$ENDPOINT" s3 "$@"; }
 
 if [ $# -eq 0 ]; then

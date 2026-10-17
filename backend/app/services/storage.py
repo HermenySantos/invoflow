@@ -17,6 +17,14 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+
+def resolve_r2_endpoint(account_id: str, override: str = "") -> str:
+    explicit = (override or "").strip()
+    if explicit:
+        return explicit
+    return f"https://{account_id}.eu.r2.cloudflarestorage.com"
+
+
 settings = get_settings()
 
 MOCK_STORAGE_DIR = Path(__file__).parent.parent.parent / "mock_storage"
@@ -86,8 +94,7 @@ class StorageService:
 
             self.s3_client = boto3.client(
                 "s3",
-                endpoint_url=settings.r2_endpoint_url
-                or f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
+                endpoint_url=resolve_r2_endpoint(settings.r2_account_id, settings.r2_endpoint_url),
                 aws_access_key_id=settings.r2_access_key_id,
                 aws_secret_access_key=settings.r2_secret_access_key,
                 config=Config(signature_version="s3v4"),
