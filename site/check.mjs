@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG } from './public/js/config.js';
 import { copy } from './public/js/copy.js';
-import { isQualified, parseAnswers, readUtm } from './public/js/qualify.js';
+import { readUtm } from './public/js/qualify.js';
 import { onRequestPost } from './functions/api/signup.js';
 import { onRequest as onAsset } from './functions/assets/[[path]].js';
 import { onRequest as onGuard } from './functions/_middleware.js';
@@ -29,7 +29,7 @@ assert.equal(existsSync(join(pub, 'assets', 'demo-timeline.json')), false, 'time
 assert.equal(existsSync(join(root, 'tools', 'demo-timeline.json')), true, 'timeline stays in tools');
 
 const pages = ['index.html', 'privacy/index.html', 'js/copy.js', 'js/main.js', 'css/site.css'].map(read);
-const visible = pages.join('\n');
+const visible = pages.join('\n').replaceAll('[prazo]', '');
 
 const banned = [
   /accountant-ready/i,
@@ -48,23 +48,34 @@ for (const pattern of banned) {
 }
 
 const amounts = [...visible.matchAll(/€\s*(\d+)|(\d+)\s*€/g)].map((match) => match[1] || match[2]);
-assert.deepEqual([...new Set(amounts)].sort(), ['19', '190']);
+assert.deepEqual([...new Set(amounts)].sort(), []);
 
 const home = read('index.html');
-for (const key of ['heroTitle', 'heroSub', 'priceLine', 'cta', 'caveat']) {
+for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'consentBody', 'thanksTitle']) {
   assert.ok(home.includes(copy.pt[key]), key);
 }
 assert.ok(home.includes('href="/privacy"'));
 assert.ok(home.includes('rel="canonical" href="https://invoflow.pt/"'));
 assert.ok(home.includes('property="og:url" content="https://invoflow.pt/"'));
-assert.ok(home.includes('pack para enviar ao seu contabilista'));
+assert.ok(home.includes('pack para o seu contabilista'));
+assert.equal(home.includes('pack para enviar ao seu contabilista'), false);
+assert.ok(home.includes('Exemplo ilustrativo com dados fictícios.'));
+assert.ok(home.includes('Estimativa do IVA a entregar'));
+assert.ok(home.includes('Dados fictícios'));
 assert.equal((home.match(/exemplo ilustrativo/g) || []).length, 0);
+assert.equal(/<details\b[^>]*\bopen\b/.test(home), false);
 
 const privacy = read('privacy/index.html');
 assert.ok(privacy.includes('href="/"'));
 assert.ok(privacy.includes('Hermenegildo Jerónimo dos Santos'));
-assert.ok(privacy.includes('hermeny7@hotmail.com'));
-assert.ok(privacy.includes('É uma estimativa. Este valor ignora o IVA das vendas.'));
+assert.equal(privacy.includes('hermeny7@hotmail.com'), false);
+assert.ok(privacy.includes('contacto@invoflow.pt'));
+assert.ok(privacy.includes('É uma estimativa, não um cálculo oficial. Não substitui o contabilista e nada é enviado às Finanças.'));
+assert.equal(privacy.includes('Este valor ignora o IVA das vendas.'), false);
+assert.ok(privacy.includes('Guardamos apenas o email da lista de interesse'));
+assert.ok(privacy.includes('Pode cancelar a subscrição a qualquer momento.'));
+assert.ok(privacy.includes('<span class="token">[prazo]</span>'));
+assert.ok(privacy.includes('You can unsubscribe at any time.'));
 assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy/"'));
 assert.ok(privacy.includes('property="og:url" content="https://invoflow.pt/privacy/"'));
 
@@ -79,21 +90,6 @@ assert.equal(CONFIG.STRIPE_PAYMENT_LINK, '');
 assert.equal(CONFIG.ANALYTICS, '');
 assert.equal(CONFIG.META_PIXEL_ID, '');
 
-const qualified = { regime: 'trimestral', volume: '20-100', accountant: 'sim' };
-assert.equal(isQualified(qualified), true);
-assert.equal(isQualified({ ...qualified, volume: 'gt100' }), true);
-assert.equal(isQualified({ ...qualified, volume: 'lt20' }), false);
-assert.equal(isQualified({ ...qualified, regime: 'mensal' }), false);
-assert.equal(isQualified({ ...qualified, regime: 'nao_sei' }), false);
-assert.equal(isQualified({ ...qualified, accountant: 'nao' }), false);
-assert.equal(isQualified({ ...qualified, consent: false }), true);
-
-const base = { ...qualified, name: 'Ana Costa', email: 'ana@example.com', consent: true };
-assert.equal(parseAnswers(base).qualified, true);
-assert.equal(parseAnswers({ ...base, consent: false }), null);
-assert.equal(parseAnswers({ ...base, email: 'not-an-email' }), null);
-assert.equal(parseAnswers({ ...base, regime: 'mensal' }).qualified, false);
-
 const params = new URLSearchParams('utm_source=meta&utm_medium=cpc&utm_campaign=pilot&utm_term=ignore');
 assert.deepEqual(readUtm(params), {
   utm_source: 'meta',
@@ -101,12 +97,14 @@ assert.deepEqual(readUtm(params), {
   utm_campaign: 'pilot',
 });
 
-const ruleHits = read('js/qualify.js').match(/regime === 'trimestral'/g) || [];
-assert.equal(ruleHits.length, 1);
-const elsewhere = [read('index.html'), read('js/main.js'), read('js/copy.js'), readFileSync(join(root, 'functions/api/signup.js'), 'utf8')].join(
+const interestFiles = [read('index.html'), read('js/main.js'), read('js/copy.js'), read('js/qualify.js'), readFileSync(join(root, 'functions/api/signup.js'), 'utf8')].join(
   '\n',
 );
-assert.equal(elsewhere.includes("regime === 'trimestral'"), false);
+assert.equal(interestFiles.includes("regime === 'trimestral'"), false);
+assert.equal(interestFiles.includes('name="regime"'), false);
+assert.equal(interestFiles.includes('name="volume"'), false);
+assert.equal(interestFiles.includes('name="accountant"'), false);
+assert.equal(interestFiles.includes('qualified'), false);
 
 const visitor = [home, read('js/copy.js'), read('js/main.js')].join('\n');
 for (const phrase of [
@@ -119,11 +117,22 @@ for (const phrase of [
 ]) {
   assert.equal(visitor.includes(phrase), false, phrase);
 }
-assert.ok(visitor.includes('O que recebe'));
-assert.ok(visitor.includes('What you get'));
+assert.equal(home.includes('id="piloto"'), false);
+assert.equal(home.includes('data-i18n="termGetTitle"'), false);
+assert.equal(visitor.includes('What you get'), false);
+assert.equal(visitor.includes('€190'), false);
+assert.equal(visitor.includes('Reservar lugar no piloto'), false);
+assert.ok(visitor.includes('Avisem-me'));
+assert.ok(visitor.includes('Notify me'));
+assert.ok(visitor.includes('Quero receber novidades sobre a Invoflow e o piloto por email. Posso cancelar a qualquer momento.'));
+assert.ok(visitor.includes('I want email news about Invoflow and the pilot. I can unsubscribe at any time.'));
+assert.ok(visitor.includes('Obrigado! Vamos enviar-lhe novidades sobre o piloto.'));
+assert.ok(visitor.includes("Thank you! We'll send you news about the pilot."));
 assert.ok(visitor.includes('Inscrições abrem em breve.'));
-assert.ok(visitor.includes('Registration opens soon.'));
+assert.ok(visitor.includes('Sign-ups open soon.'));
+assert.equal(visitor.includes('Registration opens soon.'), false);
 assert.match(home, /id="submit-pilot"[^>]*disabled/);
+assert.match(home, /id="formset"[^>]*disabled/);
 
 const captions = `${read('assets/captions-pt.vtt')}\n${read('assets/captions-en.vtt')}`;
 assert.equal(/prazo de pagamento/i.test(captions), false);
@@ -138,11 +147,12 @@ assert.match(read('assets/captions-en.vtt'), /Filing deadline: 22 February 2027/
 
 
 const validBody = {
-  ...base,
+  email: 'ana@example.com',
+  consent: true,
+  lang: 'pt',
   utm_source: 'meta',
   utm_medium: 'cpc',
   utm_campaign: 'pilot',
-  qualified: false,
 };
 
 const unconfigured = await post(validBody, {});
@@ -161,9 +171,11 @@ assert.equal(missing.status, 400);
 
 const db = memoryDb();
 const env = { DB: db };
-const saved = await post({ ...validBody, regime: 'mensal', qualified: true, password: 'secret' }, env, {
-  'cf-connecting-ip': '198.51.100.4',
-});
+const saved = await post(
+  { ...validBody, regime: 'mensal', qualified: true, password: 'secret', name: 'Ana Costa', consent_at: '1999-01-01T00:00:00.000Z' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.4' },
+);
 assert.equal(saved.status, 200);
 assert.equal(saved.headers.get('x-content-type-options'), 'nosniff');
 assert.equal(saved.headers.get('cache-control'), 'no-store');
@@ -171,10 +183,12 @@ const savedText = await saved.text();
 assert.equal(savedText, '{"ok":true}');
 const stored = db.signups.map((row) => JSON.parse(row.payload));
 assert.equal(stored.length, 1);
-assert.equal(stored[0].qualified, false);
+assert.deepEqual(Object.keys(stored[0]).sort(), ['consent_at', 'email', 'lang', 'utm_campaign', 'utm_medium', 'utm_source']);
 assert.equal(stored[0].utm_source, 'meta');
 assert.equal(stored[0].email, 'ana@example.com');
-assert.equal(Object.hasOwn(stored[0], 'password'), false);
+assert.equal(stored[0].lang, 'pt');
+assert.match(stored[0].consent_at, /^\d{4}-\d{2}-\d{2}T/);
+assert.notEqual(stored[0].consent_at, '1999-01-01T00:00:00.000Z');
 assert.equal(JSON.stringify(db.rates).includes('198.51.100.4'), false);
 
 const duplicate = await post(
@@ -186,7 +200,7 @@ assert.equal(duplicate.status, 200);
 const duplicateText = await duplicate.text();
 assert.equal(duplicateText, savedText);
 assert.equal(db.signups.filter((row) => JSON.parse(row.payload).email === 'ana@example.com').length, 1);
-assert.equal(JSON.parse(db.signups[0].payload).name, 'Ana Costa');
+assert.equal(Object.hasOwn(JSON.parse(db.signups[0].payload), 'name'), false);
 
 const dotted = await post(
   { ...validBody, email: 'User@Example.com.' },
@@ -333,19 +347,29 @@ const allowed = await post(
 );
 assert.equal(allowed.status, 200);
 
-const wide = JSON.stringify({ ...validBody, email: 'wide@example.com', note: 'é'.repeat(4000) });
+const wide = JSON.stringify({ ...validBody, email: 'wide@example.com', note: 'é'.repeat(4100) });
 assert.ok(wide.length < 8192);
 assert.ok(new TextEncoder().encode(wide).byteLength > 8192);
 const wideBody = await post(wide, { DB: memoryDb() }, { 'cf-connecting-ip': '198.51.100.34' });
 assert.equal(wideBody.status, 413);
 assert.equal(wideBody.headers.get('x-content-type-options'), 'nosniff');
 
+const longNameDb = memoryDb();
 const longName = await post(
   { ...validBody, name: 'A'.repeat(201), email: 'long@example.com' },
-  { DB: memoryDb() },
+  { DB: longNameDb },
   { 'cf-connecting-ip': '198.51.100.35' },
 );
-assert.equal(longName.status, 400);
+assert.equal(longName.status, 200);
+const longRow = JSON.parse(longNameDb.signups[0].payload);
+assert.equal(longRow.email, 'long@example.com');
+assert.equal(Object.hasOwn(longRow, 'name'), false);
+const badEmail = await post(
+  { ...validBody, email: 'not-an-email' },
+  { DB: memoryDb() },
+  { 'cf-connecting-ip': '198.51.100.36' },
+);
+assert.equal(badEmail.status, 400);
 
 const homeSource = read('index.html');
 assert.match(homeSource, /class="honeypot"[\s\S]*name="extra"/);
@@ -470,6 +494,14 @@ const privacyPage = await onGuard({
   },
 });
 assert.equal(privacyPage.status, 200);
+
+if (process.argv.includes('--release')) {
+  for (const file of ['index.html', 'js/copy.js']) {
+    const source = read(file);
+    assert.equal((source.match(/class="token/g) || []).length, 0, `${file} still has .token`);
+    assert.equal(/\[[^\]\r\n]+\]/.test(source), false, `${file} still has a [token]`);
+  }
+}
 
 console.log('site checks passed');
 

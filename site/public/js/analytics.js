@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 
-export const EVENTS = ['visit', 'cta_click', 'form_submit', 'qualified_submit'];
+export const EVENTS = ['visit', 'cta_click', 'form_submit'];
 
 export function track(name) {
   if (!EVENTS.includes(name)) return;

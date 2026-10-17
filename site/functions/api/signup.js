@@ -1,5 +1,3 @@
-import { parseAnswers } from '../../public/js/qualify.js';
-
 const MAX_BODY = 8192;
 const LIMIT = 5;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -135,21 +133,21 @@ async function hashBucket(bucket, secret) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function recordFrom(raw, answers) {
-  return {
-    name: answers.name,
-    email: answers.email,
-    regime: answers.regime,
-    volume: answers.volume,
-    accountant: answers.accountant,
-    consent: true,
-    qualified: answers.qualified,
-    utm_source: text(raw.utm_source),
-    utm_medium: text(raw.utm_medium),
-    utm_campaign: text(raw.utm_campaign),
+function emailOk(email) {
+  return email.length <= 200 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function interestFrom(raw, email, consentAt) {
+  const record = {
+    email,
+    consent_at: consentAt,
     lang: raw.lang === 'en' ? 'en' : 'pt',
-    receivedAt: new Date().toISOString(),
   };
+  for (const key of ['utm_source', 'utm_medium', 'utm_campaign']) {
+    const value = text(raw[key]);
+    if (value) record[key] = value;
+  }
+  return record;
 }
 
 export async function onRequestPost({ request, env }) {
@@ -175,12 +173,14 @@ export async function onRequestPost({ request, env }) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return reply(400, { ok: false });
 
   const honeypot = text(raw.extra) !== '';
-  const answers = honeypot ? null : parseAnswers({ ...raw, email: normalizeEmail(raw.email) });
-  if (!honeypot && !answers) return reply(400, { ok: false });
+  const email = normalizeEmail(raw.email);
+  const consent = raw.consent === true || raw.consent === 'on';
+  if (!honeypot && !(emailOk(email) && consent)) return reply(400, { ok: false });
 
   const now = Date.now();
+  const consentAt = new Date(now).toISOString();
   const hash = await hashBucket(bucket, secret);
-  const record = answers ? recordFrom(raw, answers) : null;
+  const record = honeypot ? null : interestFrom(raw, email, consentAt);
   await db.prepare(DELETE_STALE).bind(now, hash).run();
   const rate = await db.prepare(UPSERT_RATE).bind(hash, now + WINDOW_MS, now, now).first();
   const allowed = Number(rate?.count) <= LIMIT;
@@ -192,7 +192,7 @@ export async function onRequestPost({ request, env }) {
         crypto.randomUUID(),
         record?.email ?? '',
         record ? JSON.stringify(record) : '{}',
-        record?.receivedAt ?? new Date().toISOString(),
+        consentAt,
         write,
         record?.email ?? '',
       )

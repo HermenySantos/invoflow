@@ -1,253 +1,258 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-PT">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Acabe com as surpresas de IVA no fim do trimestre.</title>
     <meta
       name="description"
-      content="Fotografe as faturas ao longo do trimestre. A Invoflow estima o IVA e entrega ao seu contabilista um pack organizado."
+      content="Fotografe as faturas ao longo do trimestre. A Invoflow lê os dados, mostra uma estimativa do IVA e organiza um pack para o seu contabilista."
     />
-    <meta name="theme-color" content="#1b4d3e" />
+    <meta name="theme-color" content="#F4EFE6" />
     <link rel="canonical" href="https://invoflow.pt/" />
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/instrument-serif-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/css/site.css" />
     <meta property="og:title" content="Acabe com as surpresas de IVA no fim do trimestre." />
     <meta
       property="og:description"
-      content="Fotografe as faturas ao longo do trimestre. A Invoflow estima o IVA e entrega ao seu contabilista um pack organizado."
+      content="Fotografe as faturas ao longo do trimestre. A Invoflow lê os dados, mostra uma estimativa do IVA e organiza um pack para o seu contabilista."
     />
     <meta property="og:url" content="https://invoflow.pt/" />
-    <meta property="og:image" content="https://invoflow.pt/assets/poster.jpg" />
+    <meta property="og:image" content="https://invoflow.pt/assets/poster-review.jpg" />
   </head>
   <body>
     <a class="skip" href="#conteudo" data-i18n="skip">Saltar para o conteúdo</a>
-    <header class="site-header">
-      <div class="wrap header-inner">
-        <a class="wordmark" href="/">Invoflow</a>
-        <div class="header-actions">
-          <button type="button" class="lang-toggle" id="lang-toggle" data-i18n="langLabel">EN</button>
-          <a class="button" href="#reservar" data-cta data-i18n="navCta">Reservar</a>
+
+    <header class="masthead" id="topo">
+      <div class="wrap masthead__row">
+        <a class="wordmark" href="#topo" aria-label="Invoflow">
+          <svg class="wordmark__mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><rect x="3.5" y="2.5" width="17" height="19" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 8h10M7 12h10M7 16h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Invoflow</span>
+        </a>
+        <nav class="masthead__nav" aria-label="Secções" data-i18n-attr="aria-label:navLabel">
+          <a href="#como" data-i18n="navHow">Como funciona</a>
+          <a href="#perguntas" data-i18n="navFaq">Perguntas</a>
+        </nav>
+        <div class="masthead__actions">
+          <div class="lang" role="group" aria-label="Idioma / Language">
+            <button type="button" class="lang__opt" data-lang="pt" aria-pressed="true" lang="pt-PT">PT</button>
+            <button type="button" class="lang__opt" data-lang="en" aria-pressed="false" lang="en">EN</button>
+          </div>
+          <a class="btn btn--primary btn--sm" href="#reservar" data-cta data-i18n="cta">Avisem-me</a>
         </div>
       </div>
     </header>
-    <main id="conteudo">
-      <section class="hero">
-        <div class="wrap">
-          <p class="eyebrow" data-i18n="eyebrow">Para ENI e microempresas</p>
-          <h1 data-i18n="heroTitle">Acabe com as surpresas de IVA no fim do trimestre.</h1>
-          <p class="lede" data-i18n="heroSub">
-            Fotografe as faturas ao longo do trimestre. A Invoflow estima o IVA e entrega ao seu contabilista um pack organizado.
-          </p>
-          <div class="hero-actions">
-            <a class="button" href="#reservar" data-cta data-i18n="cta">Reservar lugar no piloto</a>
-            <a class="button-ghost" href="#demonstracao" data-i18n="seeDemo">Ver a demonstração</a>
-          </div>
-          <p class="caveat" data-i18n="caveat">
-            É uma estimativa. Este valor ignora o IVA das vendas. Nada é enviado à Autoridade Tributária.
-          </p>
-        </div>
-      </section>
 
-      <section class="section" id="demonstracao" aria-labelledby="demo-heading">
-        <div class="wrap">
-          <h2 id="demo-heading" data-i18n="demoTitle">Demonstração</h2>
-          <figure class="frame">
-            <video
-              id="demo-video"
-              muted
-              loop
-              playsinline
-              controls
-              preload="metadata"
-              poster="/assets/poster.jpg"
-              width="960"
-              height="600"
-              aria-describedby="demo-caption"
-            >
-              <source src="/assets/demo-short.mp4" type="video/mp4" />
-              <track kind="captions" src="/assets/captions-pt.vtt" srclang="pt" label="Português" default />
-              <track kind="captions" src="/assets/captions-en.vtt" srclang="en" label="English" />
-            </video>
-            <figcaption id="demo-caption" data-i18n="demoCaption">
-              Exemplo ilustrativo. Carregar, rever, estimativa de IVA e o pack para o contabilista.
-            </figcaption>
+    <main id="conteudo">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="wrap hero__grid">
+          <div class="hero__copy">
+            <p class="kicker" data-i18n="eyebrow">Para ENI e microempresas com IVA trimestral</p>
+            <h1 id="hero-title" class="display" data-i18n="heroTitle">Acabe com as surpresas de IVA no fim do trimestre.</h1>
+            <p class="lede" data-i18n="heroSub">Fotografe as faturas ao longo do trimestre. A Invoflow lê os dados, mostra uma estimativa do IVA e organiza um pack para o seu contabilista.</p>
+            <div class="hero__actions">
+              <a class="btn btn--primary" href="#reservar" data-cta data-i18n="cta">Avisem-me</a>
+              <a class="btn btn--quiet" href="#demonstracao"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 5.2v5.6L11 8z" fill="currentColor"/></svg><span data-i18n="seeDemo">Ver a demonstração (18 s)</span></a>
+            </div>
+            <div class="hero__fine">
+              <p class="caveat" data-i18n="caveat">É uma estimativa, não um cálculo oficial. Não substitui o contabilista e nada é enviado às Finanças.</p>
+            </div>
+          </div>
+
+          <figure class="sheet" aria-labelledby="sheet-cap">
+            <div class="sheet__head">
+              <div>
+                <p class="sheet__eyebrow" data-i18n="sheetEyebrow">Estimativa de IVA</p>
+                <p class="sheet__period" data-i18n="sheetPeriod">T4 · 2026</p>
+              </div>
+              <p class="sheet__flag" data-i18n="sheetFlag">Dados fictícios</p>
+            </div>
+            <table class="ledger">
+              <caption class="sr-only" data-i18n="sheetTableCap">Faturas de exemplo, com dados fictícios</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="colDate">Data</th>
+                  <th scope="col" data-i18n="colVendor">Fornecedor</th>
+                  <th scope="col" class="num col-base" data-i18n="colBase">Base (EUR)</th>
+                  <th scope="col" class="num" data-i18n="colVat">IVA (EUR)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>03/10</td><td>Exemplo, Lda</td><td class="num col-base">100,00</td><td class="num">23,00</td></tr>
+                <tr><td>14/10</td><td>Papelaria Fictícia</td><td class="num col-base">20,00</td><td class="num">4,60</td></tr>
+                <tr><td>06/11</td><td>Oficina Exemplo</td><td class="num col-base">50,00</td><td class="num">11,50</td></tr>
+                <tr><td>21/11</td><td>Gráfica Modelo</td><td class="num col-base">12,00</td><td class="num">2,76</td></tr>
+              </tbody>
+              <tfoot>
+                <tr class="ledger__sub"><th scope="row" colspan="2" data-i18n="rowDeductible">IVA dedutível (compras)</th><td class="col-base" aria-hidden="true"></td><td class="num">− 41,86</td></tr>
+                <tr class="ledger__sub"><th scope="row" colspan="2" data-i18n="rowSales">IVA das vendas (introduzido por si)</th><td class="col-base" aria-hidden="true"></td><td class="num">230,00</td></tr>
+                <tr class="ledger__grand"><th scope="row" colspan="2" data-i18n="rowEstimate">Estimativa do IVA a entregar</th><td class="col-base" aria-hidden="true"></td><td class="num"><span class="ledger__total">188,14</span></td></tr>
+              </tfoot>
+            </table>
+            <div class="sheet__pack">
+              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><path d="M3 6.5 10 3l7 3.5v7L10 17l-7-3.5z M3 6.5 10 10l7-3.5 M10 10v7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <span data-i18n="sheetPack">Pack para o contabilista</span>
+              <span class="sheet__files">ZIP · originais · CSV · PDF</span>
+            </div>
+            <figcaption id="sheet-cap" class="sheet__cap" data-i18n="sheetCap">Exemplo ilustrativo com dados fictícios.</figcaption>
           </figure>
         </div>
       </section>
 
-      <section class="section" id="como" aria-labelledby="steps-heading">
+      <section class="section pain" aria-labelledby="pain-title">
         <div class="wrap">
-          <h2 id="steps-heading" data-i18n="stepsTitle">Como funciona</h2>
-          <ol class="steps">
-            <li>
-              <span class="step-no">01</span>
-              <h3 data-i18n="step1Title">Fotografe as faturas</h3>
-              <p data-i18n="step1Body">Ao longo do trimestre, junte as faturas do negócio.</p>
-            </li>
-            <li>
-              <span class="step-no">02</span>
-              <h3 data-i18n="step2Title">Veja a estimativa de IVA</h3>
-              <p data-i18n="step2Body">A Invoflow mostra uma estimativa de IVA para rever com o contabilista.</p>
-            </li>
-            <li>
-              <span class="step-no">03</span>
-              <h3 data-i18n="step3Title">Envie o pack</h3>
-              <p data-i18n="step3Body">Recebe um pack para enviar ao seu contabilista. Quem decide é o contabilista.</p>
-            </li>
+          <header class="section__head">
+            <p class="kicker" aria-hidden="true">01</p>
+            <h2 id="pain-title" class="h2" data-i18n="painTitle">Conhece este fim de trimestre?</h2>
+          </header>
+          <ol class="slips">
+            <li class="slip reveal"><span class="slip__no" aria-hidden="true">01</span><h3 class="slip__title" data-i18n="pain1Title">A caça às faturas.</h3><p data-i18n="pain1Body">Estão na carteira, no porta-luvas, numa gaveta e perdidas no email. Um domingo à noite vai-se a juntá-las.</p></li>
+            <li class="slip reveal"><span class="slip__no" aria-hidden="true">02</span><h3 class="slip__title" data-i18n="pain2Title">O talão que já não se lê.</h3><p data-i18n="pain2Body">O papel térmico desbotou. A fatura do gasóleo ficou no casaco e foi para a máquina. Aquela despesa fica pelo caminho.</p></li>
+            <li class="slip reveal"><span class="slip__no" aria-hidden="true">03</span><h3 class="slip__title" data-i18n="pain3Title">O telefonema do contabilista.</h3><p data-i18n="pain3Body">"Falta-me a fatura de fevereiro." Volta a procurar, fotografa à pressa, envia por WhatsApp, e depois falta outra.</p></li>
+            <li class="slip reveal"><span class="slip__no" aria-hidden="true">04</span><h3 class="slip__title" data-i18n="pain4Title">O número que chega tarde.</h3><p data-i18n="pain4Body">Só fica a saber quanto IVA vai entregar quando o contabilista lhe diz. Nessa altura, o dinheiro já tinha outro destino.</p></li>
           </ol>
+          <p class="closing reveal" data-i18n="painClosing">O problema não são as contas. São os papéis espalhados e um número que só aparece quando já é tarde para planear.</p>
         </div>
       </section>
 
-      <section class="section" aria-labelledby="benefits-heading">
+      <section class="section how" id="como" aria-labelledby="how-title">
+        <div class="wrap how__grid">
+          <div class="how__copy">
+            <header class="section__head">
+              <p class="kicker" aria-hidden="true">02</p>
+              <h2 id="how-title" class="h2" data-i18n="howTitle">Como a Invoflow ajuda</h2>
+            </header>
+            <ol class="steps">
+              <li class="step reveal"><span class="step__no" aria-hidden="true">1</span><div><h3 class="step__title" data-i18n="step1Title">Fotografe ou carregue a fatura</h3><p data-i18n="step1Body">Logo que a recebe: tire uma fotografia com o telemóvel ou carregue o PDF que chegou por email. O original fica guardado.</p></div></li>
+              <li class="step reveal"><span class="step__no" aria-hidden="true">2</span><div><h3 class="step__title" data-i18n="step2Title">A Invoflow lê e assinala o que rever</h3><p data-i18n="step2Body">A Invoflow extrai o fornecedor, a data, os valores e o IVA. Nas fotografias, lê também o código QR da fatura, se estiver nítido. As leituras claras ficam logo marcadas como prontas. As duvidosas ficam assinaladas: um campo em falta, uma leitura pouco segura ou uma possível fatura duplicada. Pode abrir, rever e corrigir qualquer fatura.</p></div></li>
+              <li class="step reveal"><span class="step__no" aria-hidden="true">3</span><div><h3 class="step__title" data-i18n="step3Title">Veja a estimativa e envie o pack</h3><p data-i18n="step3Body">Introduza o IVA das suas vendas do trimestre. A Invoflow subtrai-lhe o IVA dedutível das faturas que carregou e mostra uma estimativa do IVA a entregar, que se atualiza à medida que as faturas entram. No fim, descarrega um pack (ZIP com os originais, um resumo em CSV e outro em PDF) e envia-o ao seu contabilista. Quem fecha a declaração continua a ser ele.</p></div></li>
+            </ol>
+          </div>
+
+          <figure class="demo reveal" id="demonstracao">
+            <div class="demo__bar">
+              <span class="demo__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Invoflow</span>
+              <span class="demo__len">0:18</span>
+            </div>
+            <div class="demo__stage">
+              <video id="demo-video" controls muted playsinline preload="none" poster="/assets/poster-review.webp" width="540" height="600" aria-describedby="demo-cap">
+                <source src="/assets/demo-short.mp4" type="video/mp4" />
+                <track kind="captions" src="/assets/captions-pt.vtt" srclang="pt" label="Português" default />
+                <track kind="captions" src="/assets/captions-en.vtt" srclang="en" label="English" />
+              </video>
+              <button type="button" class="demo__play" id="demo-play" hidden>
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>
+                <span data-i18n="seeDemo">Ver a demonstração (18 s)</span>
+              </button>
+            </div>
+            <figcaption id="demo-cap" class="demo__cap" data-i18n="demoCaption">Exemplo ilustrativo com dados fictícios.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section gains" aria-labelledby="gains-title">
         <div class="wrap">
-          <h2 id="benefits-heading" data-i18n="benefitsTitle">O que recebe</h2>
-          <ul class="benefits">
-            <li class="benefit">
-              <h3 data-i18n="benefit1Title">Estimativa ao longo do trimestre</h3>
-              <p data-i18n="benefit1Body">
-                A estimativa de IVA fica visível enquanto as faturas entram, para rever com o contabilista.
-              </p>
+          <header class="section__head">
+            <p class="kicker" aria-hidden="true">03</p>
+            <h2 id="gains-title" class="h2" data-i18n="gainsTitle">O que muda para si</h2>
+          </header>
+          <ul class="gains__grid">
+            <li class="gain reveal">
+              <svg class="gain__icon" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M16 9v7l4.5 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <h3 class="gain__title" data-i18n="gain1Title">Um número antes do fim do trimestre</h3>
+              <p data-i18n="gain1Body">Em vez de esperar pelo telefonema, introduz o IVA das vendas e vê uma estimativa do IVA a entregar enquanto o trimestre decorre. Assim consegue planear a tesouraria com tempo.</p>
             </li>
-            <li class="benefit">
-              <h3 data-i18n="benefit2Title">Pack para o contabilista</h3>
-              <p data-i18n="benefit2Body">Um pack para enviar ao seu contabilista. Não substitui o trabalho dele.</p>
+            <li class="gain reveal">
+              <svg class="gain__icon" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true" focusable="false"><rect x="7" y="5" width="18" height="22" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M11 11h10M11 15h10M11 19h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <h3 class="gain__title" data-i18n="gain2Title">As faturas num só sítio</h3>
+              <p data-i18n="gain2Body">Fotografou, ficou guardado. Acabaram as gavetas, os porta-luvas e os talões desbotados.</p>
             </li>
-            <li class="benefit">
-              <h3 data-i18n="benefit3Title">Limite explícito</h3>
-              <p data-i18n="benefit3Body">
-                É uma estimativa. Este valor ignora o IVA das vendas. Nada é enviado à Autoridade Tributária.
-              </p>
+            <li class="gain reveal">
+              <svg class="gain__icon" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true" focusable="false"><path d="M5 11.5 16 6l11 5.5v10L16 27 5 21.5z M5 11.5 16 17l11-5.5 M16 17v10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+              <h3 class="gain__title" data-i18n="gain3Title">Menos idas e voltas com o contabilista</h3>
+              <p data-i18n="gain3Body">Entrega tudo de uma vez, organizado e com os originais. Os pedidos de "falta-me esta" devem diminuir.</p>
             </li>
-            <li class="benefit">
-              <h3 data-i18n="benefit4Title">Sem conta nesta página</h3>
-              <p data-i18n="benefit4Body">Esta página não cria conta e não recebe faturas.</p>
+            <li class="gain reveal">
+              <svg class="gain__icon" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true" focusable="false"><path d="M6 16h14m0 0-5-5m5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 7v18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <h3 class="gain__title" data-i18n="gain4Title">O fim do trimestre deixa de ser uma caça</h3>
+              <p data-i18n="gain4Body">Passa a ser um envio: descarregar o pack e mandar.</p>
             </li>
           </ul>
         </div>
       </section>
 
-      <section class="section" id="preco" aria-labelledby="price-heading">
-        <div class="wrap">
-          <article class="price-card">
-            <p class="price-kicker" data-i18n="priceKicker">Piloto</p>
-            <h2 class="price-title" id="price-heading" data-i18n="priceTitle">Pack IVA</h2>
-            <p class="price-line" data-i18n="priceLine">Pack IVA: €190/trimestre. Piloto: primeiro trimestre com desconto.</p>
-            <ul>
-              <li data-i18n="priceItem1">Faturas fotografadas ao longo do trimestre</li>
-              <li data-i18n="priceItem2">Estimativa de IVA</li>
-              <li data-i18n="priceItem3">Pack para enviar ao seu contabilista</li>
-            </ul>
-            <p class="price-note" data-i18n="priceNote">
-              O Invoflow não substitui o contabilista. Não é aconselhamento fiscal.
-            </p>
-            <div id="deposit"></div>
-            <p class="hero-actions">
-              <a class="button" href="#reservar" data-cta data-i18n="cta">Reservar lugar no piloto</a>
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section" id="perguntas" aria-labelledby="faq-heading">
-        <div class="wrap">
-          <h2 id="faq-heading" data-i18n="faqTitle">Perguntas</h2>
-          <div class="faq">
-            <details>
-              <summary data-i18n="faq1Q">O Invoflow substitui o contabilista?</summary>
-              <p data-i18n="faq1A">
-                Não. O Invoflow não substitui o contabilista. O pack organiza informação para quem faz a contabilidade. Não é aconselhamento fiscal.
-              </p>
-            </details>
-            <details>
-              <summary data-i18n="faq2Q">A estimativa de IVA é oficial?</summary>
-              <p data-i18n="faq2A">
-                Não. É uma estimativa. Este valor ignora o IVA das vendas. Nada é enviado à Autoridade Tributária.
-              </p>
-            </details>
-            <details>
-              <summary data-i18n="faq3Q">Onde ficam os dados deste formulário?</summary>
-              <p data-i18n="faq3A">
-                Com o endpoint vazio, o formulário não é enviado e não fica guardado. Quando configurar o endpoint, mantenha esse armazenamento na União Europeia. Os detalhes estão na página de privacidade.
-              </p>
-            </details>
+      <section class="section faq" id="perguntas" aria-labelledby="faq-title">
+        <div class="wrap faq__grid">
+          <header class="section__head faq__head">
+            <p class="kicker" aria-hidden="true">04</p>
+            <h2 id="faq-title" class="h2" data-i18n="faqTitle">Perguntas frequentes</h2>
+          </header>
+          <div class="accordion">
+            <details class="qa"><summary data-i18n="faq1Q">A Invoflow substitui o meu contabilista?</summary><div class="qa__a"><p data-i18n="faq1A">Não. A Invoflow organiza as suas faturas e mostra uma estimativa. A declaração e as decisões fiscais continuam com o seu contabilista.</p></div></details>
+            <details class="qa"><summary data-i18n="faq2Q">O valor de IVA que aparece é oficial?</summary><div class="qa__a"><p data-i18n="faq2A">Não. É uma estimativa. Introduz o IVA das suas vendas e a Invoflow subtrai-lhe o IVA dedutível das faturas que carregou. Se ainda não introduziu o IVA das vendas, vê apenas o IVA dedutível das compras. O valor final é o que o seu contabilista apurar.</p></div></details>
+            <details class="qa"><summary data-i18n="faq3Q">A Invoflow envia alguma coisa às Finanças?</summary><div class="qa__a"><p data-i18n="faq3A">Não. Não comunica com a Autoridade Tributária nem com o e-Fatura. O pack fica consigo e é enviado por si ao contabilista.</p></div></details>
+            <details class="qa"><summary data-i18n="faq4Q">E se a fotografia sair mal ou o talão estiver desbotado?</summary><div class="qa__a"><p data-i18n="faq4A">A Invoflow assinala as leituras pouco seguras e os campos em falta. Pode corrigir à mão, e o original vai no pack.</p></div></details>
+            <details class="qa"><summary data-i18n="faq5Q">Também funciona com as faturas que recebo em PDF por email?</summary><div class="qa__a"><p data-i18n="faq5A">Sim. Pode carregar fotografias ou PDF. Nos PDF, a Invoflow lê o texto da fatura.</p></div></details>
+            <details class="qa"><summary data-i18n="faq6Q">O que recebe o meu contabilista?</summary><div class="qa__a"><p data-i18n="faq6A">Um ficheiro ZIP com os originais das faturas, um resumo em CSV (para abrir numa folha de cálculo) e um resumo em PDF. As faturas que ainda não reviu vão marcadas como tal. O seu contabilista não precisa de conta nem de instalar nada, e não tem acesso à Invoflow: recebe apenas o ficheiro que lhe enviar.</p></div></details>
+            <details class="qa"><summary data-i18n="faq8Q">Onde ficam os meus dados?</summary><div class="qa__a"><p><span class="token" data-i18n="tokHosting">[alojamento e retenção: local de alojamento, tempo de conservação, quem tem acesso; ligar à página de privacidade]</span>. <span data-i18n="faq8A">Os dados deste formulário servem apenas para lhe enviarmos novidades sobre o piloto.</span></p></div></details>
           </div>
         </div>
       </section>
 
-      <section class="section" id="reservar" aria-labelledby="form-heading">
-        <div class="wrap">
-          <div class="form-card">
-            <h2 id="form-heading" data-i18n="formTitle">Reservar lugar no piloto</h2>
-            <p class="form-intro" data-i18n="formIntro">Se avançar, entramos em contacto.</p>
-            <p class="notice" id="closed-notice" data-i18n="closedNotice">Inscrições abrem em breve.</p>
-            <noscript>
-              <p class="notice" data-i18n="noscript">
-                Active o JavaScript para usar o formulário. Com o endpoint vazio, nada é guardado.
-              </p>
-            </noscript>
-            <form id="pilot-form" method="post" action="#reservar" novalidate>
+      <section class="section signup" id="reservar" aria-labelledby="form-title">
+        <div class="wrap signup__grid">
+          <div class="signup__intro">
+            <p class="kicker" aria-hidden="true">05</p>
+            <h2 id="form-title" class="h2" data-i18n="formTitle">Avisem-me</h2>
+            <p class="signup__lede" data-i18n="formIntro">Deixe o seu email. Avisamos quando houver novidades sobre o piloto.</p>
+          </div>
+
+          <div class="formcard">
+            <div class="status" id="closed-notice" role="status">
+              <span class="status__dot" aria-hidden="true"></span>
+              <p><strong data-i18n="closedTitle">Inscrições abrem em breve.</strong> <span data-i18n="closedBody">Estamos a terminar os últimos testes ao formulário. Volte daqui a uns dias.</span></p>
+            </div>
+            <form id="pilot-form" method="post" action="#reservar" novalidate aria-describedby="closed-notice">
               <div class="honeypot" aria-hidden="true">
                 <label for="extra">Outro</label>
                 <input id="extra" name="extra" type="text" tabindex="-1" autocomplete="off" />
               </div>
-              <div class="field">
-                <label for="name" data-i18n="nameLabel">Nome</label>
-                <input id="name" name="name" type="text" autocomplete="name" required />
-                <p class="error" data-error-for="name" role="alert"></p>
-              </div>
-              <div class="field">
-                <label for="email" data-i18n="emailLabel">Email</label>
-                <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required />
-                <p class="error" data-error-for="email" role="alert"></p>
-              </div>
-              <fieldset>
-                <legend data-i18n="regimeLegend">Regime de IVA</legend>
-                <label class="choice"><input type="radio" name="regime" value="trimestral" required /> <span data-i18n="regimeTrimestral">Trimestral</span></label>
-                <label class="choice"><input type="radio" name="regime" value="mensal" /> <span data-i18n="regimeMensal">Mensal</span></label>
-                <label class="choice"><input type="radio" name="regime" value="nao_sei" /> <span data-i18n="regimeUnknown">Não sei</span></label>
-                <p class="error" data-error-for="regime" role="alert"></p>
-              </fieldset>
-              <fieldset>
-                <legend data-i18n="volumeLegend">Faturas por mês</legend>
-                <label class="choice"><input type="radio" name="volume" value="lt20" required /> <span data-i18n="volumeLt">Menos de 20</span></label>
-                <label class="choice"><input type="radio" name="volume" value="20-100" /> <span data-i18n="volumeMid">20 a 100</span></label>
-                <label class="choice"><input type="radio" name="volume" value="gt100" /> <span data-i18n="volumeGt">Mais de 100</span></label>
-                <p class="error" data-error-for="volume" role="alert"></p>
-              </fieldset>
-              <fieldset>
-                <legend data-i18n="accountantLegend">Tem contabilista?</legend>
-                <label class="choice"><input type="radio" name="accountant" value="sim" required /> <span data-i18n="yes">Sim</span></label>
-                <label class="choice"><input type="radio" name="accountant" value="nao" /> <span data-i18n="no">Não</span></label>
-                <p class="error" data-error-for="accountant" role="alert"></p>
-              </fieldset>
-              <label class="choice consent">
-                <input id="consent" name="consent" type="checkbox" required />
-                <span>
-                  <span data-i18n="consentBefore">Li a página de </span>
-                  <a href="/privacy" data-i18n="consentLink">privacidade</a>
-                  <span data-i18n="consentAfter"> e aceito o contacto sobre o piloto.</span>
-                </span>
-              </label>
-              <p class="error" data-error-for="consent" role="alert"></p>
-              <p class="error" data-error-for="form" role="alert"></p>
               <input type="hidden" name="utm_source" />
               <input type="hidden" name="utm_medium" />
               <input type="hidden" name="utm_campaign" />
-              <button class="button" id="submit-pilot" type="submit" data-i18n="cta" disabled>Reservar lugar no piloto</button>
+              <fieldset class="formset" id="formset" disabled>
+                <div class="field">
+                  <label for="email" data-i18n="emailLabel">Email</label>
+                  <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required placeholder="nome@exemplo.pt" aria-describedby="help-email err-email" data-i18n-attr="placeholder:emailPh" />
+                  <p class="help" id="help-email" data-i18n="emailHelp">Só para a lista de novidades.</p>
+                  <p class="error" id="err-email" data-error-for="email" role="alert"></p>
+                </div>
+                <label class="consent">
+                  <input id="consent" name="consent" type="checkbox" required aria-describedby="err-consent" />
+                  <span><span data-i18n="consentBody">Quero receber novidades sobre a Invoflow e o piloto por email. Posso cancelar a qualquer momento.</span> <a href="/privacy" data-i18n="consentLink">Política de privacidade</a></span>
+                </label>
+                <p class="error" id="err-consent" data-error-for="consent" role="alert"></p>
+                <p class="error" id="err-form" data-error-for="form" role="alert"></p>
+                <button class="btn btn--primary btn--block" id="submit-pilot" type="submit" disabled data-i18n="cta">Avisem-me</button>
+              </fieldset>
             </form>
             <div class="thanks" id="thanks" tabindex="-1" hidden>
-              <h2 data-i18n="thanksTitle">Pedido recebido</h2>
-              <p data-i18n="thanksBody">Entramos em contacto consigo.</p>
+              <h3 class="thanks__title" data-i18n="thanksTitle">Obrigado! Vamos enviar-lhe novidades sobre o piloto.</h3>
             </div>
           </div>
         </div>
       </section>
     </main>
-    <footer class="site-footer">
-      <div class="wrap">
-        <a href="/privacy" data-i18n="footerPrivacy">Privacidade</a>
-        <p data-i18n="footerNote">Invoflow. Estimativa de IVA e um pack para enviar ao seu contabilista.</p>
+
+    <footer class="footer">
+      <div class="wrap footer__grid">
+        <p class="footer__brand"><span class="wordmark wordmark--small">Invoflow</span></p>
+        <p class="footer__line" data-i18n="footerLine">Invoflow: estimativa de IVA e pack de faturas para o seu contabilista. Não é aconselhamento fiscal.</p>
+        <p class="footer__links"><a href="/privacy" data-i18n="footerPrivacy">Privacidade</a> <span aria-hidden="true">·</span> <span data-i18n="footerContact">Contacto:</span> <a href="mailto:contacto@invoflow.pt">contacto@invoflow.pt</a></p>
+        <p class="footer__legal"><span class="token" data-i18n="tokEntity">[entidade e NIF]</span> <span aria-hidden="true">·</span> <span class="token" data-i18n="tokMadeIn">[Feito na Covilhã: só com o sim do Gildo]</span></p>
       </div>
     </footer>
     <script type="module" src="/js/main.js"></script>

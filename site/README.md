@@ -43,11 +43,10 @@ Nothing is sent until `ANALYTICS` or `META_PIXEL_ID` is set.
 | Event | When it fires |
 | --- | --- |
 | `visit` | The page script starts. |
-| `cta_click` | A person follows a "Reservar" link to the form. |
+| `cta_click` | A person follows an "Avisem-me" link to the form. |
 | `form_submit` | The form is valid. This includes the case where the endpoint is empty and nothing is stored. |
-| `qualified_submit` | The same moment, and only when the request is qualified. |
 
-Qualified means quarterly VAT, 20 or more invoices a month, and an accountant. Consent is required to submit and is not part of that rule.
+The form asks for an email and consent. It does not ask for a name, a VAT regime, an invoice band, or an accountant, and it does not mark a request as qualified.
 
 Plausible, when enabled, receives the event names above. The Meta pixel, when enabled, records a page view. Adding either one needs a wider content security policy in `public/_headers`:
 
@@ -84,7 +83,7 @@ The request must send `Content-Type: application/json` and `CF-Connecting-IP`. T
 
 Each address can submit 5 requests an hour. The stored key is the HMAC of that bucket, not the address. The sixth request returns HTTP 429 with a short message in Portuguese and in English. The next write deletes rate rows whose window ended more than an hour ago. The current address is reset in the same upsert instead of being deleted.
 
-The function calculates `qualified` again. A value sent by the browser does not override that result.
+A stored row holds the normalized email, a server consent timestamp, the language, and `utm_source`, `utm_medium`, and `utm_campaign` when those values are present. Name, regime, volume, accountant, and a client-sent timestamp are not stored.
 
 The email is stored after Unicode NFKC, lowercasing, and punycode on the domain. One trailing dot on the domain is removed. A second request for that email returns the same HTTP 200 body and does not write another row.
 
@@ -100,7 +99,7 @@ From the repository root:
 node site/check.mjs
 ```
 
-CI runs the same command. It rejects banned marketing lines, unexpected euro amounts, a second copy of the qualification rule, and the scarcity line.
+CI runs the same command. It rejects banned marketing lines, euro amounts on the page, qualification fields, and the scarcity line. `node site/check.mjs --release` also fails while a `.token` chip or a bracket token remains. The site job does not pass `--release`.
 
 ## Demo recording
 
