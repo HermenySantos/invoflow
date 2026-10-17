@@ -21,3 +21,4 @@ class ProjectionResponse(BaseModel):
     vat_on_sales: Optional[Decimal]
     projected_iva_payable: Optional[Decimal]
     sales_basis: str
+    warnings: list[str] = []

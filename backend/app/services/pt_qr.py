@@ -49,6 +49,9 @@ class InvoiceQR:
     vat_amount: Optional[Decimal]
     gross_amount: Optional[Decimal]
     vat_rate: Optional[Decimal]  # None when the invoice mixes rates
+    # D (FT, NC, ...) and E (N normal, A anulado) from the AT QR.
+    document_type: Optional[str] = None
+    fiscal_status: Optional[str] = None
     breakdown: list[dict] = field(default_factory=list)
     payload: str = ""
 
@@ -109,6 +112,8 @@ def parse_invoice_qr(payload: str) -> Optional[InvoiceQR]:
         vat_amount=_amount(pairs.get("N")),
         gross_amount=_amount(pairs.get("O")),
         vat_rate=Decimal(rates_used.pop()) if len(rates_used) == 1 else None,
+        document_type=(pairs.get("D") or None),
+        fiscal_status=(pairs.get("E") or None),
         breakdown=breakdown,
         payload=payload,
     )

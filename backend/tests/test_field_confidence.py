@@ -30,7 +30,7 @@ class TestFieldConfidenceParsing:
         # First upload a mock file
         client.put(
             get_storage_service().get_upload_url(f"{user_id}/test-confidence.jpg", "image/jpeg"),
-            content=b"fake image content",
+            content=b"\xff\xd8\xff\xd9",
             headers={"Content-Type": "image/jpeg"},
         )
         
@@ -64,7 +64,7 @@ class TestFieldConfidenceParsing:
         # Create a document first
         client.put(
             get_storage_service().get_upload_url(f"{user_id}/test-fc-get.jpg", "image/jpeg"),
-            content=b"fake image content",
+            content=b"\xff\xd8\xff\xd9",
             headers={"Content-Type": "image/jpeg"},
         )
         
@@ -98,7 +98,7 @@ class TestReviewNotes:
         # Create a document
         client.put(
             get_storage_service().get_upload_url(f"{user_id}/test-notes.jpg", "image/jpeg"),
-            content=b"fake image content",
+            content=b"\xff\xd8\xff\xd9",
             headers={"Content-Type": "image/jpeg"},
         )
         
@@ -134,7 +134,7 @@ class TestReviewNotes:
         # Create a document
         client.put(
             get_storage_service().get_upload_url(f"{user_id}/test-notes-persist.jpg", "image/jpeg"),
-            content=b"fake image content",
+            content=b"\xff\xd8\xff\xd9",
             headers={"Content-Type": "image/jpeg"},
         )
         
@@ -173,7 +173,7 @@ class TestAccountantReviewStatus:
         # Create a document
         client.put(
             get_storage_service().get_upload_url(f"{user_id}/test-accountant.jpg", "image/jpeg"),
-            content=b"fake image content",
+            content=b"\xff\xd8\xff\xd9",
             headers={"Content-Type": "image/jpeg"},
         )
         
@@ -210,7 +210,7 @@ class TestAccountantReviewStatus:
         # Create a document
         client.put(
             get_storage_service().get_upload_url(f"{user_id}/test-invalid-status.jpg", "image/jpeg"),
-            content=b"fake image content",
+            content=b"\xff\xd8\xff\xd9",
             headers={"Content-Type": "image/jpeg"},
         )
         

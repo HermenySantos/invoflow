@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -23,7 +24,7 @@ from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
 from app.core.rate_limit import limiter
 from app.core.startup import get_environment_status, run_startup_checks
-from app.services.ocr import resolve_ocr_backend, tesseract_available
+from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_available
 from app.services.processing import read_receipt, stuck_document_ids
 
 settings = get_settings()
@@ -203,8 +204,23 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+class HideEfaturaWhenDisabled(BaseHTTPMiddleware):
+    """The pull route is absent unless the flag is on. Every method is 404."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path == "/api/efatura" or path.startswith("/api/efatura/"):
+            if not get_settings().efatura_pull_enabled:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"detail": "e-Fatura pull is disabled"},
+                )
+        return await call_next(request)
+
+
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(HideEfaturaWhenDisabled)
 
 allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 allowed_headers = [
@@ -226,39 +242,78 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
+def custom_openapi():
+    enabled = bool(get_settings().efatura_pull_enabled)
+    if app.openapi_schema is not None and getattr(app, "_openapi_efatura", None) is enabled:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    if not enabled:
+        schema["paths"] = {
+            path: item for path, item in schema.get("paths", {}).items() if "/efatura" not in path
+        }
+    app.openapi_schema = schema
+    app._openapi_efatura = enabled
+    return schema
+
+
+app.openapi = custom_openapi
+
+
+def _runtime_status_code(payload: dict) -> int:
+    if payload["status"] == "degraded":
+        return status.HTTP_503_SERVICE_UNAVAILABLE
+    return status.HTTP_200_OK
+
+
 @app.get("/")
 async def root():
-    backend = resolve_ocr_backend()
-    return {
-        "name": settings.app_name,
-        "product": "Invoflow",
-        "version": "0.2.0",
-        "status": "healthy",
-        "ocr_backend": backend,
-        "mock_mode": {
-            "auth": settings.auth_mock_mode,
-            "storage": settings.storage_mock_mode,
-            "ocr": backend == "mock",
+    runtime = ocr_runtime_status()
+    return JSONResponse(
+        status_code=_runtime_status_code(runtime),
+        content={
+            "name": settings.app_name,
+            "product": "Invoflow",
+            "version": "0.2.0",
+            "status": runtime["status"],
+            "ocr_backend": runtime["ocr_backend"],
+            "mock_mode": {
+                "auth": settings.auth_mock_mode,
+                "storage": settings.storage_mock_mode,
+                "ocr": runtime["ocr_backend"] == "mock",
+            },
         },
-    }
+    )
 
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "ocr_backend": resolve_ocr_backend(),
-        "tesseract": tesseract_available(),
-    }
+    payload = ocr_runtime_status()
+    return JSONResponse(status_code=_runtime_status_code(payload), content=payload)
 
 
 @app.get("/health/detailed")
 async def detailed_health_check():
     """Detailed health check. Full environment status is only returned in debug mode."""
+    runtime = ocr_runtime_status()
+    code = _runtime_status_code(runtime)
     if not settings.app_debug:
-        return {"status": "healthy", "message": "Detailed health checks disabled in production"}
+        return JSONResponse(
+            status_code=code,
+            content={
+                "status": runtime["status"],
+                "message": "Detailed health checks disabled in production",
+            },
+        )
 
-    return {
-        "status": "healthy",
-        "environment": get_environment_status(),
-    }
+    return JSONResponse(
+        status_code=code,
+        content={
+            "status": runtime["status"],
+            "environment": get_environment_status(),
+        },
+    )

@@ -146,6 +146,17 @@ class StorageService:
         file_path.write_bytes(content)
         return str(file_path)
 
+    def replace_file(self, storage_key: str, content: bytes) -> None:
+        """Overwrite an object that was just uploaded. Used to store a re-encoded image."""
+        if self.mock_mode:
+            file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(content)
+            return
+        if not self.s3_client:
+            return
+        self.s3_client.put_object(Bucket=self.bucket_name, Key=storage_key, Body=content)
+
     def get_file(self, storage_key: str) -> Optional[bytes]:
         if self.mock_mode:
             return self.get_file_mock(storage_key)
@@ -166,7 +177,7 @@ class StorageService:
             file_path = _validate_storage_key(storage_key, MOCK_STORAGE_DIR)
             if file_path.exists():
                 return file_path.read_bytes()
-        except ValueError:
+        except (ValueError, OSError):
             return None
         return None
 

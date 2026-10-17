@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     app_name: str = "Invoflow API"
-    app_debug: bool = True
+    app_debug: bool = False
     # "development" allows the mock auth/storage modes; anything else refuses them.
     app_env: str = "development"
     api_prefix: str = "/api"
@@ -62,6 +62,13 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @field_validator("efatura_pull_enabled", mode="before")
+    @classmethod
+    def empty_efatura_flag_is_off(cls, value):
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            return False
+        return value
 
     @field_validator("cors_origins", mode="before")
     @classmethod

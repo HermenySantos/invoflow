@@ -11,10 +11,7 @@ type PrivacyCopy = {
   controllerHeading: string;
   controllerBody: string;
   controllerName: string;
-  controllerAddress: string;
-  controllerNif: string;
   contactLabel: string;
-  contactNote: string;
   dataHeading: string;
   dataIntro: string;
   dataItems: string[];
@@ -24,11 +21,12 @@ type PrivacyCopy = {
   estimateNote: string;
   retentionHeading: string;
   retention: string[];
-  retentionTodo: string;
   processorsHeading: string;
   processorsIntro: string;
   processors: string[];
-  processorsTodo: string;
+  transfersHeading: string;
+  transfersBody: string;
+  missingControllerDetails: string;
   rightsHeading: string;
   rightsBody: string;
   rightsItems: string[];
@@ -43,16 +41,12 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
       'Este aviso explica que dados pessoais o Invoflow trata, para quê, durante quanto tempo, quem os recebe e quais são os seus direitos ao abrigo do Regulamento (UE) 2016/679 (RGPD). A versão em português é a principal.',
     updated: '13 de outubro de 2026',
     demoBanner:
-      'Modo de demonstração: o início de sessão e o armazenamento de ficheiros são simulados. Os dados ficam nesta instalação.',
+      'Modo de demonstração: o início de sessão e o armazenamento de ficheiros são simulados. O OCR é simulado: os valores lidos são fictícios. Os dados ficam nesta instalação.',
     langLabel: 'EN',
     controllerHeading: 'Responsável pelo tratamento',
-    controllerBody:
-      'O responsável pelo tratamento opera o Invoflow. A morada e o NIF ainda não estão preenchidos:',
+    controllerBody: 'O responsável pelo tratamento opera o Invoflow.',
     controllerName: 'Nome: Hermenegildo Jerónimo dos Santos',
-    controllerAddress: 'Morada completa do responsável',
-    controllerNif: 'NIF do responsável pelo tratamento',
     contactLabel: 'Contacto',
-    contactNote: 'a confirmar',
     dataHeading: 'Dados tratados',
     dataIntro:
       'Tratamos o que for preciso para guardar faturas e recibos e preparar uma estimativa e um pacote de exportação:',
@@ -83,8 +77,6 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
       'Relatórios do Sentry, se existirem: segundo a configuração desse projeto. Por omissão não enviamos dados pessoais.',
       'Modo de demonstração: os dados ficam na máquina dessa instalação até alguém apagar a base de dados local e a pasta de armazenamento.',
     ],
-    retentionTodo:
-      'Confirmar com Gildo ou um contabilista o prazo legal de conservação que se aplica',
     processorsHeading: 'Subcontratantes na instalação na UE',
     processorsIntro:
       'Quando o serviço corre na instalação de produção na União Europeia, estes subcontratantes tratam dados por conta do responsável:',
@@ -94,8 +86,10 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
       'Clerk — autenticação, quando o modo de demonstração está desligado.',
       'Sentry — relatórios de erro, opcional.',
     ],
-    processorsTodo:
-      'Confirmar com cada subcontratante a localização dos dados e as cláusulas do contrato',
+    transfersHeading: 'Transferências internacionais',
+    transfersBody:
+      'Clerk (autenticação), Sentry (relatórios de erro) e Cloudflare (ficheiros e rede) são empresas estabelecidas nos Estados Unidos. Quando os dados são tratados por esses destinatários, os instrumentos previstos são as cláusulas contratuais-tipo adotadas pela Comissão Europeia e, se o destinatário estiver certificado, o Quadro de Privacidade de Dados UE-EUA (EU-US Data Privacy Framework).',
+    missingControllerDetails: 'Morada e NIF disponibilizados mediante pedido',
     rightsHeading: 'Direitos',
     rightsBody:
       'Pode pedir acesso, retificação, apagamento, limitação e portabilidade dos seus dados pessoais, e opor-se ao tratamento baseado em interesse legítimo. Pode apresentar reclamação à Comissão Nacional de Proteção de Dados (cnpd.pt).',
@@ -115,16 +109,12 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
       'This notice explains what personal data Invoflow processes, why, for how long, who receives it, and your rights under Regulation (EU) 2016/679 (GDPR). The Portuguese version is the main one.',
     updated: '13 October 2026',
     demoBanner:
-      'Demo mode: sign-in and file storage are mock. Data stays on this installation.',
+      'Demo mode: sign-in and file storage are mock. OCR is mock: the values it reads are invented. Data stays on this installation.',
     langLabel: 'PT',
     controllerHeading: 'Data controller',
-    controllerBody:
-      'The controller operates Invoflow. Address and NIF are not filled in yet:',
+    controllerBody: 'The controller operates Invoflow.',
     controllerName: 'Name: Hermenegildo Jerónimo dos Santos',
-    controllerAddress: 'Controller’s full postal address',
-    controllerNif: 'Controller’s tax identification number (NIF)',
     contactLabel: 'Contact',
-    contactNote: 'to confirm',
     dataHeading: 'Data we process',
     dataIntro:
       'We process what is needed to keep invoices and receipts and to prepare an estimate and an export pack:',
@@ -155,8 +145,6 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
       'Sentry reports, if any: according to that project’s settings. Personal data is not sent by default.',
       'Demo mode: data stays on that installation’s machine until someone deletes the local database and the storage folder.',
     ],
-    retentionTodo:
-      'Confirm with Gildo or an accountant the statutory retention period that applies',
     processorsHeading: 'Processors for the EU installation',
     processorsIntro:
       'When the service runs on the production installation in the European Union, these processors handle data for the controller:',
@@ -166,8 +154,10 @@ export const privacyCopy: Record<PrivacyLang, PrivacyCopy> = {
       'Clerk — authentication, when demo mode is off.',
       'Sentry — error reports, optional.',
     ],
-    processorsTodo:
-      'Confirm data location and contract terms with each processor',
+    transfersHeading: 'International transfers',
+    transfersBody:
+      'Clerk (authentication), Sentry (error reports) and Cloudflare (files and network) are companies established in the United States. Where those recipients process data, the instruments provided for are the European Commission’s standard contractual clauses and, if the recipient is certified, the EU-US Data Privacy Framework.',
+    missingControllerDetails: 'Address and NIF are available on request',
     rightsHeading: 'Your rights',
     rightsBody:
       'You can ask for access, rectification, erasure, restriction, and portability of your personal data, and object to processing based on legitimate interests. You can lodge a complaint with the Portuguese data protection authority, CNPD (cnpd.pt).',

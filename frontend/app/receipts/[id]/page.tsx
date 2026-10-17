@@ -490,6 +490,9 @@ export default function ReceiptDetailPage() {
                 )}
 
                 {/* Needs review alert */}
+                {document.fictional ? (
+                  <p className="text-sm text-amber-800">dados fictícios</p>
+                ) : null}
                 {document.status === 'needs_review' && !isComplete() && (
                   <div className="card p-3 bg-amber-50 border-amber-200 flex items-start gap-2">
                     <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />

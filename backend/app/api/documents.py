@@ -37,6 +37,8 @@ from app.services.audit import (
     log_document_delete,
 )
 from app.services.validation import validate_document, detect_duplicates
+from app.services.iva_adjust import reading_is_fictional
+from app.services.uploads import UNSUPPORTED_TYPE_DETAIL, prepare_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -153,6 +155,7 @@ def build_document_response(
         deductible_pct=effective_deductible_pct(document),
         deductible_pct_override=document.deductible_pct_override,
         validation_warnings=warnings,
+        fictional=reading_is_fictional(document.ocr_raw_response),
         period_tag=document.period_tag,
         quarter_tag=document.quarter_tag,
         file_url=file_url,
@@ -225,8 +228,23 @@ async def create_document(
             detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
 
+    # A key that walks out of the user's folder is rejected before the prefix
+    # check, because "user/../other" still starts with "user/".
+    storage_key = doc_create.storage_key
+    if (
+        not storage_key
+        or "\x00" in storage_key
+        or "\\" in storage_key
+        or storage_key.startswith("/")
+        or any(part == ".." for part in storage_key.split("/"))
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid storage key",
+        )
+
     # Upload keys are issued under the user's own folder; anything else is another user's file.
-    if not doc_create.storage_key.startswith(f"{current_user.user_id}/"):
+    if not storage_key.startswith(f"{current_user.user_id}/"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Storage key does not belong to the current user",
@@ -234,6 +252,20 @@ async def create_document(
 
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
+    stored = storage.get_file(storage_key)
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Uploaded file was not found",
+        )
+    prepared = prepare_upload(stored)
+    if prepared is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=UNSUPPORTED_TYPE_DETAIL,
+        )
+    if prepared != stored:
+        storage.replace_file(storage_key, prepared)
 
     try:
         document = Document(
