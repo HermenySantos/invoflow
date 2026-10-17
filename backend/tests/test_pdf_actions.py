@@ -137,11 +137,48 @@ def _uri_link(payload: str) -> bytes:
     return _save(writer)
 
 
+def _named(name: str, nxt=None) -> DictionaryObject:
+    action = DictionaryObject()
+    action[NameObject("/S")] = NameObject("/Named")
+    action[NameObject("/N")] = NameObject(name)
+    if nxt is not None:
+        action[NameObject("/Next")] = nxt
+    return action
+
+
+def _open_named(name: str) -> bytes:
+    writer, _page = _writer()
+    writer._root_object[NameObject("/OpenAction")] = _named(name)
+    return _save(writer)
+
+
+def _goto_next_named_print() -> bytes:
+    writer, page = _writer()
+    writer._root_object[NameObject("/OpenAction")] = _goto(page, _named("/Print"))
+    return _save(writer)
+
+
+def _named_next_javascript() -> bytes:
+    writer, _page = _writer()
+    writer._root_object[NameObject("/OpenAction")] = _named("/Print", JavaScript("app.alert(1)"))
+    return _save(writer)
+
+
+def _named_unknown() -> bytes:
+    return _open_named("/Quit")
+
+
 SAFE = [
     ("open_fit", _open_fit),
     ("open_goto", _open_goto),
     ("open_indirect_fit", _open_indirect_fit),
     ("https_link", _https_link),
+    ("mailto_link", lambda: _uri_link("mailto:contas@example.pt")),
+    ("relative_link", lambda: _uri_link("fatura.pdf")),
+    ("fragment_link", lambda: _uri_link("#pagina")),
+    ("named_print", lambda: _open_named("/Print")),
+    ("named_next_page", lambda: _open_named("/NextPage")),
+    ("goto_next_named_print", _goto_next_named_print),
 ]
 
 REJECTED = [
@@ -152,8 +189,16 @@ REJECTED = [
     ("submit_form", _submit_form),
     ("uri_javascript", lambda: _uri_link("javascript:alert(1)")),
     ("uri_javascript_padded", lambda: _uri_link(" \n\x00javascript:alert(1)")),
+    ("uri_javascript_tab", lambda: _uri_link("java\tscript:alert(1)")),
+    ("uri_javascript_crlf", lambda: _uri_link("java\r\nscript:alert(1)")),
+    ("uri_javascript_percent", lambda: _uri_link("%6aavascript:alert(1)")),
+    ("uri_javascript_percent_mixed", lambda: _uri_link("%6Aavascript:alert(1)")),
+    ("uri_javascript_mixed_case", lambda: _uri_link("JaVaScRiPt:alert(1)")),
     ("uri_data", lambda: _uri_link("DATA:text/html,x")),
     ("uri_vbscript", lambda: _uri_link("\x7fvbscript:msg")),
+    ("uri_ftp", lambda: _uri_link("ftp://example.com/fatura")),
+    ("named_next_javascript", _named_next_javascript),
+    ("named_unknown", _named_unknown),
 ]
 
 
