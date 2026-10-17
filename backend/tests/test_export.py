@@ -60,15 +60,44 @@ def test_originals_are_included_outside_mock_storage():
     assert archive.read(originals[0]) == b"original bytes for u/2026/09/ab_recibo.jpg"
 
 
+PT_CSV_HEADERS = [
+    "ID",
+    "Data",
+    "Fornecedor",
+    "NIF",
+    "N.º da fatura",
+    "Líquido (EUR)",
+    "IVA (EUR)",
+    "Bruto (EUR)",
+    "IVA %",
+    "Categoria",
+    "Setor IRS",
+    "% dedutível",
+    "IVA dedutível (EUR)",
+    "Estado",
+    "Ficheiro",
+]
+
+
+def test_csv_headers_are_portuguese():
+    text = export([receipt()]).read("summary.csv").decode("utf-8")
+    assert text.startswith("\ufeff")
+    assert "\r\n" in text
+    rows = list(csv.reader(io.StringIO(text[1:]), delimiter=";"))
+    assert rows[0] == PT_CSV_HEADERS
+    assert rows[1][rows[0].index("Bruto (EUR)")] == "35,20"
+    assert rows[1][rows[0].index("IVA (EUR)")] == "5,20"
+
+
 def test_csv_uses_portuguese_number_format():
     rows = read_csv(export([receipt()]))
     header, row = rows[0], rows[1]
-    assert row[header.index("Gross (EUR)")] == "35,20"
-    assert row[header.index("VAT (EUR)")] == "5,20"
+    assert row[header.index("Bruto (EUR)")] == "35,20"
+    assert row[header.index("IVA (EUR)")] == "5,20"
 
 
 def test_csv_neutralises_formula_cells():
     rows = read_csv(export([receipt(vendor_name='=HYPERLINK("http://x","y")', invoice_number="+1+1")]))
     header, row = rows[0], rows[1]
-    assert row[header.index("Vendor")] == '\'=HYPERLINK("http://x","y")'
-    assert row[header.index("Invoice #")] == "'+1+1"
+    assert row[header.index("Fornecedor")] == '\'=HYPERLINK("http://x","y")'
+    assert row[header.index("N.º da fatura")] == "'+1+1"

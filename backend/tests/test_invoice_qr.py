@@ -2,7 +2,9 @@
 The Portuguese invoice QR (AT) is read before OCR and its amounts win.
 """
 
+import builtins
 import io
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -10,7 +12,10 @@ from decimal import Decimal
 import zxingcpp
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
 
+from app.services.ocr import _pdf_first_page_image
 from app.services.pt_qr import parse_invoice_qr, read_invoice_qr
 from app.services.storage import get_storage_service
 
@@ -58,18 +63,7 @@ def test_qr_is_found_in_a_photo():
 
 
 def test_upload_stores_the_qr_totals(client: TestClient):
-    headers = {"X-Mock-User-Id": f"test-user-{uuid.uuid4().hex[:8]}"}
-    buffer = io.BytesIO()
-    fatura_photo(MAINLAND).save(buffer, format="PNG")
-    key = f"{headers['X-Mock-User-Id']}/2026/09/{uuid.uuid4().hex[:8]}_fatura.png"
-    client.put(get_storage_service().get_upload_url(key, "image/png"), content=buffer.getvalue())
-
-    created = client.post(
-        "/api/documents",
-        json={"storage_key": key, "original_filename": "fatura.png", "file_size": len(buffer.getvalue()), "mime_type": "image/png"},
-        headers=headers,
-    ).json()
-    document = client.get(f"/api/documents/{created['id']}", headers=headers).json()
+    document = _upload(client, _png_bytes(fatura_photo(MAINLAND)), "fatura.png", "image/png")
 
     assert document["vendor_nif"] == "503504564"
     assert document["invoice_number"] == "FT A/12"
@@ -77,3 +71,63 @@ def test_upload_stores_the_qr_totals(client: TestClient):
     assert document["gross_amount"] == "35.20"
     assert document["vat_amount"] == "5.20"
     assert document["net_amount"] == "30.00"
+
+
+def test_upload_reads_an_at_qr_embedded_in_a_pdf(client: TestClient):
+    document = _upload(client, _pdf_bytes(fatura_photo(MAINLAND)), "fatura.pdf", "application/pdf")
+
+    assert document["vendor_nif"] == "503504564"
+    assert document["invoice_number"] == "FT A/12"
+    assert document["document_date"] == "2026-09-15"
+    assert document["gross_amount"] == "35.20"
+    assert document["vat_amount"] == "5.20"
+    assert document["net_amount"] == "30.00"
+
+
+def test_missing_pdf2image_logs_a_warning(monkeypatch, caplog):
+    real_import = builtins.__import__
+
+    def guarded(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pdf2image" or name.startswith("pdf2image."):
+            raise ImportError("pdf2image is not installed")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded)
+    with caplog.at_level(logging.WARNING, logger="app.services.ocr"):
+        assert _pdf_first_page_image(b"%PDF-1.4") is None
+    assert any("pdf2image" in record.message for record in caplog.records)
+
+
+def _png_bytes(page: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    page.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _pdf_bytes(page: Image.Image) -> bytes:
+    png = io.BytesIO(_png_bytes(page))
+    out = io.BytesIO()
+    pdf = canvas.Canvas(out, pagesize=(page.width, page.height))
+    pdf.drawImage(ImageReader(png), 0, 0, width=page.width, height=page.height)
+    pdf.save()
+    return out.getvalue()
+
+
+def _upload(client: TestClient, content: bytes, filename: str, mime_type: str) -> dict:
+    headers = {"X-Mock-User-Id": f"test-user-{uuid.uuid4().hex[:8]}"}
+    key = f"{headers['X-Mock-User-Id']}/2026/09/{uuid.uuid4().hex[:8]}_{filename}"
+    client.put(get_storage_service().get_upload_url(key, mime_type), content=content)
+    created = client.post(
+        "/api/documents",
+        json={
+            "storage_key": key,
+            "original_filename": filename,
+            "file_size": len(content),
+            "mime_type": mime_type,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    document = client.get(f"/api/documents/{created.json()['id']}", headers=headers)
+    assert document.status_code == 200, document.text
+    return document.json()
