@@ -24,7 +24,7 @@ Then open:
 - Upload (live demo): http://localhost:3000/upload
 - API health: http://localhost:8000/health
 
-Sign in with any email (mock auth). No Azure, Clerk, or R2 keys.
+Sign in with any email. Compose sets `MOCK_AUTH=1`, which is what turns mock auth on. No Azure, Clerk, or R2 keys.
 
 Stop with `Ctrl+C`, then `docker compose down`.
 
@@ -35,7 +35,7 @@ Needs Python 3.11+ and Node 18+. Tesseract is optional.
 On Debian/Ubuntu, install the venv module first if `python3 -m venv` fails:
 
 ```bash
-sudo apt-get install -y python3.12-venv python3-pip tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+sudo apt-get install -y python3.12-venv python3-pip tesseract-ocr tesseract-ocr-por tesseract-ocr-eng poppler-utils
 ```
 
 ```bash
@@ -44,7 +44,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-# optional: cp .env.example .env
+cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -56,6 +56,8 @@ npm install
 npm run dev
 ```
 
+`npm run dev` signs in without Clerk. Demo notes on the page need `NEXT_PUBLIC_DEMO_AUTH=1` and an empty Clerk key. `npm run build` fails unless `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set, or `NEXT_PUBLIC_DEMO_AUTH=1` is set on purpose.
+
 Open http://localhost:3000
 
 This path uses SQLite (`backend/invoflow.db`) and local files (`backend/mock_storage/`). If Tesseract is not installed, OCR falls back to mock data.
@@ -63,7 +65,7 @@ This path uses SQLite (`backend/invoflow.db`) and local files (`backend/mock_sto
 Optional system OCR (Debian/Ubuntu):
 
 ```bash
-sudo apt-get install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+sudo apt-get install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng poppler-utils
 ```
 
 Poetry is optional: `cd backend && poetry install && poetry run uvicorn app.main:app --reload --port 8000`.
@@ -72,7 +74,7 @@ Poetry is optional: `cd backend && poetry install && poetry run uvicorn app.main
 
 | Piece | Default | Paid optional |
 | --- | --- | --- |
-| Auth | Mock (any email) | Clerk |
+| Auth | Off unless `MOCK_AUTH=1` (Compose and `.env.example` set it) | Clerk |
 | Storage | Local `mock_storage/` | Cloudflare R2 (+ boto3) |
 | OCR | **Tesseract** if installed, else mock | Azure Document Intelligence |
 | LLM polish | Off | Local Ollama (`OLLAMA_BASE_URL`) |

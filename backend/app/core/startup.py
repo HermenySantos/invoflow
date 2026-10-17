@@ -5,7 +5,7 @@ Ensures required configuration is present before the application starts.
 
 import logging
 from typing import List, Tuple
-from app.core.config import get_settings
+from app.core.config import get_settings, known_app_env, mock_auth_env_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,8 @@ def validate_configuration() -> List[str]:
     if not settings.auth_mock_mode:
         if not settings.clerk_secret_key:
             errors.append(
-                "AUTH_MOCK_MODE is false but CLERK_SECRET_KEY is not set. "
-                "Set CLERK_SECRET_KEY or enable AUTH_MOCK_MODE=true"
+                "CLERK_SECRET_KEY is not set. "
+                "Set it, or set MOCK_AUTH=1 when APP_ENV is development or test."
             )
         if not settings.clerk_frontend_api:
             warnings.append(
@@ -38,8 +38,8 @@ def validate_configuration() -> List[str]:
             )
     else:
         warnings.append(
-            "AUTH_MOCK_MODE is enabled. Authentication is bypassed. "
-            "Do not use in production!"
+            "Mock auth is enabled. Authentication is bypassed. "
+            "Do not use in production."
         )
     
     # Storage validation
@@ -111,13 +111,17 @@ def validate_configuration() -> List[str]:
             "Disable for production!"
         )
     
-    # Mock auth trusts a client header and mock storage serves local files:
-    # never allowed outside development.
-    if settings.app_env != "development":
-        if settings.auth_mock_mode:
-            errors.append(f"AUTH_MOCK_MODE must be false when APP_ENV is {settings.app_env}.")
-        if settings.storage_mock_mode:
-            errors.append(f"STORAGE_MOCK_MODE must be false when APP_ENV is {settings.app_env}.")
+    if not known_app_env(settings.app_env):
+        errors.append(
+            f"APP_ENV must be development, test, or production (got {settings.app_env!r})."
+        )
+    mock_requested = bool(getattr(settings, "_mock_auth_requested", False) or settings.auth_mock_mode)
+    if mock_requested and not mock_auth_env_allowed(settings.app_env):
+        errors.append(
+            f"MOCK_AUTH and AUTH_MOCK_MODE must be off when APP_ENV is {settings.app_env}."
+        )
+    if settings.app_env != "development" and settings.storage_mock_mode:
+        errors.append(f"STORAGE_MOCK_MODE must be false when APP_ENV is {settings.app_env}.")
 
     # Raise error if critical configuration is missing
     if errors:

@@ -28,10 +28,11 @@ Gildo creates the accounts, because they need payment or identity. Claude never 
 1. **Server:** Hetzner Cloud CX22 or similar, Ubuntu 24.04, in an EU location (Germany or Finland). Add your own SSH key when you create it.
 2. **Domain:** point it at Cloudflare DNS. Add an `A` record for the domain (and `AAAA` if the server has IPv6) to the server's IP, with **DNS only** (grey cloud), so Caddy can get its certificate.
 3. **Cloudflare R2:**
-   - Create buckets `invoflow-documents` and `invoflow-backups`.
+   - Create the buckets `invoflow-documents` and `invoflow-backups` in the **EU jurisdiction**.
    - Turn on **object versioning** for `invoflow-documents`.
    - Create an R2 API token with Object Read & Write on both buckets.
    - Under CORS on `invoflow-documents`, allow `PUT` and `GET` from `https://<your domain>`. Browsers upload straight to R2.
+   - Leave `R2_ENDPOINT_URL` and `BACKUP_ENDPOINT_URL` empty. The API and the backup script then use the EU jurisdiction endpoint `https://<account_id>.eu.r2.cloudflarestorage.com`. Set either variable to `https://<account_id>.r2.cloudflarestorage.com` only when the bucket is in Cloudflare's default jurisdiction.
 4. **Clerk:** create a production instance for the domain. You need the publishable key (`pk_live_…`), the secret key (`sk_live_…`) and the Frontend API host.
 5. **Sentry (optional):** create a free Python project and copy its DSN.
 
@@ -57,7 +58,7 @@ Gildo creates the accounts, because they need payment or identity. Claude never 
 
 4. In GitHub (repo → Settings), add:
    - **Secrets:** `DEPLOY_HOST` (the server IP), `DEPLOY_USER` = `deploy`, and `DEPLOY_SSH_KEY` (the contents of the private key `invoflow_deploy`).
-   - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. The publishable key is built into the browser bundle, so it is meant to be public.
+   - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. The publishable key is built into the browser bundle, so it is meant to be public. The frontend image build fails when this variable is empty. A demo bundle is a separate build with `NEXT_PUBLIC_DEMO_AUTH=1`, and production does not set that flag.
    - **Environment:** create one named `production`. You can make it require your approval before every deploy.
 5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. The workflow builds both images and pushes them to GHCR. It then copies the stack files to `/opt/invoflow`, pulls the images and starts everything. The API runs `alembic upgrade head` before serving, and the workflow waits for `https://DOMAIN/health`.
 

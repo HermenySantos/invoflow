@@ -9,7 +9,7 @@ set -eu
 export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY}"
 export AWS_DEFAULT_REGION=auto
-ENDPOINT="${BACKUP_ENDPOINT_URL:-https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com}"
+ENDPOINT="${BACKUP_ENDPOINT_URL:-https://${R2_ACCOUNT_ID}.eu.r2.cloudflarestorage.com}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-30}"
 
 s3() { aws --endpoint-url "$ENDPOINT" s3 "$@"; }

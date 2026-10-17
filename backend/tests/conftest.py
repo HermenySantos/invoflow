@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 # Set test environment variables before importing app
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["AUTH_MOCK_MODE"] = "true"
+os.environ["MOCK_AUTH"] = "1"
 os.environ["STORAGE_MOCK_MODE"] = "true"
 os.environ["OCR_MOCK_MODE"] = "true"
 os.environ["APP_DEBUG"] = "true"

@@ -12,6 +12,9 @@ EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
 def test_env_example_loads(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AUTH_MOCK_MODE", raising=False)
+    monkeypatch.delenv("MOCK_AUTH", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
     settings = Settings(_env_file=EXAMPLE)
     assert settings.app_env == "development"
     assert settings.auth_mock_mode is True

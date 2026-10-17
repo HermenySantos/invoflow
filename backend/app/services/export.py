@@ -5,6 +5,7 @@ Creates ZIP archives with original documents and summary files.
 
 import io
 import csv
+import unicodedata
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +43,10 @@ def _csv_text(value: Optional[str]) -> str:
     """OCR'd text, neutralised so it can't run as a spreadsheet formula."""
     if not value:
         return ""
-    return f"'{value}" if value.startswith(_FORMULA_PREFIXES) else value
+    normalized = unicodedata.normalize("NFKC", value)
+    probe = normalized.lstrip()
+    disguised = probe[:1] in _FORMULA_PREFIXES or normalized[:1] in _FORMULA_PREFIXES
+    return f"'{value}" if disguised else value
 
 
 def _csv_amount(value: Optional[Decimal]) -> str:
@@ -163,23 +167,22 @@ class ExportService:
         output.write("\ufeff")
         writer = csv.writer(output, delimiter=";")
         
-        # Header
         writer.writerow([
             "ID",
-            "Date",
-            "Vendor",
+            "Data",
+            "Fornecedor",
             "NIF",
-            "Invoice #",
-            "Net (EUR)",
-            "VAT (EUR)",
-            "Gross (EUR)",
-            "VAT %",
-            "Category",
-            "IRS Sector",
-            "Deductible %",
-            "Deductible VAT (EUR)",
-            "Status",
-            "Filename",
+            "N.º da fatura",
+            "Líquido (EUR)",
+            "IVA (EUR)",
+            "Bruto (EUR)",
+            "IVA %",
+            "Categoria",
+            "Setor IRS",
+            "% dedutível",
+            "IVA dedutível (EUR)",
+            "Estado",
+            "Ficheiro",
         ])
         
         counted = contributions(documents, library)
