@@ -6,7 +6,7 @@ The page stores nothing while `FORM_ENDPOINT` is empty. There is no account, no 
 
 ## Deploy
 
-The published files are in `public/`. There is no compile step. Set the project root directory to `site` in both dashboards, and set the output directory to `public`. `README.md`, `check.mjs`, and `tools/` stay outside that directory, so they are not served. Do not change DNS from this repository.
+The published files are in `public/`. There is no compile step. In both dashboards set the root directory to `site` and the build output directory to `public`. `README.md`, `check.mjs`, `vercel.json`, and `tools/` stay outside that directory, so they are not served. Do not change DNS from this repository.
 
 | Host | Build command | Output directory |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ The published files are in `public/`. There is no compile step. Set the project 
 
 On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null) and turns on clean URLs, so `/privacy` matches the Cloudflare path.
 
-Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
+Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. `functions/assets/[[path]].js` answers `Range` on `.mp4` files with status 206. `/.env`, `/.git/config`, `/admin`, and a path that contains `//` return status 404. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
 
 A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only. Attaching invoflow.pt is a dashboard and DNS step, and it is outside this repository.
 

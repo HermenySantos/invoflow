@@ -286,7 +286,7 @@ async function main() {
   const tracks = captionFiles(timeline);
   writeFileSync(join(site, 'assets/captions-pt.vtt'), tracks.pt);
   writeFileSync(join(site, 'assets/captions-en.vtt'), tracks.en);
-  writeFileSync(join(site, 'assets/demo-timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
+  writeFileSync(join(here, 'demo-timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
   writeFileSync(join(work, 'scenes.json'), JSON.stringify(scenes, null, 2));
   await browser.close();
   console.log(JSON.stringify({ mp4, frameDir, scenes: scenes.map(({ name, start, end }) => ({ name, start, end })) }));

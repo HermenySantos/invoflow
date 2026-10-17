@@ -454,7 +454,7 @@ const poster = await assetCall('/assets/poster.jpg', { range: 'bytes=0-1' });
 assert.equal(poster.status, 200);
 assert.equal(poster.headers.get('content-type'), 'image/jpeg');
 
-for (const path of ['/.env', '/.git/config', '/admin', '/privacy//']) {
+for (const path of ['/.env', '/.git/config', '/admin', '/privacy//', '/_routes.json']) {
   const response = await onGuard({
     request: new Request(`https://pilot.test${path}`),
     next() {
