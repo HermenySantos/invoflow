@@ -15,7 +15,7 @@ The published files are in `public/`. There is no compile step. In both dashboar
 
 On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null), turns on clean URLs, and keeps a trailing slash. `/privacy` is one 308 to `/privacy/`. The same hop is in `public/_redirects` and in the Pages middleware, so Cloudflare does not add a second redirect.
 
-Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. `functions/assets/[[path]].js` answers `Range` on `.mp4` files with status 206. `/.env`, `/.git/config`, `/admin`, and a path that contains `//` return status 404. `public/_routes.json` includes every path, so the guard sees `/privacy//`, `//`, and `/css//site.css`. An exclude of the collapsed file would let Pages serve that doubled path as the static file. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
+Cloudflare Pages reads `functions/` from this folder, next to `public/`, not from inside it. A missing path serves `public/404.html` with status 404. `functions/assets/[[path]].js` answers `Range` on `.mp4` files with status 206. That catch-all, and every 404, drops `s-maxage` from `Cache-Control`. `/404.html` is `no-store`. `/.env`, `/.git/config`, `/admin`, and a path that contains `//` return status 404. `public/_routes.json` includes every path, so the guard sees `/privacy//`, `//`, and `/css//site.css`. An exclude of the collapsed file would let Pages serve that doubled path as the static file. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
 
 A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only. Attaching invoflow.pt is a dashboard and DNS step, and it is outside this repository.
 
@@ -99,7 +99,7 @@ From the repository root:
 node site/check.mjs
 ```
 
-CI runs the same command. It rejects banned marketing lines, a price or a `€` amount outside an element labelled example or estimate, qualification fields, and the scarcity line. `node site/check.mjs --release` also fails while a `.token` chip or a bracket token remains on the home page, `js/copy.js`, or the privacy page. The site job does not pass `--release`.
+CI runs the same command. It rejects banned marketing lines, and a price written as `€`, `EUR`, `euro`, or `euros` outside an element or caption cue labelled example or estimate. `23%` is not a price. The scan includes the pages, the caption files, and the meta and Open Graph tags. It also rejects qualification fields and the scarcity line. `node site/check.mjs --release` also fails while a `.token` chip or a bracket token remains on the home page, `js/copy.js`, or the privacy page. The site job does not pass `--release`.
 
 ## Demo recording
 

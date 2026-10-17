@@ -13,7 +13,8 @@ function stamp(ms) {
 
 function render(cues) {
   const lines = ['WEBVTT', ''];
-  for (const [start, end, text] of cues) {
+  for (const [start, end, text, label] of cues) {
+    if (label) lines.push(label);
     lines.push(`${stamp(start)} --> ${stamp(end)}`, text, '');
   }
   return `${lines.join('\n')}\n`;
@@ -45,18 +46,18 @@ export function captionFiles(timeline) {
   const pack = span(timeline, 'pack');
   const pt = render([
     [upload.start, upload.end, 'Carregar uma fatura.'],
-    [preview.start, uploaded.end, 'Exemplo ilustrativo. Exemplo, Lda. IVA estimativa 23,00 €. Total 123,00 €.'],
-    [review.start, review.end, 'Rever. Exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.'],
+    [preview.start, uploaded.end, 'Exemplo ilustrativo. Exemplo, Lda. IVA estimativa 23,00 €. Total 123,00 €.', 'example'],
+    [review.start, review.end, 'Rever. Exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.', 'example'],
     [q4.start, q4.end, `${q4Deadline}. Estimativa. Este valor ignora o IVA das vendas.`],
-    [q1.start, q1.end, `${q1Deadline}. Estimativa. IVA dedutível 23,00 €.`],
+    [q1.start, q1.end, `${q1Deadline}. Estimativa. IVA dedutível 23,00 €.`, 'estimate'],
     [pack.start, pack.end, 'Enviar ao contabilista.'],
   ]);
   const en = render([
     [upload.start, upload.end, 'Upload an invoice.'],
-    [preview.start, uploaded.end, 'Illustrative example. Exemplo, Lda. VAT estimate €23.00. Total €123.00.'],
-    [review.start, review.end, 'Review. Illustrative example. Exemplo, Lda. NIF 999 999 990. VAT estimate €23.00. Total €123.00.'],
+    [preview.start, uploaded.end, 'Illustrative example. Exemplo, Lda. VAT estimate €23.00. Total €123.00.', 'example'],
+    [review.start, review.end, 'Review. Illustrative example. Exemplo, Lda. NIF 999 999 990. VAT estimate €23.00. Total €123.00.', 'example'],
     [q4.start, q4.end, 'Filing deadline: 22 February 2027. An estimate. This figure ignores VAT on sales.'],
-    [q1.start, q1.end, 'Filing deadline: 20 May 2026. An estimate. Deductible VAT €23.00.'],
+    [q1.start, q1.end, 'Filing deadline: 20 May 2026. An estimate. Deductible VAT €23.00.', 'estimate'],
     [pack.start, pack.end, 'Send to the accountant.'],
   ]);
   return { pt, en };

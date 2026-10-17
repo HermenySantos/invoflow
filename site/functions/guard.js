@@ -1,4 +1,4 @@
-import { withSecurity } from './security.js';
+import { withSecurity, withoutSMaxAge } from './security.js';
 
 const BLOCKED = new Set(['/.env', '/.git/config', '/admin', '/_routes.json']);
 
@@ -7,11 +7,13 @@ export function blockedPath(pathname) {
 }
 
 export function notFound() {
-  return new Response('Not found\n', {
-    status: 404,
-    headers: withSecurity({
-      'content-type': 'text/plain; charset=utf-8',
-      'cache-control': 'no-store',
+  return withoutSMaxAge(
+    new Response('Not found\n', {
+      status: 404,
+      headers: withSecurity({
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+      }),
     }),
-  });
+  );
 }

@@ -3,15 +3,18 @@ WEBVTT
 00:00:00.000 --> 00:00:02.661
 Carregar uma fatura.
 
+example
 00:00:02.661 --> 00:00:05.705
 Exemplo ilustrativo. Exemplo, Lda. IVA estimativa 23,00 €. Total 123,00 €.
 
+example
 00:00:05.705 --> 00:00:09.370
 Rever. Exemplo ilustrativo. Exemplo, Lda. NIF 999 999 990. IVA estimativa 23,00 €. Total 123,00 €.
 
 00:00:09.370 --> 00:00:12.079
 Prazo de entrega: 22 de Fevereiro de 2027. Estimativa. Este valor ignora o IVA das vendas.
 
+estimate
 00:00:12.079 --> 00:00:15.286
 Prazo de entrega: 20 de Maio de 2026. Estimativa. IVA dedutível 23,00 €.
 

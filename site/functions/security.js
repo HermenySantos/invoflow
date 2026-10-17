@@ -13,3 +13,21 @@ export function withSecurity(headers) {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) next.set(name, value);
   return next;
 }
+
+export function withoutSMaxAge(response) {
+  const cache = response.headers.get('cache-control');
+  if (!cache || !/s-maxage\s*=/i.test(cache)) return response;
+  const headers = new Headers(response.headers);
+  const cleaned = cache
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && !/^s-maxage\s*=/i.test(part))
+    .join(', ');
+  if (cleaned) headers.set('cache-control', cleaned);
+  else headers.delete('cache-control');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}

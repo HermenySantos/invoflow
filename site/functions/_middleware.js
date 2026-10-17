@@ -1,5 +1,9 @@
 import { blockedPath, notFound } from './guard.js';
-import { withSecurity } from './security.js';
+import { withSecurity, withoutSMaxAge } from './security.js';
+
+function assetCatchAll(pathname) {
+  return pathname === '/assets' || pathname.startsWith('/assets/');
+}
 
 export async function onRequest(context) {
   const path = new URL(context.request.url).pathname;
@@ -13,5 +17,7 @@ export async function onRequest(context) {
       }),
     });
   }
-  return context.next();
+  const response = await context.next();
+  if (response.status === 404 || assetCatchAll(path)) return withoutSMaxAge(response);
+  return response;
 }

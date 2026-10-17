@@ -54,12 +54,58 @@ for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'friction', 'consent
 }
 assert.equal(home.includes('priceLine'), false);
 assert.equal(home.includes('pilotPrice'), false);
-const outsideLabels = stripLabelled([home, read('privacy/index.html'), read('js/copy.js'), read('js/main.js')].join('\n'));
-assert.equal(outsideLabels.includes('€'), false, '€ amount outside an example or estimate label');
-assert.equal(/\b\d[\d.,]*\s*(?:\/\s*trimestre|por\s+trimestre|per\s+quarter)\b/i.test(outsideLabels), false);
-assert.equal(outsideLabels.includes('Pack IVA'), false);
+const moneySources = [
+  home,
+  read('privacy/index.html'),
+  read('404.html'),
+  read('js/copy.js'),
+  read('js/main.js'),
+  read('assets/captions-pt.vtt'),
+  read('assets/captions-en.vtt'),
+].join('\n');
+assert.equal(findUnlabelledMoney(moneySources), null, 'money outside an example or estimate label');
+assert.equal(findUnlabelledMoney(metaAndOg(home + read('privacy/index.html') + read('404.html'))), null, 'money in meta or og');
+assert.equal(/\b\d[\d.,]*\s*(?:\/\s*trimestre|por\s+trimestre|per\s+quarter)\b/i.test(stripLabelled(moneySources)), false);
+assert.equal(stripLabelled(moneySources).includes('Pack IVA'), false);
 assert.match(home, /data-label="example"[\s\S]*Exemplo, Lda[\s\S]*23,00[\s\S]*41,86[\s\S]*230,00/);
 assert.match(home, /data-label="estimate"[\s\S]*188,14/);
+for (const sample of [
+  '€19',
+  '19 €',
+  '19€',
+  '€ 19',
+  '19 EUR',
+  'EUR 19',
+  '19EUR',
+  'EUR19',
+  '19 euro',
+  '19 euros',
+  'euro 19',
+  'euros 19',
+  '19,00 EUR',
+  'EUR 23.00',
+  '1.190 euros',
+  '€23,00',
+]) {
+  assert.notEqual(findUnlabelledMoney(`<p>${sample}</p>`), null, `unlabelled ${sample}`);
+  assert.equal(findUnlabelledMoney(`<p data-label="example">${sample}</p>`), null, `example ${sample}`);
+  assert.equal(findUnlabelledMoney(`<section data-label="estimate">${sample}</section>`), null, `estimate ${sample}`);
+  assert.notEqual(findUnlabelledMoney(`<meta property="og:description" content="${sample}">`), null, `og ${sample}`);
+  assert.notEqual(findUnlabelledMoney(`<meta name="description" content="${sample}">`), null, `meta ${sample}`);
+}
+for (const sample of ['23%', '23 %', '100%', 'IVA 23%', 'about 23% of invoices', 'Base (EUR)', 'IVA (EUR)', 'Net (EUR)', 'VAT (EUR)']) {
+  assert.equal(findUnlabelledMoney(`<p>${sample}</p>`), null, `not money ${sample}`);
+  assert.equal(findUnlabelledMoney(`<meta name="description" content="${sample}">`), null, `meta not money ${sample}`);
+}
+const bareCue = 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n19 euros\n';
+assert.notEqual(findUnlabelledMoney(bareCue), null, 'unlabelled caption');
+assert.equal(findUnlabelledMoney('WEBVTT\n\nexample\n00:00:00.000 --> 00:00:01.000\n19 euros\n'), null, 'example caption');
+assert.equal(findUnlabelledMoney('WEBVTT\n\nestimate\n00:00:00.000 --> 00:00:01.000\n€23.00\n'), null, 'estimate caption');
+assert.notEqual(
+  findUnlabelledMoney('WEBVTT\n\nexample\n00:00:00.000 --> 00:00:01.000\n€1\n\n00:00:01.000 --> 00:00:02.000\n19 EUR\n'),
+  null,
+  'cue after a label',
+);
 assert.match(home, /<a class="btn btn--outline btn--sm" href="#lista" data-cta/);
 assert.equal(home.includes('btn btn--primary btn--sm'), false);
 assert.match(home, /<div class="hero__cta">[\s\S]*?<a class="btn btn--primary" href="#lista"/);
@@ -551,12 +597,10 @@ assert.match(read('js/not-found.js'), /Este endereço não existe\./);
 const headerFile = read('_headers');
 assert.match(headerFile, /^ {2}Strict-Transport-Security: max-age=31536000; includeSubDomains$/m);
 assert.equal(/preload/i.test(headerFile), false);
-const fileHeaders = {};
-for (const line of headerFile.split('\n')) {
-  const match = line.match(/^ {2}([^:]+):\s*(.+)$/);
-  if (match) fileHeaders[match[1].toLowerCase()] = match[2].trim();
-}
-assert.deepEqual(SECURITY_HEADERS, fileHeaders);
+assert.equal(/s-maxage/i.test(headerFile), false);
+const headerBlocks = headerSections(headerFile);
+assert.deepEqual(headerBlocks.get('/*'), SECURITY_HEADERS);
+assert.equal(headerBlocks.get('/404.html')?.['cache-control'], 'no-store');
 
 const routes = JSON.parse(read('_routes.json'));
 assert.deepEqual(routes.include, ['/*']);
@@ -613,6 +657,32 @@ const poster = await assetCall('/assets/poster.jpg', { range: 'bytes=0-1' });
 assert.equal(poster.status, 200);
 assert.equal(poster.headers.get('content-type'), 'image/jpeg');
 
+const sharedHeaders = { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=60, s-maxage=86400' };
+const sharedEnv = {
+  ASSETS: {
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith('.missing.mp4')) {
+        return new Response('missing', { status: 404, headers: sharedHeaders });
+      }
+      return new Response(clip, { status: 200, headers: sharedHeaders });
+    },
+  },
+};
+for (const [path, status] of [
+  ['/assets/poster.jpg', 200],
+  ['/assets/demo-short.mp4', 200],
+  ['/assets/gone.missing.mp4', 404],
+]) {
+  const response = await onAsset({
+    request: new Request(`https://pilot.test${path}`),
+    env: sharedEnv,
+  });
+  assert.equal(response.status, status, path);
+  assert.equal(/s-maxage/i.test(response.headers.get('cache-control') ?? ''), false, path);
+  if (status === 200 && path.endsWith('.jpg')) assert.equal(response.headers.get('cache-control'), 'public, max-age=60');
+}
+
 for (const path of ['/.env', '/.git/config', '/admin', '//', '/privacy//', '/css//site.css', '/js//main.js', '/_routes.json']) {
   const response = await onGuard({
     request: new Request(`https://pilot.test${path}`),
@@ -623,7 +693,40 @@ for (const path of ['/.env', '/.git/config', '/admin', '//', '/privacy//', '/css
   assert.equal(response.status, 404, path);
   assert.equal(await response.text(), 'Not found\n', path);
   assertSecurity(response, path);
+  assert.equal(/s-maxage/i.test(response.headers.get('cache-control') ?? ''), false, path);
 }
+const sharedMiss = await onGuard({
+  request: new Request('https://pilot.test/no-such'),
+  next() {
+    return new Response('missing', {
+      status: 404,
+      headers: { 'cache-control': 'public, max-age=60, s-maxage=86400', 'content-type': 'text/html' },
+    });
+  },
+});
+assert.equal(sharedMiss.status, 404);
+assert.equal(sharedMiss.headers.get('cache-control'), 'public, max-age=60');
+const sharedAsset = await onGuard({
+  request: new Request('https://pilot.test/assets/poster.jpg'),
+  next() {
+    return new Response('img', {
+      status: 200,
+      headers: { 'cache-control': 'public, max-age=30, s-maxage=120', 'content-type': 'image/jpeg' },
+    });
+  },
+});
+assert.equal(sharedAsset.status, 200);
+assert.equal(sharedAsset.headers.get('cache-control'), 'public, max-age=30');
+const sharedHome = await onGuard({
+  request: new Request('https://pilot.test/'),
+  async next() {
+    return new Response('home', {
+      status: 200,
+      headers: { 'cache-control': 'public, max-age=0, s-maxage=60' },
+    });
+  },
+});
+assert.equal(sharedHome.headers.get('cache-control'), 'public, max-age=0, s-maxage=60');
 const privacyPage = await onGuard({
   request: new Request('https://pilot.test/privacy/'),
   next() {
@@ -660,14 +763,52 @@ if (process.argv.includes('--release')) {
 console.log('site checks passed');
 
 function stripLabelled(html) {
+  let next = String(html).replace(
+    /(?:^|\n)[ \t]*(?:example|estimate)[ \t]*\n[ \t]*\d{2}:\d{2}:\d{2}\.\d{3}[ \t]*-->[^\n]*\n(?:[^\n]*\n)*?(?=\n|\s*$)/gi,
+    '\n',
+  );
   let previous;
-  let next = html;
   const pattern = /<([a-zA-Z0-9]+)(\s[^>]*?\bdata-label="(?:example|estimate)"[^>]*)>[\s\S]*?<\/\1>/g;
   do {
     previous = next;
     next = previous.replace(pattern, '');
   } while (next !== previous);
   return next;
+}
+
+function findUnlabelledMoney(source) {
+  const outside = stripLabelled(source);
+  const pattern =
+    /€|\d[\d.,]*[ \t]{0,3}(?:eur|euros?)\b|\b(?:eur|euros?)[ \t]{0,3}\d/gi;
+  const match = pattern.exec(outside);
+  return match ? match[0] : null;
+}
+
+function metaAndOg(html) {
+  const parts = [];
+  for (const tag of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const source = tag[0];
+    if (!/\b(?:name|property)="(?:description|og:[^"]+)"/i.test(source)) continue;
+    const content = source.match(/\bcontent="([^"]*)"/i);
+    if (content) parts.push(content[1]);
+  }
+  for (const title of html.matchAll(/<title>([^<]*)<\/title>/gi)) parts.push(title[1]);
+  return parts.join('\n');
+}
+
+function headerSections(source) {
+  const blocks = new Map();
+  let section = '';
+  for (const line of source.split('\n')) {
+    if (line && !line.startsWith(' ') && !line.startsWith('#')) {
+      section = line.trim();
+      blocks.set(section, {});
+      continue;
+    }
+    const match = line.match(/^ {2}([^:]+):\s*(.+)$/);
+    if (match && section) blocks.get(section)[match[1].toLowerCase()] = match[2].trim();
+  }
+  return blocks;
 }
 
 function assertSecurity(response, label) {
