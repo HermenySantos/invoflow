@@ -1,18 +1,23 @@
 # Pilot page
 
-This folder is a static page for the Invoflow pilot. It does not change the app at `/`. Cloudflare Pages can host it on a `*.pages.dev` subdomain. A custom domain such as invoflow.pt is optional and is not required for the test.
+This folder is a static page for the Invoflow pilot. It does not change the app at `/`. The canonical URL is `https://invoflow.pt`. Preview hosts may serve the same files. The canonical link, `og:url`, and `sitemap.xml` keep that name.
 
 The page stores nothing while `FORM_ENDPOINT` is empty. There is no account, no secret, and no third-party script in the default configuration.
 
-## Deploy on Cloudflare Pages
+## Deploy
 
-1. In the Cloudflare dashboard, create a Pages project from this Git repository.
-2. Set the root directory to `site`.
-3. Leave the build command empty. Set the output directory to the project root (`.`).
-4. Deploy. Pages assigns a `*.pages.dev` hostname.
-5. To use invoflow.pt later, add that domain on the same project and follow the DNS prompt. The page works without it.
+The files in this folder are the site. There is no compile step. Use the same build command and output directory on either host. Set the project root directory to `site` in both dashboards. Do not change DNS from this repository.
 
-A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only.
+| Host | Build command | Output directory |
+| --- | --- | --- |
+| Cloudflare Pages | empty | `.` |
+| Vercel | empty | `.` |
+
+On Vercel, set the framework preset to Other. `vercel.json` in this folder marks the project as static HTML (`framework` is null) and turns on clean URLs, so `/privacy` matches the Cloudflare path.
+
+Cloudflare Pages reads `functions/` from this folder. Vercel does not run that Pages Function. The static page still loads, and the form keeps the empty-endpoint notice until `FORM_ENDPOINT` is set.
+
+A pull request does not deploy this folder. The existing app workflow builds `frontend/` and `backend/` only. Attaching invoflow.pt is a dashboard and DNS step, and it is outside this repository.
 
 ## Configure the form
 

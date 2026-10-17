@@ -37,6 +37,8 @@ for (const key of ['heroTitle', 'heroSub', 'priceLine', 'cta', 'caveat']) {
   assert.ok(home.includes(copy.pt[key]), key);
 }
 assert.ok(home.includes('href="/privacy"'));
+assert.ok(home.includes('rel="canonical" href="https://invoflow.pt/"'));
+assert.ok(home.includes('property="og:url" content="https://invoflow.pt/"'));
 assert.ok(home.includes('pack para enviar ao seu contabilista'));
 assert.equal((home.match(/exemplo ilustrativo/g) || []).length, 0);
 
@@ -45,6 +47,13 @@ assert.ok(privacy.includes('href="/"'));
 assert.ok(privacy.includes('Hermenegildo Jerónimo dos Santos'));
 assert.ok(privacy.includes('hermeny7@hotmail.com'));
 assert.ok(privacy.includes('É uma estimativa. Este valor ignora o IVA das vendas.'));
+assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy"'));
+assert.ok(privacy.includes('property="og:url" content="https://invoflow.pt/privacy"'));
+
+const sitemap = read('sitemap.xml');
+assert.ok(sitemap.includes('<loc>https://invoflow.pt/</loc>'));
+assert.ok(sitemap.includes('<loc>https://invoflow.pt/privacy</loc>'));
+assert.ok(read('robots.txt').includes('Sitemap: https://invoflow.pt/sitemap.xml'));
 
 assert.equal(CONFIG.FORM_ENDPOINT, '');
 assert.equal(CONFIG.DEPOSIT_ENABLED, false);
