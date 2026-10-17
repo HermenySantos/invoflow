@@ -73,6 +73,24 @@ def validate_configuration() -> List[str]:
             "OCR mock data is enabled. The default open-source backend is Tesseract."
         )
     
+    # e-Fatura pull is off by default. A configured endpoint with a missing
+    # sandbox secret warns and does not refuse to start.
+    if settings.efatura_pull_enabled and settings.efatura_endpoint.strip():
+        missing_efatura = [
+            name
+            for name, value in (
+                ("EFATURA_USERNAME", settings.efatura_username),
+                ("EFATURA_PASSWORD", settings.efatura_password),
+                ("EFATURA_AT_PUBLIC_KEY_PEM", settings.efatura_at_public_key_pem),
+            )
+            if not str(value).strip()
+        ]
+        if missing_efatura:
+            warnings.append(
+                "EFATURA_PULL_ENABLED is on and EFATURA_ENDPOINT is set, but "
+                f"{', '.join(missing_efatura)} is empty. The pull will not connect."
+            )
+
     # Database validation
     if "sqlite" in settings.database_url.lower():
         warnings.append(

@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     ollama_base_url: str = ""
     ollama_model: str = "llama3.2"
 
+    # e-Fatura consultation. Off by default. Secrets stay in the environment.
+    # The documented test URL is not a default:
+    # https://servicos.portaldasfinancas.gov.pt:725/fatshare/ws/fatshareFaturas
+    efatura_pull_enabled: bool = False
+    efatura_endpoint: str = ""
+    efatura_username: str = ""
+    efatura_password: str = ""
+    efatura_at_public_key_pem: str = ""
+    efatura_client_cert_pem: str = ""
+    efatura_client_key_pem: str = ""
+
     cors_origins: Union[list[str], str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
