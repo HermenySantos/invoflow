@@ -489,10 +489,13 @@ class PdfRasterLimited(Exception):
 
 
 _PDF_RASTER_DPI = 200
+# Shorter side above this means the page is huge in both dimensions.
+# A till roll may be longer than this on one side and still be rendered.
 _PDF_RASTER_MAX_SIDE_PT = 2000
 _PDF_RASTER_MAX_PIXELS = 25_000_000
 _PDF_RASTER_PAGES = 1
 _PDF_RASTER_TIMEOUT_SECONDS = 30
+# Per process. N uvicorn workers allow 2*N poppler renders at once.
 _PDF_RASTER_SLOTS = threading.Semaphore(2)
 
 
@@ -527,7 +530,7 @@ def _raster_dpi(width_pt: float, height_pt: float) -> int:
 
 def _pdf_first_page_image(file_content: bytes) -> Optional[Image.Image]:
     size = _first_page_size_pt(file_content)
-    if size is not None and max(size) > _PDF_RASTER_MAX_SIDE_PT:
+    if size is not None and min(size) > _PDF_RASTER_MAX_SIDE_PT:
         raise PdfRasterLimited("page exceeds the raster cap")
     dpi = _raster_dpi(*size) if size is not None else _PDF_RASTER_DPI
     try:
