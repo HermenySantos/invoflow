@@ -99,7 +99,7 @@ From the repository root:
 node site/check.mjs
 ```
 
-CI runs the same command. It rejects banned marketing lines, and a price written as `€`, `EUR`, `euro`, or `euros` outside an element or caption cue labelled example or estimate. `23%` is not a price. The scan includes the pages, the caption files, and the meta and Open Graph tags. It also rejects qualification fields and the scarcity line. `node site/check.mjs --release` also fails while a `.token` chip or a bracket token remains on the home page, `js/copy.js`, or the privacy page. The site job does not pass `--release`.
+CI runs the same command, including `tools/copycheck.mjs` against COPY-v4 and the 15 signed-off UI labels. It rejects banned marketing lines, and a price written as `€`, `EUR`, `euro`, or `euros` outside an element or caption cue labelled example or estimate. `23%` is not a price. The scan includes the pages, the caption files, and the meta and Open Graph tags. It also rejects qualification fields and the scarcity line. `node site/check.mjs --release` also fails while a `.token` chip or a bracket token remains on the home page, `js/copy.js`, or the privacy page. The site job does not pass `--release`.
 
 ## Demo recording
 

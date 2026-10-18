@@ -10,6 +10,7 @@ import { onRequest as onAsset } from './functions/assets/[[path]].js';
 import { onRequest as onGuard } from './functions/_middleware.js';
 import { SECURITY_HEADERS } from './functions/security.js';
 import { captionFiles } from './tools/captions.mjs';
+import { missingCopy } from './tools/copycheck.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const pub = join(root, 'public');
@@ -52,6 +53,9 @@ const home = read('index.html');
 for (const key of ['heroTitle', 'heroSub', 'cta', 'caveat', 'friction', 'consentBody', 'thanksTitle', 'thanksBody']) {
   assert.ok(home.includes(copy.pt[key]), key);
 }
+assert.deepEqual(missingCopy(), { pt: [], en: [] });
+assert.equal(copy.pt.colBase, 'Líquido (EUR)');
+assert.equal(copy.en.colBase, 'Net (EUR)');
 assert.equal(home.includes('priceLine'), false);
 assert.equal(home.includes('pilotPrice'), false);
 const moneySources = [
@@ -93,7 +97,7 @@ for (const sample of [
   assert.notEqual(findUnlabelledMoney(`<meta property="og:description" content="${sample}">`), null, `og ${sample}`);
   assert.notEqual(findUnlabelledMoney(`<meta name="description" content="${sample}">`), null, `meta ${sample}`);
 }
-for (const sample of ['23%', '23 %', '100%', 'IVA 23%', 'about 23% of invoices', 'Base (EUR)', 'IVA (EUR)', 'Net (EUR)', 'VAT (EUR)']) {
+for (const sample of ['23%', '23 %', '100%', 'IVA 23%', 'about 23% of invoices', 'Base (EUR)', 'Líquido (EUR)', 'IVA (EUR)', 'Net (EUR)', 'VAT (EUR)']) {
   assert.equal(findUnlabelledMoney(`<p>${sample}</p>`), null, `not money ${sample}`);
   assert.equal(findUnlabelledMoney(`<meta name="description" content="${sample}">`), null, `meta not money ${sample}`);
 }
@@ -108,7 +112,7 @@ assert.notEqual(
 );
 assert.match(home, /<a class="btn btn--outline btn--sm" href="#lista" data-cta/);
 assert.equal(home.includes('btn btn--primary btn--sm'), false);
-assert.match(home, /<div class="hero__cta">[\s\S]*?<a class="btn btn--primary" href="#lista"/);
+assert.match(home, /<div class="hero__cta">[\s\S]*?<a class="btn btn--primary btn--lg" href="#lista" data-cta/);
 assert.match(home, /<p class="kicker" aria-hidden="true">02<\/p>/);
 assert.match(home, /<p class="kicker" aria-hidden="true">03<\/p>/);
 assert.match(home, /<p class="kicker" aria-hidden="true">04<\/p>/);
@@ -120,7 +124,7 @@ assert.match(home, /<ol class="terms">/);
 for (const numeral of ['i', 'ii', 'iii', 'iv', 'v', 'vi']) {
   assert.match(home, new RegExp(`<span class="term__no" aria-hidden="true">${numeral}</span>`));
 }
-assert.match(home, /<h2 id="form-title" class="h2 h2--xl"/);
+assert.match(home, /<h2 id="form-title" class="h2 h2--xxl"/);
 assert.match(read('js/main.js'), /addEventListener\('input'/);
 assert.equal((home.match(/href="\/privacy\/"/g) || []).length, 3);
 assert.equal(/href="\/privacy"(?!\/)/.test(home), false);
