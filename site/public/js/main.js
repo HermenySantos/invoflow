@@ -298,8 +298,8 @@ function mountHero() {
       animate(
         cell,
         [
-          { opacity: 0, clipPath: 'inset(0 100% 0 0)' },
-          { opacity: 1, clipPath: 'inset(0 0% 0 0)' },
+          { opacity: 0, transform: 'translateY(6px)' },
+          { opacity: 1, transform: 'none' },
         ],
         { duration: WRITE, delay: delay + index * CELL, easing: OUT },
       );
@@ -350,11 +350,6 @@ function mountHero() {
         { duration: FLY, delay },
       );
       writeCells(rows[index], delay + WRITE_AT);
-      animate(
-        rows[index],
-        [{ backgroundColor: 'rgba(29,90,69,.13)' }, { backgroundColor: 'rgba(29,90,69,0)' }],
-        { duration: 1200, delay: delay + WRITE_AT, easing: 'ease-out', fill: 'forwards' },
-      );
       if (index === 0) writeCells(foot('exp'), delay + WRITE_AT + 120);
       const from = sub;
       sub += VAT[index];

@@ -123,16 +123,35 @@ a:hover{color:var(--accent-h)}
 .hero{padding:clamp(2rem,.5rem + 5vw,5rem) 0 clamp(4rem,2rem + 6vw,7.5rem);overflow-x:clip}
 .hero__grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s8)}
 .hero__copy{display:grid;gap:var(--s5);align-content:start}
-.hero__copy .display{max-width:11ch}
+.hero__copy .display{max-width:11ch;min-height:0}
+/* Headline and lede rows are the loaded face's line counts (headline
+   line-height .94, lede 1.5). A taller fallback stays inside the row, so
+   the swap cannot shrink the hero or recenter the sheet. Update the
+   counts with the headline face. */
+.hero__copy{grid-template-rows:auto calc(3.76 * var(--fs-display)) auto auto}
+@media (min-width:48em){
+  .hero__copy{grid-template-rows:auto calc(3.76 * var(--fs-display)) calc(6 * var(--fs-lede)) auto}
+  .hero .lede{min-height:0;overflow:clip}
+}
+@media (max-width:47.99em){
+  .hero__copy{grid-template-rows:auto calc(1.88 * clamp(2.5rem,1.2rem + 6.4vw,3rem)) auto auto}
+}
+@media (max-width:26.24em){
+  .hero__copy{grid-template-rows:auto calc(2.82 * clamp(2.5rem,1.2rem + 6.4vw,3rem)) auto auto}
+}
+@media (min-width:23.75em) and (max-width:26.24em){
+  html[lang|="en"] .hero__copy{grid-template-rows:auto calc(1.88 * clamp(2.5rem,1.2rem + 6.4vw,3rem)) auto auto}
+}
 .hero__actions{display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--s3) var(--s6);margin-top:var(--s2)}
+@media (min-width:80em){.hero__actions{flex-wrap:nowrap}}
 .hero__cta{display:grid;gap:6px;justify-items:start}
 .hero__cta .btn{margin-bottom:6px}
 .friction{font-size:var(--fs-small);color:var(--ink-2);padding-left:2px}
 .caveat{font-size:var(--fs-micro);color:var(--ink-3);padding-left:2px}
 
 .stage{position:relative;min-width:0;padding-top:var(--s4)}
-.sheet{position:relative;z-index:2;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-lg);box-shadow:var(--sh-lg);padding:var(--s5) var(--s5) var(--s4)}
-/* the stack of originals behind the sheet */
+.sheet{position:relative;z-index:2;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-lg);box-shadow:var(--sh-lg);padding:var(--s5) var(--s5) var(--s4);min-height:39rem}
+/* the stack of originals behind the sheet — edit these two offsets on their own */
 .sheet::before,.sheet::after{content:"";position:absolute;inset:-1px;border:1px solid var(--rule);border-radius:var(--r-lg);z-index:-1;background:#F6F1E7;box-shadow:var(--sh-sm)}
 .sheet::before{transform:translate(9px,10px) rotate(1.2deg)}
 .sheet::after{transform:translate(-6px,16px) rotate(-1.6deg);z-index:-2;background:#F1EADD}
