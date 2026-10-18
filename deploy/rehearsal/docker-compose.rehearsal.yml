@@ -14,6 +14,8 @@ services:
       args:
         NEXT_PUBLIC_DEMO_AUTH: "1"
   api:
+    # The PDF rasterizer semaphore is per process: 2 × the number of uvicorn workers.
+    # This image starts one worker. See backend/Dockerfile.
     image: invoflow-api:rehearsal
     build:
       context: ../backend

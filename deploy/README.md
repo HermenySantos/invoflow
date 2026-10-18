@@ -101,4 +101,4 @@ One server is a single point of failure, which is acceptable before revenue as l
 2. A second app server behind a load balancer.
 3. A job queue for OCR.
 
-OCR runs in the API process, which is why there is one worker.
+OCR runs in the API process, which is why there is one worker. The PDF rasterizer semaphore is per process: 2 × the number of uvicorn workers.

@@ -17,6 +17,8 @@ services:
       retries: 8
 
   backend:
+    # The PDF rasterizer semaphore is per process: 2 × the number of uvicorn workers.
+    # This image starts one worker. See backend/Dockerfile.
     build: ./backend
     container_name: invoflow-api
     ports:
