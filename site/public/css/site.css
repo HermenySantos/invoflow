@@ -149,12 +149,16 @@ a:hover{color:var(--accent-h)}
 .friction{font-size:var(--fs-small);color:var(--ink-2);padding-left:2px}
 .caveat{font-size:var(--fs-micro);color:var(--ink-3);padding-left:2px}
 
-.stage{position:relative;min-width:0;padding-top:var(--s4)}
-.sheet{position:relative;z-index:2;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-lg);box-shadow:var(--sh-lg);padding:var(--s5) var(--s5) var(--s4);min-height:39rem}
+.stage{position:relative;min-width:0;padding-top:var(--s4);isolation:isolate}
+.sheet{position:relative;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-lg);box-shadow:var(--sh-lg);padding:var(--s5) var(--s5) var(--s4);min-height:39rem}
 /* the stack of originals behind the sheet — edit these two offsets on their own */
 .sheet::before,.sheet::after{content:"";position:absolute;inset:-1px;border:1px solid var(--rule);border-radius:var(--r-lg);z-index:-1;background:#F6F1E7;box-shadow:var(--sh-sm)}
 .sheet::before{transform:translate(9px,10px) rotate(1.2deg)}
 .sheet::after{transform:translate(-6px,16px) rotate(-1.6deg);z-index:-2;background:#F1EADD}
+@media (max-width:63.99em){
+  .sheet::before{inset:-8px 10px 8px;transform:rotate(.5deg)}
+  .sheet::after{inset:-14px 22px 14px;transform:rotate(-.6deg)}
+}
 .sheet__head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:var(--s2) var(--s4);padding-bottom:var(--s4);border-bottom:1.5px solid var(--ink)}
 .sheet__eyebrow{font:600 .75rem/1.3 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .sheet__period{font:400 2rem/1.05 var(--serif);margin-top:4px;font-variant-numeric:lining-nums}
@@ -183,6 +187,7 @@ a:hover{color:var(--accent-h)}
 .replay svg{transition:transform var(--t-slow) var(--out)}
 .replay:hover svg{transform:rotate(-200deg)}
 @media (max-width:29.99em){.ledger .col-base{display:none}.ledger td:first-child{width:52px}}
+@media (max-width:23.99em){.ledger td:first-child{width:46px}}
 
 /* receipts (hero pile + desk prop + camera) — sized in em so one design scales */
 .pile{position:absolute;z-index:5;top:6.5rem;right:-.5rem;width:0;height:0;font-size:10px;pointer-events:none;display:none}
@@ -482,6 +487,7 @@ label{font-weight:600;font-size:1rem;color:var(--ink)}
 @media (prefers-reduced-motion:no-preference){
   .js .reveal{opacity:0;transform:translateY(16px);transition:opacity var(--t-slow) var(--out),transform 640ms var(--spring-soft)}
   .js .reveal.is-in{opacity:1;transform:none}
+  .js .reveal:not(.is-in),.js .drop:not(.is-in){transition:none}
   .js .gains__grid .reveal:nth-child(2),.js .terms .reveal:nth-child(2){transition-delay:80ms}
   .js .gains__grid .reveal:nth-child(3),.js .terms .reveal:nth-child(3){transition-delay:160ms}
   .js .gains__grid .reveal:nth-child(4),.js .terms .reveal:nth-child(4){transition-delay:240ms}
@@ -632,8 +638,8 @@ label{font-weight:600;font-size:1rem;color:var(--ink)}
   .hero__cta{gap:2px}
   .hero__cta .btn{--h:54px;margin-bottom:4px}
   .hero .btn--quiet{min-height:44px}
-  .stage{padding-top:0}
-  .sheet{padding:var(--s4) var(--s4) var(--s3)}
+  .stage{padding-top:var(--s4)}
+  .sheet{padding:var(--s4) 20px var(--s3)}
   .sheet__head{padding-bottom:var(--s3)}
   .sheet__period{font-size:1.625rem}
 }
@@ -671,13 +677,7 @@ label{font-weight:600;font-size:1rem;color:var(--ink)}
 /* 11px metadata inside the product pictures. ink-3 on paper is 4.93:1; ink-2 is 7.78:1. */
 .mini__eyebrow,.mini__meta,.pdf__eyebrow{color:var(--ink-2)}
 
-/* Narrow viewports: the same tertiary ink sits on paper, and the grain can drop it under 4.5:1. */
+/* Narrow viewports: the caveat is 13px on paper. The ledger keeps ink-3 so the dates stay quieter than the names. */
 @media (max-width:47.99em){
-  .caveat,
-  .sheet__eyebrow,
-  .sheet__cap,
-  .ledger thead th,
-  .ledger td:first-child,
-  .help,
-  .formcard__fine{color:var(--ink-2)}
+  .caveat{color:var(--ink-2)}
 }

@@ -415,6 +415,22 @@ const kept = db.signups.map((row) => JSON.parse(row.payload)).find((record) => r
 assert.ok(kept);
 assert.equal(Object.hasOwn(kept, 'extra'), false);
 
+const signupSource = readFileSync(join(root, 'functions/api/signup.js'), 'utf8');
+assert.match(signupSource, /const honeypot = text\(raw\.extra\) !== ''/);
+assert.equal(/raw\.website/.test(signupSource), false);
+const decoy = await post(
+  { ...validBody, email: 'decoy-field@example.com', website: 'https://spam.example' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.77' },
+);
+assert.equal(decoy.status, 200);
+const decoyRow = db.signups.map((row) => JSON.parse(row.payload)).find((record) => record.email === 'decoy-field@example.com');
+assert.ok(decoyRow);
+assert.equal(Object.hasOwn(decoyRow, 'website'), false);
+assert.equal(Object.hasOwn(decoyRow, 'extra'), false);
+const websiteOnly = await post({ website: 'https://spam.example' }, env, { 'cf-connecting-ip': '198.51.100.78' });
+assert.equal(websiteOnly.status, 400);
+
 const quotaDb = memoryDb();
 const quotaEnv = { DB: quotaDb };
 const quotaIp = '198.51.100.10';
