@@ -205,6 +205,6 @@ export async function onRequestPost({ request, env }) {
     if (!String(error?.message || '').includes('UNIQUE')) throw error;
   }
 
-  if (honeypot || allowed) return reply(200);
-  return reply(429, { ok: false, message: RATE_MESSAGE });
+  if (!allowed) return reply(429, { ok: false, message: RATE_MESSAGE });
+  return reply(200);
 }

@@ -513,6 +513,91 @@ assert.match(blockedBody.message.en, /hour/);
 assert.equal(quotaDb.signups.length, 5);
 assert.equal([...quotaDb.rates.values()][0].count, 6);
 
+const oracleDb = memoryDb();
+const oracleIp = '198.51.100.81';
+for (let index = 0; index < 5; index += 1) {
+  const response = await post({ ...validBody, email: `oracle-${index}@example.com` }, { DB: oracleDb }, {
+    'cf-connecting-ip': oracleIp,
+  });
+  assert.equal(response.status, 200, `oracle ${index}`);
+}
+const rowsAtLimit = oracleDb.signups.length;
+const beforeLimited = oracleDb.statements.length;
+const limitedReal = await post({ ...validBody, email: 'oracle-real@example.com' }, { DB: oracleDb }, {
+  'cf-connecting-ip': oracleIp,
+});
+const realSql = oracleDb.statements.slice(beforeLimited);
+const beforeLimitedTrap = oracleDb.statements.length;
+const limitedTrap = await post(
+  { ...validBody, email: 'oracle-bot@example.com', extra: 'https://spam.example' },
+  { DB: oracleDb },
+  { 'cf-connecting-ip': oracleIp },
+);
+const trapSql = oracleDb.statements.slice(beforeLimitedTrap);
+const limitedRealText = await limitedReal.text();
+const limitedTrapText = await limitedTrap.text();
+assert.equal(limitedReal.status, 429);
+assert.equal(limitedTrap.status, 429);
+assert.equal(limitedTrapText, limitedRealText);
+assert.equal(limitedReal.headers.get('content-type'), limitedTrap.headers.get('content-type'));
+assert.equal(oracleDb.signups.length, rowsAtLimit);
+assert.equal(oracleDb.signups.some((row) => row.email === 'oracle-bot@example.com'), false);
+assert.equal(oracleDb.signups.some((row) => row.email === 'oracle-real@example.com'), false);
+assert.deepEqual(trapSql, realSql);
+assert.equal(savedText, '{"ok":true}');
+const openTrap = await post(
+  { ...validBody, email: 'open-bot@example.com', extra: 'https://spam.example' },
+  { DB: memoryDb() },
+  { 'cf-connecting-ip': '198.51.100.82' },
+);
+assert.equal(openTrap.status, 200);
+assert.equal(await openTrap.text(), savedText);
+
+const upsertDb = memoryDb();
+await assert.rejects(
+  () => upsertDb.prepare('INSERT INTO signups (id, email) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET email = excluded.email').bind('1', 'a@b.c').run(),
+  /signups reject upsert/,
+);
+await assert.rejects(
+  () => upsertDb.prepare('REPLACE INTO signups (id, email, payload, received_at) VALUES (?, ?, ?, ?)').bind('1', 'a@b.c', '{}', 't').run(),
+  /signups reject upsert/,
+);
+await assert.rejects(
+  () => upsertDb.prepare('INSERT OR REPLACE INTO signups (id, email, payload, received_at) VALUES (?, ?, ?, ?)').bind('1', 'a@b.c', '{}', 't').run(),
+  /signups reject upsert/,
+);
+const rateStill = memoryDb();
+await rateStill.prepare(`INSERT INTO signup_rates (ip_hash, count, reset_at)
+VALUES (?, 1, ?)
+ON CONFLICT(ip_hash) DO UPDATE SET count = signup_rates.count + 1
+RETURNING count, reset_at`).bind('hash', 2, 1, 1).first();
+assert.equal([...rateStill.rates.values()][0].count, 1);
+
+const upsertDir = mkdtempSync(join(tmpdir(), 'signup-upsert-'));
+try {
+  const upsertSource = signupSource.replace(
+    /const INSERT_SIGNUP = `[\s\S]*?`;/,
+    'const INSERT_SIGNUP = `INSERT INTO signups (id, email, payload, received_at) VALUES (?, ?, ?, ?) ON CONFLICT(email) DO UPDATE SET payload = excluded.payload`;',
+  );
+  assert.match(upsertSource, /ON CONFLICT\(email\) DO UPDATE/);
+  assert.equal(upsertSource.includes('NOT EXISTS'), false);
+  const upsertFile = join(upsertDir, 'signup.js');
+  writeFileSync(
+    upsertFile,
+    upsertSource.replace(
+      "from '../security.js'",
+      `from ${JSON.stringify(pathToFileURL(join(root, 'functions/security.js')).href)}`,
+    ),
+  );
+  const upserted = await import(pathToFileURL(upsertFile).href);
+  await assert.rejects(
+    () => post(validBody, { DB: memoryDb() }, { 'cf-connecting-ip': '198.51.100.83' }, upserted.onRequestPost),
+    /signups reject upsert/,
+  );
+} finally {
+  rmSync(upsertDir, { recursive: true, force: true });
+}
+
 const parallelDb = memoryDb();
 const parallel = await Promise.all(
   Array.from({ length: 20 }, (_, index) =>
@@ -726,8 +811,10 @@ for (const file of fontFiles) {
   assert.match(readFileSync(join(pub, 'fonts', licence), 'utf8'), /SIL Open Font License/);
   assertWoff2(join(pub, 'fonts', file));
 }
-assert.match(homeSource, /<script src="\/js\/lang-boot\.js"><\/script>/);
-assert.match(notFound, /<script src="\/js\/lang-boot\.js"><\/script>/);
+assertClassicBoot(homeSource, 'home');
+assertClassicBoot(notFound, '404');
+assert.match(read('js/not-found.js'), /new URLSearchParams\(window\.location\.search\)\.get\('lang'\)/);
+assert.match(read('js/not-found.js'), /queryLang === 'en' \|\| queryLang === 'pt'/);
 assert.equal(/<script\b(?![^>]*\bsrc=)[^>]*>/i.test(homeSource + notFound), false);
 const boot = read('js/lang-boot.js');
 assert.equal(/type\s*=\s*["']module["']|accept-language|navigator\.language/i.test(boot), false);
@@ -1051,6 +1138,9 @@ function memoryDb() {
           const exec = async () => {
             await Promise.resolve();
             statements.push(text);
+            if (/\bsignups\b/.test(text) && (/\bON CONFLICT\b[\s\S]*\bDO UPDATE\b/i.test(text) || /\bREPLACE\b/i.test(text))) {
+              throw new Error(`signups reject upsert ${text}`);
+            }
             if (text.startsWith('DELETE FROM signup_rates')) {
               const now = Number(args[0]);
               const keep = args[1];
@@ -1095,6 +1185,18 @@ function memoryDb() {
       };
     },
   };
+}
+
+function assertClassicBoot(html, label) {
+  const head = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+  assert.ok(head, `${label} head`);
+  const tags = [...head[1].matchAll(/<script\b([^>]*)>/gi)];
+  const boot = tags.find((tag) => /\bsrc="\/js\/lang-boot\.js"/.test(tag[1]));
+  assert.ok(boot, `${label} lang-boot in head`);
+  assert.equal(/\btype\s*=/i.test(boot[1]), false, `${label} classic`);
+  assert.equal(/\b(?:defer|async|module)\b/i.test(boot[1]), false, `${label} blocking`);
+  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  assert.equal(/src="\/js\/lang-boot\.js"/.test(body?.[1] ?? ''), false, `${label} boot stays in head`);
 }
 
 function post(body, env = {}, headers = {}, handler = onRequestPost) {

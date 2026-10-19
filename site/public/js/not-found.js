@@ -18,12 +18,15 @@ const text = {
 };
 
 let lang = 'pt';
+const queryLang = new URLSearchParams(window.location.search).get('lang');
 
 try {
   const stored = localStorage.getItem(KEY);
-  if (stored === 'en' || stored === 'pt') lang = stored;
+  if (queryLang === 'en' || queryLang === 'pt') lang = queryLang;
+  else if (stored === 'en' || stored === 'pt') lang = stored;
 } catch (error) {
-  if (!(error instanceof DOMException)) throw error;
+  if (queryLang === 'en' || queryLang === 'pt') lang = queryLang;
+  else if (!(error instanceof DOMException)) throw error;
 }
 
 function apply() {
