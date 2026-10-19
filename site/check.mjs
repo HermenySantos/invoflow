@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG } from './public/js/config.js';
@@ -431,6 +431,17 @@ assert.equal(Object.hasOwn(decoyRow, 'extra'), false);
 const websiteOnly = await post({ website: 'https://spam.example' }, env, { 'cf-connecting-ip': '198.51.100.78' });
 assert.equal(websiteOnly.status, 400);
 
+const rowsBeforeTrap = db.signups.length;
+const trapped = await post(
+  { ...validBody, email: 'bot@example.com', extra: 'https://spam.example' },
+  env,
+  { 'cf-connecting-ip': '198.51.100.79' },
+);
+assert.equal(trapped.status, 200);
+assert.equal(await trapped.text(), savedText);
+assert.equal(db.signups.length, rowsBeforeTrap);
+assert.equal(db.signups.some((row) => row.email === 'bot@example.com'), false);
+
 const quotaDb = memoryDb();
 const quotaEnv = { DB: quotaDb };
 const quotaIp = '198.51.100.10';
@@ -621,6 +632,37 @@ assert.equal(/s-maxage/i.test(headerFile), false);
 const headerBlocks = headerSections(headerFile);
 assert.deepEqual(headerBlocks.get('/*'), SECURITY_HEADERS);
 assert.equal(headerBlocks.get('/404.html')?.['cache-control'], 'no-store');
+assert.equal(headerBlocks.get('/fonts/*.woff2')?.['cache-control'], 'public, max-age=31536000, immutable');
+
+const fontMarkup = [homeSource, read('privacy/index.html'), notFound, read('css/site.css')].join('\n');
+assert.equal(/fonts\.(googleapis|gstatic)\.com|use\.typekit\.net/i.test(fontMarkup), false);
+assert.equal(/@import\b/i.test(read('css/site.css')), false);
+assert.equal(/url\(\s*['"]?https?:/i.test(fontMarkup), false);
+const preloads = [];
+for (const html of [homeSource, read('privacy/index.html'), notFound]) {
+  for (const tag of html.matchAll(/<link\b[^>]*>/gi)) {
+    if (!/\brel="[^"]*\bpreload\b/i.test(tag[0])) continue;
+    const href = tag[0].match(/\bhref="([^"]+)"/);
+    assert.ok(href, tag[0]);
+    assert.equal(href[1].startsWith('/'), true, href[1]);
+    assert.equal(existsSync(join(pub, href[1].slice(1))), true, href[1]);
+    preloads.push(href[1]);
+  }
+}
+assert.ok(preloads.includes('/fonts/fraunces-display-latin.woff2'));
+assert.ok(preloads.includes('/fonts/inter-var-latin.woff2'));
+for (const match of read('css/site.css').matchAll(/url\("(\/fonts\/[^"]+)"\)/g)) {
+  assert.equal(existsSync(join(pub, match[1].slice(1))), true, match[1]);
+}
+const fontFiles = readdirSync(join(pub, 'fonts')).filter((name) => name.endsWith('.woff2'));
+const licences = readdirSync(join(pub, 'fonts')).filter((name) => /ofl/i.test(name) && name.endsWith('.txt'));
+assert.ok(fontFiles.length > 0);
+for (const file of fontFiles) {
+  const family = file.split('-')[0];
+  const licence = licences.find((name) => name.toLowerCase().includes(family));
+  assert.ok(licence, file);
+  assert.match(readFileSync(join(pub, 'fonts', licence), 'utf8'), /SIL Open Font License/);
+}
 
 const routes = JSON.parse(read('_routes.json'));
 assert.deepEqual(routes.include, ['/*']);
@@ -771,6 +813,47 @@ const privacyExtra = await onGuard({
   },
 });
 assert.equal(privacyExtra.status, 200);
+
+const notFoundBody = '<!doctype html><h1>Página não encontrada</h1>';
+for (const path of ['/404', '/404.html']) {
+  const response = await onGuard({
+    request: new Request(`https://pilot.test${path}`),
+    env: {
+      ASSETS: {
+        fetch(request) {
+          assert.equal(new URL(request.url).pathname, '/404.html', path);
+          return Promise.resolve(new Response(notFoundBody, {
+            status: 200,
+            headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=0, must-revalidate' },
+          }));
+        },
+      },
+    },
+    next() {
+      throw new Error(`next ran for ${path}`);
+    },
+  });
+  assert.equal(response.status, 404, path);
+  assert.equal(response.headers.get('cache-control'), 'no-store', path);
+  assert.equal(await response.text(), notFoundBody, path);
+  assertSecurity(response, path);
+}
+const notFoundHead = await onGuard({
+  request: new Request('https://pilot.test/404', { method: 'HEAD' }),
+  env: {
+    ASSETS: {
+      fetch() {
+        return Promise.resolve(new Response(notFoundBody, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }));
+      },
+    },
+  },
+  next() {
+    throw new Error('next ran for HEAD /404');
+  },
+});
+assert.equal(notFoundHead.status, 404);
+assert.equal(notFoundHead.headers.get('cache-control'), 'no-store');
+assert.equal(await notFoundHead.text(), '');
 
 if (process.argv.includes('--release')) {
   for (const file of ['index.html', 'js/copy.js', 'privacy/index.html']) {
