@@ -19,6 +19,7 @@ function t(key) {
 
 function applyCopy() {
   document.documentElement.lang = lang === 'en' ? 'en' : 'pt-PT';
+  document.documentElement.classList.toggle('lang-en', lang === 'en');
   document.title = t('metaTitle');
   const description = document.querySelector('meta[name="description"]');
   if (description) description.setAttribute('content', t('metaDescription'));

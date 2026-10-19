@@ -124,6 +124,14 @@ a:hover{color:var(--accent-h)}
 .lang__opt:hover{color:var(--ink)}
 .lang__opt:active{transform:scale(.96)}
 .lang__opt[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+html.lang-en .lang__opt[data-lang="pt"]{background:none;color:var(--ink-2)}
+html.lang-en .lang__opt[data-lang="pt"]:hover{color:var(--ink)}
+html.lang-en .lang__opt[data-lang="en"]{background:var(--ink);color:var(--paper)}
+/* Both languages are in the DOM. lang-boot.js sets .lang-en before first paint. */
+.l10n__en{display:none}
+html.lang-en .l10n__pt{display:none}
+html.lang-en .l10n__en{display:inline}
+.btn--quiet .l10n__pt,.btn--quiet .l10n__en{background:none;padding-bottom:0}
 
 /* ===== HERO ===== */
 .hero{padding:clamp(2rem,.5rem + 5vw,5rem) 0 clamp(4rem,2rem + 6vw,7.5rem);overflow-x:clip}

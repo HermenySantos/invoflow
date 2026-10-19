@@ -28,13 +28,9 @@ try {
 
 function apply() {
   const copy = text[lang];
-  document.documentElement.lang = lang;
+  document.documentElement.lang = lang === 'en' ? 'en' : 'pt-PT';
+  document.documentElement.classList.toggle('lang-en', lang === 'en');
   document.title = copy.title;
-  document.querySelector('#not-found-title').textContent = copy.title;
-  document.querySelector('#not-found-body').textContent = copy.body;
-  document.querySelector('#not-found-home').textContent = copy.home;
-  document.querySelector('.skip').textContent = copy.skip;
-  document.querySelector('#lang-toggle').textContent = copy.toggle;
 }
 
 document.querySelector('#lang-toggle').addEventListener('click', () => {

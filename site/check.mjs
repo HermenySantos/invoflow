@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG } from './public/js/config.js';
 import { copy } from './public/js/copy.js';
 import { readUtm } from './public/js/qualify.js';
@@ -432,6 +433,7 @@ const websiteOnly = await post({ website: 'https://spam.example' }, env, { 'cf-c
 assert.equal(websiteOnly.status, 400);
 
 const rowsBeforeTrap = db.signups.length;
+const runsBeforeTrap = db.signupRuns.length;
 const trapped = await post(
   { ...validBody, email: 'bot@example.com', extra: 'https://spam.example' },
   env,
@@ -441,6 +443,53 @@ assert.equal(trapped.status, 200);
 assert.equal(await trapped.text(), savedText);
 assert.equal(db.signups.length, rowsBeforeTrap);
 assert.equal(db.signups.some((row) => row.email === 'bot@example.com'), false);
+const trapRun = db.signupRuns.slice(runsBeforeTrap);
+assert.equal(trapRun.length, 1);
+assert.equal(trapRun[0].email, '');
+assert.equal(trapRun[0].write, 0);
+
+const emptyEmailDb = memoryDb();
+const insertSql =
+  'INSERT INTO signups (id, email, payload, received_at) SELECT ?, ?, ?, ? WHERE ? = 1 AND NOT EXISTS (SELECT 1 FROM signups WHERE email = ?)';
+await emptyEmailDb.prepare(insertSql).bind('empty-1', '', '{}', '2026-01-01T00:00:00.000Z', 1, '').run();
+assert.equal(emptyEmailDb.signups.length, 1);
+assert.equal(emptyEmailDb.signups[0].email, '');
+assert.equal(emptyEmailDb.signupRuns.length, 1);
+await emptyEmailDb.prepare(insertSql).bind('empty-0', '', '{}', '2026-01-01T00:00:00.000Z', 0, '').run();
+assert.equal(emptyEmailDb.signups.length, 1);
+assert.equal(emptyEmailDb.signupRuns.length, 2);
+
+const mutatedDir = mkdtempSync(join(tmpdir(), 'signup-mut-'));
+try {
+  const mutatedSource = signupSource.replace(
+    /const honeypot = text\(raw\.extra\) !== ''/,
+    'const honeypot = false',
+  );
+  assert.notEqual(mutatedSource, signupSource);
+  assert.equal(/text\(raw\.extra\)/.test(mutatedSource), false);
+  const mutatedFile = join(mutatedDir, 'signup.js');
+  writeFileSync(
+    mutatedFile,
+    mutatedSource.replace(
+      "from '../security.js'",
+      `from ${JSON.stringify(pathToFileURL(join(root, 'functions/security.js')).href)}`,
+    ),
+  );
+  const mutated = await import(pathToFileURL(mutatedFile).href);
+  const mutatedDb = memoryDb();
+  const leaked = await post(
+    { ...validBody, email: 'bot@example.com', extra: 'https://spam.example' },
+    { DB: mutatedDb },
+    { 'cf-connecting-ip': '198.51.100.79' },
+    mutated.onRequestPost,
+  );
+  assert.equal(leaked.status, 200);
+  assert.equal(await leaked.text(), savedText);
+  assert.equal(mutatedDb.signups.length, 1);
+  assert.equal(mutatedDb.signups[0].email, 'bot@example.com');
+} finally {
+  rmSync(mutatedDir, { recursive: true, force: true });
+}
 
 const quotaDb = memoryDb();
 const quotaEnv = { DB: quotaDb };
@@ -633,11 +682,22 @@ const headerBlocks = headerSections(headerFile);
 assert.deepEqual(headerBlocks.get('/*'), SECURITY_HEADERS);
 assert.equal(headerBlocks.get('/404.html')?.['cache-control'], 'no-store');
 assert.equal(headerBlocks.get('/fonts/*.woff2')?.['cache-control'], 'public, max-age=31536000, immutable');
+assert.match(headerFile, /Rename the font file when the font changes/);
+for (const [path, headers] of headerBlocks) {
+  if (/\bimmutable\b/i.test(headers['cache-control'] ?? '')) assert.equal(path, '/fonts/*.woff2');
+}
 
 const fontMarkup = [homeSource, read('privacy/index.html'), notFound, read('css/site.css')].join('\n');
+const fontCss = read('css/site.css');
+assert.equal(/@import\b/i.test(fontCss), false);
+assert.equal(/url\(\s*['"]?(?:https?:)?\/\//i.test(fontMarkup), false);
 assert.equal(/fonts\.(googleapis|gstatic)\.com|use\.typekit\.net/i.test(fontMarkup), false);
-assert.equal(/@import\b/i.test(read('css/site.css')), false);
-assert.equal(/url\(\s*['"]?https?:/i.test(fontMarkup), false);
+for (const match of fontCss.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi)) {
+  const url = match[2].trim();
+  if (!/font|\.woff2?|\.ttf|\.otf|\.eot/i.test(url)) continue;
+  assert.equal(/^(?:https?:)?\/\//i.test(url), false, url);
+  assert.equal(url.startsWith('/fonts/'), true, url);
+}
 const preloads = [];
 for (const html of [homeSource, read('privacy/index.html'), notFound]) {
   for (const tag of html.matchAll(/<link\b[^>]*>/gi)) {
@@ -645,6 +705,8 @@ for (const html of [homeSource, read('privacy/index.html'), notFound]) {
     const href = tag[0].match(/\bhref="([^"]+)"/);
     assert.ok(href, tag[0]);
     assert.equal(href[1].startsWith('/'), true, href[1]);
+    assert.equal(href[1].startsWith('//'), false, href[1]);
+    assert.equal(/^https?:/i.test(href[1]), false, href[1]);
     assert.equal(existsSync(join(pub, href[1].slice(1))), true, href[1]);
     preloads.push(href[1]);
   }
@@ -662,7 +724,19 @@ for (const file of fontFiles) {
   const licence = licences.find((name) => name.toLowerCase().includes(family));
   assert.ok(licence, file);
   assert.match(readFileSync(join(pub, 'fonts', licence), 'utf8'), /SIL Open Font License/);
+  assertWoff2(join(pub, 'fonts', file));
 }
+assert.match(homeSource, /<script src="\/js\/lang-boot\.js"><\/script>/);
+assert.match(notFound, /<script src="\/js\/lang-boot\.js"><\/script>/);
+assert.equal(/<script\b(?![^>]*\bsrc=)[^>]*>/i.test(homeSource + notFound), false);
+const boot = read('js/lang-boot.js');
+assert.equal(/type\s*=\s*["']module["']|accept-language|navigator\.language/i.test(boot), false);
+assert.match(boot, /invoflow_demand_lang/);
+assert.match(boot, /URLSearchParams/);
+assert.match(boot, /lang-en/);
+assert.match(read('css/site.css'), /\.l10n__en\{display:none\}/);
+assert.match(read('css/site.css'), /html\.lang-en \.l10n__pt\{display:none\}/);
+assert.equal((homeSource.match(/class="l10n__en"/g) || []).length, (homeSource.match(/\bdata-i18n="/g) || []).length);
 
 const routes = JSON.parse(read('_routes.json'));
 assert.deepEqual(routes.include, ['/*']);
@@ -953,14 +1027,23 @@ function memoryKv() {
   };
 }
 
+function assertWoff2(path) {
+  const bytes = readFileSync(path);
+  assert.ok(bytes.length >= 1024 && bytes.length <= 1_000_000, path);
+  assert.equal(bytes.subarray(0, 4).toString('ascii'), 'wOF2', path);
+  assert.equal(bytes.readUInt32BE(8), bytes.length, path);
+}
+
 function memoryDb() {
   const signups = [];
   const rates = new Map();
   const statements = [];
+  const signupRuns = [];
   return {
     signups,
     rates,
     statements,
+    signupRuns,
     prepare(sql) {
       const text = sql.replace(/\s+/g, ' ').trim();
       return {
@@ -989,9 +1072,10 @@ function memoryDb() {
               return { count: next.count, reset_at: next.resetAt };
             }
             if (text.startsWith('INSERT INTO signups')) {
-              const flag = Number(args[4]);
               const email = args[1];
-              if (flag === 1 && email && !signups.some((row) => row.email === email)) {
+              const write = Number(args[4]);
+              signupRuns.push({ id: args[0], email, payload: args[2], receivedAt: args[3], write });
+              if (write === 1 && !signups.some((row) => row.email === email)) {
                 signups.push({ id: args[0], email, payload: args[2], receivedAt: args[3] });
               }
               return null;
@@ -1013,7 +1097,7 @@ function memoryDb() {
   };
 }
 
-function post(body, env = {}, headers = {}) {
+function post(body, env = {}, headers = {}, handler = onRequestPost) {
   const requestHeaders = {
     'content-type': 'application/json',
     origin: 'https://pilot.test',
@@ -1024,7 +1108,7 @@ function post(body, env = {}, headers = {}) {
   if (requestHeaders['cf-connecting-ip'] === '') delete requestHeaders['cf-connecting-ip'];
   if (requestHeaders.origin === '') delete requestHeaders.origin;
   const merged = { IP_HASH_SECRET: 'test-secret', ...env };
-  return onRequestPost({
+  return handler({
     request: new Request('https://pilot.test/api/signup', {
       method: 'POST',
       headers: requestHeaders,

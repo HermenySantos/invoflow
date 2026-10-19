@@ -9,5 +9,6 @@
 /404.html
   Cache-Control: no-store
 
+# Rename the font file when the font changes. These responses are cached immutable for a year.
 /fonts/*.woff2
   Cache-Control: public, max-age=31536000, immutable
