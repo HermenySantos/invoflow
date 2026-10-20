@@ -158,13 +158,14 @@ assert.ok(privacy.includes('O email que indicar, a data e a confirmação do seu
 assert.ok(privacy.includes('ou escrevendo para'));
 assert.ok(privacy.includes('Depois disso, deixamos de lhe escrever.'));
 assert.ok(privacy.includes('<span class="token">[alojamento e retenção da lista: onde fica guardada, durante quanto tempo, o que acontece quando sai — aguarda decisão do Gildo]</span>'));
-assert.ok(privacy.includes('<span class="token">[entidade e NIF]</span>'));
+assert.equal((privacy.match(/Hermenegildo Santos · NIF 296556513/g) || []).length, 2);
 assert.ok(privacy.includes('<span class="token">[texto sobre o endereço IP — aguarda correção técnica:'));
 assert.ok(privacy.includes('Interest list'));
 assert.ok(privacy.includes('or write to'));
 assert.ok(privacy.includes('After that, we stop writing to you.'));
 assert.ok(privacy.includes("<span class=\"token\">[interest-list hosting and retention: where it's stored, for how long, what happens when you leave — awaiting Gildo's decision]</span>"));
-assert.ok(privacy.includes('<span class="token">[entity and tax number]</span>'));
+assert.equal(/\[entidade e NIF\]|\[entity and tax number\]/.test(`${home}\n${privacy}\n${read('js/copy.js')}`), false);
+assert.equal((`${home}\n${read('js/copy.js')}`.match(/Hermenegildo Santos · NIF 296556513/g) || []).length, 4);
 assert.ok(privacy.includes('<span class="token">[IP address wording — awaiting a technical fix:'));
 assert.equal(privacy.includes('<span class="token">[prazo]</span>'), false);
 assert.ok(privacy.includes('rel="canonical" href="https://invoflow.pt/privacy/"'));

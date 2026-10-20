@@ -440,7 +440,7 @@ Pain section (§2), how-it-works steps 1–2 and gains (§4) keep COPY-v3's voic
 - **Como sair:** com o link no fundo de cada email, ou escrevendo para contacto@invoflow.pt. Depois disso, deixamos de lhe escrever.
 - **Onde e durante quanto tempo:** [alojamento e retenção da lista: onde fica guardada, durante quanto tempo, o que acontece quando sai — aguarda decisão do Gildo].
 - **Proteção contra abusos:** [texto sobre o endereço IP — aguarda correção técnica: hoje é guardado um resumo SHA-256 sem sal, que é reversível (GATE-93fcead P2-2), e no D1 não expira (P2-3)].
-- **Responsável pelo tratamento:** [entidade e NIF] · contacto@invoflow.pt
+- **Responsável pelo tratamento:** Hermenegildo Santos · NIF 296556513 · contacto@invoflow.pt
 
 #### EN
 - **Title:** Interest list
@@ -450,7 +450,7 @@ Pain section (§2), how-it-works steps 1–2 and gains (§4) keep COPY-v3's voic
 - **How to leave:** use the link at the bottom of any email, or write to contacto@invoflow.pt. After that, we stop writing to you.
 - **Where and for how long:** [interest-list hosting and retention: where it's stored, for how long, what happens when you leave — awaiting Gildo's decision].
 - **Abuse protection:** [IP address wording — awaiting a technical fix: today an unsalted SHA-256 summary is stored, which is reversible (GATE-93fcead P2-2), and in D1 it never expires (P2-3)].
-- **Data controller:** [entity and tax number] · contacto@invoflow.pt
+- **Data controller:** Hermenegildo Santos · NIF 296556513 · contacto@invoflow.pt
 
 ---
 
@@ -459,12 +459,12 @@ Pain section (§2), how-it-works steps 1–2 and gains (§4) keep COPY-v3's voic
 ### PT-PT
 - Invoflow: estimativa de IVA e pack de faturas para o seu contabilista. Não é aconselhamento fiscal.
 - Privacidade · Contacto: contacto@invoflow.pt
-- [entidade e NIF]
+- Hermenegildo Santos · NIF 296556513
 
 ### EN
 - Invoflow: a VAT estimate and an invoice pack for your accountant. Not tax advice.
 - Privacy · Contact: contacto@invoflow.pt
-- [entity and tax number]
+- Hermenegildo Santos · NIF 296556513
 
 ---
 
@@ -509,3 +509,6 @@ Pain section (§2), how-it-works steps 1–2 and gains (§4) keep COPY-v3's voic
 - check.mjs bans + "calcula" over visible page copy and email drafts: 0 hits.
 - "guardad": 0 in product copy; only inside the two open privacy tokens (hosting/retention and IP wording), which describe the pending question and never ship.
 - Hook 4: 115 characters (reserve, not in the test).
+
+### Controller identity (2026-10-20)
+- Gildo trades as a sole trader (ENI) under Hermenegildo Santos, NIF 296556513. §7b and the footer use that line. Hosting/retention and the IP wording stay open.
