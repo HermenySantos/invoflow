@@ -111,12 +111,6 @@ export const copy = {
     faq7Q: 'Quanto vai custar?',
     faq7A:
       'Ainda não há preço público. Quando houver, quem está na lista sabe por email. Deixar o email não o compromete a nada, e esta página não cobra nada.',
-    faq8Q: 'Onde ficam os meus dados?',
-    tokHosting:
-      '[alojamento e retenção: local de alojamento, tempo de conservação, quem tem acesso — aguarda decisão do Gildo]',
-    faq8A:
-      'O email que deixar aqui serve apenas para lhe escrevermos sobre a Invoflow, e pode sair da lista a qualquer momento. Mais detalhes na',
-    faq8Link: 'política de privacidade',
     formTitle: 'Quer saber quando a Invoflow abrir?',
     formIntro: 'Deixe o seu email. Escrevemos-lhe quando houver novidades e quando a Invoflow abrir.',
     termGetTitle: 'O que recebe',
@@ -273,12 +267,6 @@ export const copy = {
     faq7Q: 'How much will it cost?',
     faq7A:
       "There's no public price yet. When there is, people on the list hear about it by email. Leaving your email doesn't commit you to anything, and this page doesn't charge anything.",
-    faq8Q: 'Where is my data kept?',
-    tokHosting:
-      "[hosting and retention: location, retention period, who has access — awaiting Gildo's decision]",
-    faq8A:
-      'The email you leave here is used only to write to you about Invoflow, and you can leave the list at any time. More in the',
-    faq8Link: 'privacy policy',
     formTitle: 'Want to know when Invoflow opens?',
     formIntro: "Leave your email. We'll write when there's news and when Invoflow opens.",
     termGetTitle: 'What you get',

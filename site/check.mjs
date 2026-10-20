@@ -127,7 +127,13 @@ for (const numeral of ['i', 'ii', 'iii', 'iv', 'v', 'vi']) {
 }
 assert.match(home, /<h2 id="form-title" class="h2 h2--xxl"/);
 assert.match(read('js/main.js'), /addEventListener\('input'/);
-assert.equal((home.match(/href="\/privacy\/"/g) || []).length, 3);
+assert.equal((home.match(/href="\/privacy\/"/g) || []).length, 2);
+assert.equal((home.match(/<details class="qa">/g) || []).length, 7);
+for (const number of [1, 2, 3, 4, 5, 6, 7]) {
+  assert.ok(home.includes(`data-i18n="faq${number}Q"`), `faq ${number}`);
+  assert.ok(home.includes(`data-i18n="faq${number}A"`), `faq ${number} answer`);
+}
+assert.equal(/faq8|tokHosting|Onde ficam os meus dados|Where is my data kept|FAQPage|application\/ld\+json/i.test(`${home}\n${read('js/copy.js')}`), false);
 assert.equal(/href="\/privacy"(?!\/)/.test(home), false);
 assert.equal(/https:\/\/invoflow\.pt\/privacy(?!\/)/.test(home), false);
 assert.ok(home.includes('rel="canonical" href="https://invoflow.pt/"'));

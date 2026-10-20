@@ -16,14 +16,19 @@ function norm(value) {
     .trim();
 }
 
+const dropped = ['faq8Q', 'faq8A', 'faq8Link', 'tokHosting'];
+
 export function missingCopy() {
   const doc = norm(
     `${readFileSync(join(here, 'copy/COPY-v4.md'), 'utf8')}\n${readFileSync(join(here, 'copy/COPY-v4-ui-labels.md'), 'utf8')}`.replace(/\*\*/g, ''),
   );
   const miss = { pt: [], en: [] };
   for (const lang of ['pt', 'en']) {
+    for (const key of dropped) {
+      if (Object.hasOwn(copy[lang], key)) miss[lang].push(`${key}: FAQ 8 was dropped from v1`);
+    }
     for (const [key, value] of Object.entries(copy[lang])) {
-      if (typeof value !== 'string') continue;
+      if (typeof value !== 'string' || dropped.includes(key)) continue;
       if (!doc.includes(norm(value))) miss[lang].push(`${key}: ${norm(value)}`);
     }
   }
