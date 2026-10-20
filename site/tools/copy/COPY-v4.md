@@ -439,7 +439,7 @@ Pain section (§2), how-it-works steps 1–2 and gains (§4) keep COPY-v3's voic
 - **Base legal:** o seu consentimento, que pode retirar a qualquer momento.
 - **Como sair:** com o link no fundo de cada email, ou escrevendo para contacto@invoflow.pt. Depois disso, deixamos de lhe escrever.
 - **Onde e durante quanto tempo:** [alojamento e retenção da lista: onde fica guardada, durante quanto tempo, o que acontece quando sai — aguarda decisão do Gildo].
-- **Proteção contra abusos:** [texto sobre o endereço IP — aguarda correção técnica: hoje é guardado um resumo SHA-256 sem sal, que é reversível (GATE-93fcead P2-2), e no D1 não expira (P2-3)].
+- **Proteção contra abusos:** [texto sobre o endereço IP: guardamos um HMAC-SHA-256 (chave IP_HASH_SECRET) do IP, IPv6 em /64, em signup_rates.ip_hash, para limitar pedidos; a escrita seguinte apaga as linhas de outros IPs com a janela terminada e reinicia a linha actual; signups não guarda IP — falta a redacção].
 - **Responsável pelo tratamento:** Hermenegildo Santos · NIF 296556513 · contacto@invoflow.pt
 
 #### EN
@@ -449,7 +449,7 @@ Pain section (§2), how-it-works steps 1–2 and gains (§4) keep COPY-v3's voic
 - **Legal basis:** your consent, which you can withdraw at any time.
 - **How to leave:** use the link at the bottom of any email, or write to contacto@invoflow.pt. After that, we stop writing to you.
 - **Where and for how long:** [interest-list hosting and retention: where it's stored, for how long, what happens when you leave — awaiting Gildo's decision].
-- **Abuse protection:** [IP address wording — awaiting a technical fix: today an unsalted SHA-256 summary is stored, which is reversible (GATE-93fcead P2-2), and in D1 it never expires (P2-3)].
+- **Abuse protection:** [IP address wording: we store an HMAC-SHA-256 (keyed with IP_HASH_SECRET) of the IP, IPv6 as /64, in signup_rates.ip_hash, to limit requests; the next write deletes other IPs' rows whose window has ended and resets the current row; signups stores no IP — wording still open].
 - **Data controller:** Hermenegildo Santos · NIF 296556513 · contacto@invoflow.pt
 
 ---

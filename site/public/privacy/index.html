@@ -39,7 +39,7 @@
         <h2>Onde e durante quanto tempo</h2>
         <p><span class="token">[alojamento e retenção da lista: onde fica guardada, durante quanto tempo, o que acontece quando sai — aguarda decisão do Gildo]</span></p>
         <h2>Proteção contra abusos</h2>
-        <p><span class="token">[texto sobre o endereço IP — aguarda correção técnica: hoje é guardado um resumo SHA-256 sem sal, que é reversível (GATE-93fcead P2-2), e no D1 não expira (P2-3)]</span></p>
+        <p><span class="token">[texto sobre o endereço IP: guardamos um HMAC-SHA-256 (chave IP_HASH_SECRET) do IP, IPv6 em /64, em signup_rates.ip_hash, para limitar pedidos; a escrita seguinte apaga as linhas de outros IPs com a janela terminada e reinicia a linha actual; signups não guarda IP — falta a redacção]</span></p>
         <h2>Responsável pelo tratamento</h2>
         <p>Hermenegildo Santos · NIF 296556513 · <a href="mailto:contacto@invoflow.pt">contacto@invoflow.pt</a></p>
 
@@ -59,7 +59,7 @@
           <h3>Where and for how long</h3>
           <p><span class="token">[interest-list hosting and retention: where it's stored, for how long, what happens when you leave — awaiting Gildo's decision]</span></p>
           <h3>Abuse protection</h3>
-          <p><span class="token">[IP address wording — awaiting a technical fix: today an unsalted SHA-256 summary is stored, which is reversible (GATE-93fcead P2-2), and in D1 it never expires (P2-3)]</span></p>
+          <p><span class="token">[IP address wording: we store an HMAC-SHA-256 (keyed with IP_HASH_SECRET) of the IP, IPv6 as /64, in signup_rates.ip_hash, to limit requests; the next write deletes other IPs' rows whose window has ended and resets the current row; signups stores no IP — wording still open]</span></p>
           <h3>Data controller</h3>
           <p>Hermenegildo Santos · NIF 296556513 · <a href="mailto:contacto@invoflow.pt">contacto@invoflow.pt</a></p>
         </div>
