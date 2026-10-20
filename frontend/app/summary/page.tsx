@@ -886,7 +886,7 @@ function CategoryBreakdownSection({
                     </span>
                     {item.deductible_vat && (
                       <span className="text-[10px] text-emerald-600 font-medium">
-                        IVA ded. {formatCurrency(item.deductible_vat)}
+                        estimativa {formatCurrency(item.deductible_vat)}
                       </span>
                     )}
                   </div>

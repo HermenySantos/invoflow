@@ -1,0 +1,37 @@
+[
+  {
+    "name": "upload",
+    "start": 0,
+    "end": 2661
+  },
+  {
+    "name": "preview",
+    "start": 2661,
+    "end": 5334
+  },
+  {
+    "name": "uploaded",
+    "start": 5334,
+    "end": 5705
+  },
+  {
+    "name": "review",
+    "start": 5705,
+    "end": 9370
+  },
+  {
+    "name": "deadline-q4",
+    "start": 9370,
+    "end": 12079
+  },
+  {
+    "name": "estimate-q1",
+    "start": 12079,
+    "end": 15286
+  },
+  {
+    "name": "pack",
+    "start": 15286,
+    "end": 17467
+  }
+]

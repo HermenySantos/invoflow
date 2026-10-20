@@ -491,7 +491,7 @@ export default function ReceiptDetailPage() {
 
                 {/* Needs review alert */}
                 {document.fictional ? (
-                  <p className="text-sm text-amber-800">dados fictícios</p>
+                  <p className="text-sm text-amber-800">exemplo ilustrativo</p>
                 ) : null}
                 {document.status === 'needs_review' && !isComplete() && (
                   <div className="card p-3 bg-amber-50 border-amber-200 flex items-start gap-2">
@@ -544,7 +544,9 @@ export default function ReceiptDetailPage() {
                     {/* VAT breakdown */}
                     {document.vat_amount && (
                       <div className="text-right">
-                        <p className="text-xs text-gray-500">VAT {getVatRateDisplay()}</p>
+                        <p className="text-xs text-gray-500">
+                          {document.fictional ? 'IVA estimativa' : `VAT ${getVatRateDisplay()}`}
+                        </p>
                         <p className="text-sm font-medium text-gray-700">
                           {formatCurrency(document.vat_amount)}
                         </p>
@@ -744,7 +746,7 @@ export default function ReceiptDetailPage() {
                   <dd className="font-semibold text-gray-900">{formatCurrency(document.gross_amount)}</dd>
                 </div>
                 <div className="flex gap-1.5">
-                  <dt className="text-gray-500">IVA</dt>
+                  <dt className="text-gray-500">{document.fictional ? 'IVA estimativa' : 'IVA'}</dt>
                   <dd className="font-semibold text-gray-900">{formatCurrency(document.vat_amount)}</dd>
                 </div>
               </dl>
