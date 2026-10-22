@@ -30,6 +30,9 @@ class Document(Base):
     vendor_name = Column(String(255), nullable=True)
     vendor_nif = Column(String(20), nullable=True)  # Portuguese tax ID
     invoice_number = Column(String(100), nullable=True)
+    # FT, NC, and the other AT series codes. The reviewer can change it.
+    # Amounts stay non-negative; NC is what makes the VAT total negative.
+    document_type = Column(String(8), nullable=True)
     document_date = Column(Date, nullable=True)
     
     # Amounts (in EUR)

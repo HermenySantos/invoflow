@@ -43,23 +43,24 @@ def _code(value) -> Optional[str]:
 
 
 def fiscal_mark(document) -> FiscalMark:
+    # The column is the reviewer's choice and wins over the raw reading.
+    column_type = _code(getattr(document, "document_type", None))
     raw = getattr(document, "ocr_raw_response", None)
     if not raw:
-        return FiscalMark(None, None, None)
+        return FiscalMark(column_type, None, None)
     try:
         payload = json.loads(raw)
     except (TypeError, json.JSONDecodeError):
-        return FiscalMark(None, None, None)
+        return FiscalMark(column_type, None, None)
     if not isinstance(payload, dict):
-        return FiscalMark(None, None, None)
+        return FiscalMark(column_type, None, None)
     qr = payload.get("qr")
     if not isinstance(qr, dict):
         qr = {}
     digest = payload.get("file_sha256")
-    # The QR type wins. An OCR credit note stores document_type beside it.
-    document_type = _code(qr.get("document_type")) or _code(payload.get("document_type"))
+    hinted = _code(qr.get("document_type")) or _code(payload.get("document_type"))
     return FiscalMark(
-        document_type=document_type,
+        document_type=column_type or hinted,
         fiscal_status=_code(qr.get("fiscal_status")),
         file_sha256=digest if isinstance(digest, str) and digest else None,
     )
@@ -133,6 +134,16 @@ def _signed(document, mark: FiscalMark) -> Counted:
     return Counted(document=document, net=net, vat=vat, gross=gross)
 
 
+def _amounts_count(document) -> bool:
+    """A complete triple that does not add up is left out of both IVA totals."""
+    net = getattr(document, "net_amount", None)
+    vat = getattr(document, "vat_amount", None)
+    gross = getattr(document, "gross_amount", None)
+    if net is None or vat is None or gross is None:
+        return True
+    return abs((Decimal(net) + Decimal(vat)) - Decimal(gross)) <= _CENT
+
+
 def _in_period(document, period_ids: set, period_tokens: set) -> bool:
     ident = getattr(document, "id", None)
     return id(document) in period_tokens or (ident is not None and ident in period_ids)
@@ -184,7 +195,7 @@ def contributions(documents, library=None) -> list[Counted]:
     rows = [
         _signed(document, mark)
         for document, mark in list(chosen.values()) + loose
-        if _in_period(document, period_ids, period_tokens)
+        if _in_period(document, period_ids, period_tokens) and _amounts_count(document)
     ]
     rows.sort(key=lambda row: _when(row.document))
     return rows

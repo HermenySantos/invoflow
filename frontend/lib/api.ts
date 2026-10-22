@@ -316,6 +316,7 @@ export interface Document {
   vendor_name: string | null;
   vendor_nif: string | null;
   invoice_number: string | null;
+  document_type: string | null;
   document_date: string | null;
   net_amount: string | null;
   vat_amount: string | null;

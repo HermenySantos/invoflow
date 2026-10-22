@@ -27,6 +27,7 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    AMOUNT_MISMATCH_DETAIL,
     amounts_are_consistent,
 )
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
@@ -143,6 +144,7 @@ def build_document_response(
         vendor_name=document.vendor_name,
         vendor_nif=document.vendor_nif,
         invoice_number=document.invoice_number,
+        document_type=document.document_type,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -433,21 +435,17 @@ async def update_document(
     try:
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
-        # Omitted amount fields stay as stored. A single-field correction is
-        # not a complete triple: the other two still describe the previous
-        # total. When two or three are sent, the missing one is filled from
-        # the row and net + IVA must match gross.
-        sent_amounts = [
-            field for field in ("net_amount", "vat_amount", "gross_amount") if field in update_data
-        ]
-        if len(sent_amounts) >= 2:
+        # Mid-review edits may leave net, IVA and gross inconsistent. Moving
+        # the row to a counted status re-checks the merged triple.
+        new_status = update_data.get("status")
+        if new_status in ("ready", "accountant_review"):
             merged_net = update_data.get("net_amount", document.net_amount)
             merged_vat = update_data.get("vat_amount", document.vat_amount)
             merged_gross = update_data.get("gross_amount", document.gross_amount)
             if not amounts_are_consistent(merged_net, merged_vat, merged_gross):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="net + IVA must match gross",
+                    detail=AMOUNT_MISMATCH_DETAIL,
                 )
         before_state = {field: getattr(document, field, None) for field in update_data}
 

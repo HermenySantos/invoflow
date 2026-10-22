@@ -61,14 +61,19 @@ _DUE_LABEL = re.compile(
 _LETTERHEAD = re.compile(
     r"^[A-ZÀ-Ý][\wÀ-ÿ.'’\- ]{1,40},\s*\d{1,2}\s+de\s+",
 )
-# A credit note is the document's own title, not a mention in the body.
-_CREDIT_TITLE = re.compile(r"^\s*nota\s+de\s+cr[eé]dito\b", re.IGNORECASE)
-_CREDIT_NUMBER = re.compile(
-    r"(?<![A-Za-z])NC(?![A-Za-z])[:\s#º°]+(?=\S*\d)[A-Z0-9]",
+# A heading, not a "Nota de crédito:" field label.
+_CREDIT_TITLE = re.compile(r"^\s*nota\s+de\s+cr[eé]dito\b(?!\s*:)", re.IGNORECASE)
+_NC_PHRASE = re.compile(r"nota\s+de\s+cr[eé]dito", re.IGNORECASE)
+# The NC after these words belongs to another document.
+_CITATION = re.compile(
+    r"\breferente\b|\bref\.|\banula\b|\bregulariza\b|\brelativa\s+[aà]\b|\bcorrige\b",
     re.IGNORECASE,
 )
-_CITATION = re.compile(r"\breferente\b|\boriginal\b", re.IGNORECASE)
-_HEADER_LINES = 8
+_FIELD_LINE = re.compile(
+    r"^\s*(?:cliente|fornecedor|nome|morada|nif|nipc|contribuinte|email|"
+    r"telefone|tel|data|vencimento|nota\s+de\s+cr[eé]dito)\s*:",
+    re.IGNORECASE,
+)
 DISCOUNT = re.compile(r"\b(?:desconto|discount|abatimento)\b", re.IGNORECASE)
 # Series codes stay on the number ("FT A/12"). Words such as Invoice do not.
 _SERIES_CODES = {"FT", "FR", "FS", "NC", "ND"}
@@ -230,26 +235,72 @@ def _looks_like_nif(nif: str) -> bool:
     return (0 if check >= 10 else check) == int(nif[8])
 
 
-def _header_text(text: str) -> str:
-    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    return "\n".join(lines[:_HEADER_LINES])
+def _own_prefix(line: str) -> str:
+    """Text that can identify this document. A citation tail and a field line cannot."""
+    if not line or _FIELD_LINE.match(line):
+        return ""
+    cited = _CITATION.search(line)
+    if cited is None:
+        return line
+    return line[: cited.start()].strip()
+
+
+def _line_has_nc_signal(fragment: str) -> bool:
+    if not fragment:
+        return False
+    if _NC_PHRASE.search(fragment):
+        return True
+    return any(match.group("series").upper() in {"NC", "ND"} for match in INVOICE_NO.finditer(fragment))
+
+
+@dataclass(frozen=True)
+class _DocumentIdentity:
+    """OCR type is a suggestion. Only the document's own title or number sets NC."""
+
+    credit: bool
+    invoice_number: Optional[str]
+    # An NC mention on an FT, or both an own NC and an own FT number.
+    conflict: bool
+
+
+def _classify_document(text: str) -> _DocumentIdentity:
+    own_lines: list[str] = []
+    mention = False
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        own = _own_prefix(line)
+        if own:
+            own_lines.append(own)
+        cited = _CITATION.search(line)
+        tail = line[cited.start() :] if cited else ""
+        if _FIELD_LINE.match(line) and _line_has_nc_signal(line):
+            mention = True
+        elif tail and _line_has_nc_signal(tail):
+            mention = True
+
+    own_text = "\n".join(own_lines)
+    own_nc = any(_CREDIT_TITLE.match(line) for line in own_lines)
+    own_ft = False
+    for match in INVOICE_NO.finditer(own_text):
+        series = match.group("series").upper()
+        if series in {"NC", "ND"}:
+            own_nc = True
+        elif series in {"FT", "FR", "FS"}:
+            own_ft = True
+
+    credit = own_nc
+    invoice_number = _select_invoice_number(own_text, credit=credit)
+    return _DocumentIdentity(
+        credit=credit,
+        invoice_number=invoice_number,
+        conflict=mention or (credit and own_ft),
+    )
 
 
 def _is_credit_note(text: str) -> bool:
-    """True when the header is a nota de crédito or its own NC number.
-
-    A sentence in the body ('emitimos nota de credito') or a product name
-    ('Plano nc') is not the document type.
-    """
-    header = _header_text(text)
-    if not header:
-        return False
-    for line in header.splitlines():
-        if _CITATION.search(line):
-            continue
-        if _CREDIT_TITLE.search(line) or _CREDIT_NUMBER.search(line):
-            return True
-    return False
+    return _classify_document(text).credit
 
 
 def _amount_from_match(line: str, match: re.Match[str], *, credit: bool = False) -> Optional[Decimal]:
@@ -524,12 +575,13 @@ def extract_fields(text: str) -> ExtractedFields:
         return result
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    credit = _is_credit_note(text)
+    identity = _classify_document(text)
+    credit = identity.credit
     result.vendor_name = _guess_vendor(lines)
     result.vendor_nif = extract_portuguese_nif(text)
     result.document_date, ambiguous_date = _choose_date(text)
 
-    result.invoice_number = _select_invoice_number(text, credit=credit)
+    result.invoice_number = identity.invoice_number
     if credit:
         result.document_type = "NC"
 
@@ -578,6 +630,13 @@ def extract_fields(text: str) -> ExtractedFields:
         guessed = (abs(result.vat_amount) / abs(result.net_amount) * 100).quantize(Decimal("0.01"))
         result.vat_rate = _nearest_vat_rate(guessed) or guessed
 
+    amounts_conflict = (
+        result.net_amount is not None
+        and result.vat_amount is not None
+        and result.gross_amount is not None
+        and abs(result.net_amount + result.vat_amount - result.gross_amount) > Decimal("0.01")
+    )
+
     filled = sum(
         1
         for value in (
@@ -597,7 +656,9 @@ def extract_fields(text: str) -> ExtractedFields:
         or not result.gross_amount
         or not result.document_date
         or credit
+        or identity.conflict
         or printed_minus
+        or amounts_conflict
     )
     return result
 

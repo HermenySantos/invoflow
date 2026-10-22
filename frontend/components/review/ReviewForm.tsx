@@ -9,6 +9,7 @@ export interface ReviewFormData {
   vendor_name: string;
   vendor_nif: string;
   invoice_number: string;
+  document_type: string;
   document_date: string;
   net_amount: string;
   vat_amount: string;
@@ -44,6 +45,7 @@ export function ReviewForm({
     vendor_name: document.vendor_name || '',
     vendor_nif: document.vendor_nif || '',
     invoice_number: document.invoice_number || '',
+    document_type: document.document_type || '',
     document_date: document.document_date || '',
     net_amount: document.net_amount || '',
     vat_amount: document.vat_amount || '',
@@ -203,6 +205,28 @@ export function ReviewForm({
                 {errors.invoice_number}
               </p>
             )}
+          </div>
+
+          <div>
+            <label htmlFor="document-type" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+              Tipo de documento
+              {isFieldEdited('document_type') && (
+                <span className="text-xs text-primary-600 font-normal">(edited)</span>
+              )}
+            </label>
+            <select
+              id="document-type"
+              value={formData.document_type}
+              onChange={(e) => handleChange('document_type', e.target.value)}
+              className={getFieldClass('document_type')}
+            >
+              <option value="">Por classificar</option>
+              <option value="FT">Fatura</option>
+              <option value="NC">Nota de crédito</option>
+              {formData.document_type && !['FT', 'NC', ''].includes(formData.document_type) && (
+                <option value={formData.document_type}>{formData.document_type}</option>
+              )}
+            </select>
           </div>
 
           <div>

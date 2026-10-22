@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import shutil
+import uuid
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -26,9 +27,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.startup import ConfigurationError, validate_configuration
 from app.models.document import Document
-from app.schemas.document import DocumentUpdate
+from app.models.user import User
+from app.schemas.document import AMOUNT_MISMATCH_DETAIL, DocumentUpdate
 from app.services.categorization import deductible_vat_split
-from app.services.iva_adjust import contributions, credit_note_warnings
+from app.services.iva_adjust import _signed, contributions, credit_note_warnings, fiscal_mark
+from app.services.legacy_amounts import repair_legacy_negative_amounts
 from app.services.ocr import (
     OCRService,
     TesseractProbeError,
@@ -266,9 +269,12 @@ def test_negative_fields_do_not_cancel_an_nc_type():
         document_date=date(2026, 4, 15),
         vendor_nif=SYNTHETIC_NIF,
     )
-    assert contributions([document])[0].vat == Decimal("-1.87")
+    # The type still applies the minus after abs. The triple does not add up
+    # (8.13 + 1.87 != -10), so the counted totals leave the row out.
+    assert _signed(document, fiscal_mark(document)).vat == Decimal("-1.87")
+    assert contributions([document]) == []
     confirmed, pending = deductible_vat_split([document])
-    assert confirmed == Decimal("-1.87")
+    assert confirmed == Decimal("0.00")
     assert pending == Decimal("0.00")
 
 
@@ -297,7 +303,7 @@ def test_mixed_signs_and_inconsistent_amounts_are_rejected():
         DocumentUpdate(gross_amount=Decimal("10.00"), vat_amount=Decimal("-1.87"), net_amount=Decimal("8.13"))
     with pytest.raises(ValidationError):
         DocumentUpdate(gross_amount=Decimal("-10.00"))
-    with pytest.raises(ValidationError, match="net \\+ IVA must match gross"):
+    with pytest.raises(ValidationError, match="O valor líquido mais o IVA tem de ser igual ao total"):
         DocumentUpdate(
             gross_amount=Decimal("12.30"),
             vat_amount=Decimal("1.00"),
@@ -375,7 +381,13 @@ def test_review_patch_rejects_a_negative_credit_note(client: TestClient, db: Ses
         headers=mock_user_headers,
         json={"net_amount": "1.00", "vat_amount": "1.00"},
     )
-    assert paired.status_code == 422
+    assert paired.status_code == 200
+    db.refresh(stored)
+    assert stored.status == "ready"
+    assert stored.net_amount == Decimal("1.00")
+    confirmed, pending = deductible_vat_split([stored])
+    assert confirmed == Decimal("0.00")
+    assert pending == Decimal("0.00")
 
 
 def test_series_prefix_not_doubled():
@@ -480,3 +492,256 @@ def test_auto_fallback_marks_health_degraded_in_production(client: TestClient, m
     assert body["status"] == "degraded"
     assert body["ocr_backend"] == "mock"
     assert body["tesseract"] is False
+
+
+def _complete_ft(*extra: str) -> str:
+    return "\n".join(
+        [
+            "Ana Exemplo",
+            f"NIF: {SYNTHETIC_NIF}",
+            "Data: 15/06/2026",
+            "Data de emissão: 15/06/2026",
+            "Fatura FT A/12",
+            "IVA 23% 2,30",
+            "Total 12,30",
+            *extra,
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Regulariza NC Q2/7",
+        "Anula a NC Q2/7",
+        "Cliente: Plano nc 2026",
+        "Nota de credito: NC Q2/7",
+    ],
+)
+def test_citation_and_field_lines_do_not_type_the_document(line: str):
+    fields = extract_fields(_complete_ft(line))
+    assert fields.document_type is None
+    assert fields.invoice_number == "FT A/12"
+    assert fields.gross_amount == Decimal("12.30")
+    assert fields.needs_review is True
+
+
+def test_title_that_cites_an_invoice_keeps_its_own_number():
+    fields = extract_fields(
+        "Ana Exemplo\n"
+        "Nota de crédito NC Q2/7 referente à fatura FT A/12\n"
+        f"NIF: {SYNTHETIC_NIF}\n"
+        "Data: 15/06/2026\n"
+        "Data de emissão: 15/06/2026\n"
+        "IVA 23% 1,87\n"
+        "Total 10,00"
+    )
+    assert fields.document_type == "NC"
+    assert fields.invoice_number == "NC Q2/7"
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.needs_review is True
+
+
+def test_credit_title_below_the_letterhead_is_still_nc():
+    letterhead = "\n".join(f"Linha de cabecalho {index}" for index in range(1, 9))
+    fields = extract_fields(
+        f"{letterhead}\n"
+        "Nota de crédito\n"
+        f"NIF: {SYNTHETIC_NIF}\n"
+        "Data: 15/06/2026\n"
+        "Data de emissão: 15/06/2026\n"
+        "NC Q2/7\n"
+        "IVA 23% 1,87\n"
+        "Total 10,00"
+    )
+    assert fields.document_type == "NC"
+    assert fields.invoice_number == "NC Q2/7"
+    assert fields.needs_review is True
+
+
+def test_broken_base_iva_total_is_not_auto_confirmed():
+    fields = extract_fields(
+        "Ana Exemplo\n"
+        f"NIF: {SYNTHETIC_NIF}\n"
+        "Data: 15/06/2026\n"
+        "Data de emissão: 15/06/2026\n"
+        "Base 10,00\n"
+        "IVA 2,30\n"
+        "Total 15,00"
+    )
+    assert (fields.net_amount, fields.vat_amount, fields.gross_amount) == (
+        Decimal("10.00"),
+        Decimal("2.30"),
+        Decimal("15.00"),
+    )
+    assert fields.document_type is None
+    assert fields.needs_review is True
+
+
+def _stored_receipt(db: Session, **overrides) -> Document:
+    """A row owned by the mock user, without spending the upload rate limit."""
+    user = User(clerk_id="test-user-001", email="test@example.com")
+    db.add(user)
+    db.commit()
+    fields = dict(
+        user_id=user.id,
+        status="needs_review",
+        storage_key=f"{user.clerk_id}/recibo.jpg",
+        original_filename="recibo.jpg",
+        mime_type="image/jpeg",
+        vendor_name="Ana Exemplo",
+        vendor_nif=SYNTHETIC_NIF,
+        expense_category="utilities",
+        net_amount=Decimal("10.00"),
+        vat_amount=Decimal("2.30"),
+        gross_amount=Decimal("12.30"),
+    )
+    fields.update(overrides)
+    document = Document(**fields)
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def test_iva_one_field_patch_then_ready_is_rejected(
+    client: TestClient, db: Session, mock_user_headers: dict
+):
+    stored = _stored_receipt(db)
+    document_id = stored.id
+
+    partial = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"vat_amount": "9.99"},
+    )
+    assert partial.status_code == 200
+    assert partial.json()["document_type"] is None
+    db.refresh(stored)
+    assert stored.vat_amount == Decimal("9.99")
+    assert stored.status == "needs_review"
+    confirmed, pending = deductible_vat_split([stored])
+    assert confirmed == Decimal("0.00")
+    assert pending == Decimal("0.00")
+
+    for next_status in ("ready", "accountant_review"):
+        rejected = client.patch(
+            f"/api/documents/{document_id}",
+            headers=mock_user_headers,
+            json={"status": next_status},
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"] == AMOUNT_MISMATCH_DETAIL
+        db.refresh(stored)
+        assert stored.status == "needs_review"
+
+
+def test_receipt_gross_correction_saves_when_net_is_sent(
+    client: TestClient, db: Session, mock_user_headers: dict
+):
+    stored = _stored_receipt(db)
+    document_id = stored.id
+
+    missing_net = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"gross_amount": "15.00", "vat_amount": "2.30", "status": "ready"},
+    )
+    assert missing_net.status_code == 422
+    assert missing_net.json()["detail"] == AMOUNT_MISMATCH_DETAIL
+    db.refresh(stored)
+    assert stored.gross_amount == Decimal("12.30")
+    assert stored.status == "needs_review"
+
+    saved = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={
+            "gross_amount": "15.00",
+            "vat_amount": "2.30",
+            "net_amount": "12.70",
+            "status": "ready",
+        },
+    )
+    assert saved.status_code == 200
+    body = saved.json()
+    assert Decimal(str(body["gross_amount"])) == Decimal("15.00")
+    assert Decimal(str(body["vat_amount"])) == Decimal("2.30")
+    assert Decimal(str(body["net_amount"])) == Decimal("12.70")
+    assert body["status"] == "ready"
+    db.refresh(stored)
+    confirmed, pending = deductible_vat_split([stored])
+    assert confirmed == Decimal("2.30")
+    assert pending == Decimal("0.00")
+
+
+def test_reviewer_type_change_reruns_netting(
+    client: TestClient, db: Session, mock_user_headers: dict
+):
+    stored = _stored_receipt(
+        db,
+        status="ready",
+        document_type="NC",
+        net_amount=Decimal("8.13"),
+        vat_amount=Decimal("1.87"),
+        gross_amount=Decimal("10.00"),
+        ocr_raw_response=json.dumps({"qr": {"document_type": "NC", "fiscal_status": "N"}}),
+    )
+    document_id = stored.id
+    fetched = client.get(f"/api/documents/{document_id}", headers=mock_user_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["document_type"] == "NC"
+    assert deductible_vat_split([stored])[0] == Decimal("-1.87")
+
+    changed = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"document_type": "FT"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["document_type"] == "FT"
+    db.refresh(stored)
+    assert stored.document_type == "FT"
+    assert deductible_vat_split([stored])[0] == Decimal("1.87")
+
+    rejected = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"document_type": "nota"},
+    )
+    assert rejected.status_code == 422
+    db.refresh(stored)
+    assert stored.document_type == "FT"
+
+
+def test_legacy_negative_amounts_become_absolute_credit_notes(db: Session):
+    user = User(clerk_id=f"legacy-{uuid.uuid4().hex[:8]}", email="")
+    db.add(user)
+    db.commit()
+    document = Document(
+        user_id=user.id,
+        status="ready",
+        storage_key=f"{user.clerk_id}/old.jpg",
+        original_filename="old.jpg",
+        mime_type="image/jpeg",
+        vendor_nif=SYNTHETIC_NIF,
+        expense_category="utilities",
+        document_date=date(2026, 4, 15),
+        net_amount=Decimal("-8.13"),
+        vat_amount=Decimal("1.87"),
+        gross_amount=Decimal("-10.00"),
+    )
+    db.add(document)
+    db.commit()
+
+    repair_legacy_negative_amounts(db.connection())
+    db.commit()
+    repair_legacy_negative_amounts(db.connection())
+    db.commit()
+    db.refresh(document)
+
+    assert document.document_type == "NC"
+    assert document.net_amount == Decimal("8.13")
+    assert document.vat_amount == Decimal("1.87")
+    assert document.gross_amount == Decimal("10.00")
+    assert contributions([document])[0].vat == Decimal("-1.87")

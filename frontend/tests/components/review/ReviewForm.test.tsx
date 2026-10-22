@@ -14,6 +14,7 @@ const mockDocument: Document = {
   vendor_name: 'Test Vendor',
   vendor_nif: '123456789',
   invoice_number: 'INV-001',
+  document_type: null,
   document_date: '2024-01-15',
   net_amount: '81.30',
   vat_amount: '18.70',
@@ -129,6 +130,20 @@ describe('ReviewForm', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ vendor_nif: '123456789' })
     );
+  });
+
+  it('labels a credit note and lets the reviewer change it to a fatura', () => {
+    const onChange = vi.fn();
+    render(
+      <ReviewForm document={{ ...mockDocument, document_type: 'NC' }} onChange={onChange} />
+    );
+
+    const select = screen.getByLabelText('Tipo de documento');
+    expect(select).toHaveValue('NC');
+    expect(screen.getByRole('option', { name: 'Nota de crédito' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Fatura' })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'FT' } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'FT' }));
   });
 
   it('shows edited indicator when field is modified', () => {

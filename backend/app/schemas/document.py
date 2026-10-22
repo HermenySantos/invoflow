@@ -26,6 +26,8 @@ class DocumentCreate(BaseModel):
 
 
 _AMOUNT_TOLERANCE = Decimal("0.01")
+AMOUNT_MISMATCH_DETAIL = "O valor líquido mais o IVA tem de ser igual ao total."
+DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 
 
 def amounts_are_consistent(net: Optional[Decimal], vat: Optional[Decimal], gross: Optional[Decimal]) -> bool:
@@ -43,6 +45,7 @@ class DocumentUpdate(BaseModel):
     vendor_name: Optional[str] = Field(None, max_length=255)
     vendor_nif: Optional[str] = Field(None, max_length=20)
     invoice_number: Optional[str] = Field(None, max_length=100)
+    document_type: Optional[str] = Field(None, pattern=r"^(FT|FR|FS|ND|NC)$")
     document_date: Optional[date] = None
     net_amount: Optional[Decimal] = Field(None, ge=0)
     vat_amount: Optional[Decimal] = Field(None, ge=0)
@@ -57,8 +60,10 @@ class DocumentUpdate(BaseModel):
 
     @model_validator(mode="after")
     def amounts_match(self) -> "DocumentUpdate":
+        # A partial edit may leave the stored row inconsistent. Sending all
+        # three amounts that do not add up is a complete, rejected triple.
         if not amounts_are_consistent(self.net_amount, self.vat_amount, self.gross_amount):
-            raise ValueError("net + IVA must match gross")
+            raise ValueError(AMOUNT_MISMATCH_DETAIL)
         return self
 
 
@@ -88,6 +93,7 @@ class DocumentResponse(BaseModel):
     vendor_name: Optional[str]
     vendor_nif: Optional[str]
     invoice_number: Optional[str]
+    document_type: Optional[str] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]

@@ -61,6 +61,7 @@ class OCRResult:
     vendor_name: Optional[str] = None
     vendor_nif: Optional[str] = None
     invoice_number: Optional[str] = None
+    document_type: Optional[str] = None
     document_date: Optional[date] = None
     net_amount: Optional[Decimal] = None
     vat_amount: Optional[Decimal] = None
@@ -722,6 +723,8 @@ def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
     result.vendor_nif = qr.vendor_nif
     result.document_date = qr.document_date or result.document_date
     result.invoice_number = qr.invoice_number or result.invoice_number
+    if qr.document_type:
+        result.document_type = qr.document_type
     result.net_amount = qr.net_amount if qr.net_amount is not None else result.net_amount
     result.vat_amount = qr.vat_amount if qr.vat_amount is not None else result.vat_amount
     result.gross_amount = qr.gross_amount
@@ -758,6 +761,7 @@ def _fields_to_result(fields: ExtractedFields, text: str, backend: str) -> OCRRe
         vendor_name=fields.vendor_name,
         vendor_nif=fields.vendor_nif,
         invoice_number=fields.invoice_number,
+        document_type=fields.document_type,
         document_date=fields.document_date,
         net_amount=fields.net_amount,
         vat_amount=fields.vat_amount,
@@ -810,6 +814,7 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
         "vat_amount",
         "gross_amount",
         "vat_rate",
+        "document_type",
     ):
         value = getattr(overlay, field) or getattr(base, field)
         setattr(merged, field, value)
@@ -825,7 +830,25 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
         if value is not None
     )
     merged.confidence = min(95.0, max(base.confidence, 20.0 * filled))
-    merged.needs_review = merged.confidence < 85 or not merged.vendor_name or not merged.gross_amount
+    amounts_conflict = (
+        merged.net_amount is not None
+        and merged.vat_amount is not None
+        and merged.gross_amount is not None
+        and abs(merged.net_amount + merged.vat_amount - merged.gross_amount) > Decimal("0.01")
+    )
+    # A complete reading that already needed a person (NC, a conflicting
+    # signal, or a broken sum) stays a suggestion after an overlay fills gaps.
+    base_was_complete = bool(
+        base.confidence >= 85 and base.vendor_name and base.gross_amount and base.document_date
+    )
+    merged.needs_review = (
+        merged.confidence < 85
+        or not merged.vendor_name
+        or not merged.gross_amount
+        or (base.needs_review and base_was_complete)
+        or merged.document_type == "NC"
+        or amounts_conflict
+    )
     return merged
 
 
