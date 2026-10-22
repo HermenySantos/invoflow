@@ -38,8 +38,12 @@ def _money(value) -> Decimal:
 def _code(value) -> Optional[str]:
     if not isinstance(value, str):
         return None
-    text = value.strip().upper()
-    return text or None
+    text = value.strip()
+    if not text:
+        return None
+    if text.lower() == "unclassified":
+        return "unclassified"
+    return text.upper()
 
 
 def fiscal_mark(document) -> FiscalMark:
@@ -134,12 +138,25 @@ def _signed(document, mark: FiscalMark) -> Counted:
     return Counted(document=document, net=net, vat=vat, gross=gross)
 
 
+def exclusion_reason(document) -> Optional[str]:
+    """Why a row is left out of both IVA totals, or None when it can count."""
+    if fiscal_mark(document).document_type == "unclassified":
+        return "por classificar"
+    if not _amounts_count(document):
+        return "valores inconsistentes"
+    return None
+
+
 def _amounts_count(document) -> bool:
     """A complete triple that does not add up is left out of both IVA totals."""
     net = getattr(document, "net_amount", None)
     vat = getattr(document, "vat_amount", None)
     gross = getattr(document, "gross_amount", None)
-    if net is None or vat is None or gross is None:
+    if net is None:
+        if vat is not None and gross is not None and Decimal(vat) > Decimal(gross):
+            return False
+        return True
+    if vat is None or gross is None:
         return True
     return abs((Decimal(net) + Decimal(vat)) - Decimal(gross)) <= _CENT
 
@@ -195,7 +212,11 @@ def contributions(documents, library=None) -> list[Counted]:
     rows = [
         _signed(document, mark)
         for document, mark in list(chosen.values()) + loose
-        if _in_period(document, period_ids, period_tokens) and _amounts_count(document)
+        if (
+            _in_period(document, period_ids, period_tokens)
+            and _amounts_count(document)
+            and mark.document_type != "unclassified"
+        )
     ]
     rows.sort(key=lambda row: _when(row.document))
     return rows

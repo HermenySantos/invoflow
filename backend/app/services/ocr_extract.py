@@ -61,17 +61,26 @@ _DUE_LABEL = re.compile(
 _LETTERHEAD = re.compile(
     r"^[A-ZÀ-Ý][\wÀ-ÿ.'’\- ]{1,40},\s*\d{1,2}\s+de\s+",
 )
-# A heading, not a "Nota de crédito:" field label.
-_CREDIT_TITLE = re.compile(r"^\s*nota\s+de\s+cr[eé]dito\b(?!\s*:)", re.IGNORECASE)
-_NC_PHRASE = re.compile(r"nota\s+de\s+cr[eé]dito", re.IGNORECASE)
-# The NC after these words belongs to another document.
-_CITATION = re.compile(
-    r"\breferente\b|\bref\.|\banula\b|\bregulariza\b|\brelativa\s+[aà]\b|\bcorrige\b",
+# The first heading that names the document. A body line is not a second title.
+_TITLE_LINE = re.compile(
+    r"^\s*(?:fatura(?:\s+simplificada|[\s-]*recibo)?|factura|nota\s+de|FT|FR|FS|NC|ND)\b",
     re.IGNORECASE,
 )
-_FIELD_LINE = re.compile(
-    r"^\s*(?:cliente|fornecedor|nome|morada|nif|nipc|contribuinte|email|"
-    r"telefone|tel|data|vencimento|nota\s+de\s+cr[eé]dito)\s*:",
+_FATURA_SIMPLIFICADA = re.compile(r"^\s*fatura\s+simplificada\b", re.IGNORECASE)
+_FATURA_RECIBO = re.compile(r"^\s*fatura[\s-]*recibo\b", re.IGNORECASE)
+_FATURA = re.compile(r"^\s*fatura\b", re.IGNORECASE)
+# Credit or debit anywhere, including a title split over two lines and "cred1to".
+# An exact "NC A/5" counts. A bare "nc" token does not.
+_CREDIT_DEBIT_SIGNAL = re.compile(
+    r"nota\s+de\s+cr[eé]d[i1]to"
+    r"|nota\s+de\s+d[eé]b[i1]to"
+    r"|cr[eé]d1to"
+    r"|d[eé]b1to"
+    r"|(?<![A-Za-z0-9])(?:NC|ND)\s+[A-Z0-9][A-Z0-9.\-]*\/[A-Z0-9]",
+    re.IGNORECASE,
+)
+_NOTA_TITLE = re.compile(
+    r"nota\s+de\s+(?:cr[eé]d[i1]to|d[eé]b[i1]to)",
     re.IGNORECASE,
 )
 DISCOUNT = re.compile(r"\b(?:desconto|discount|abatimento)\b", re.IGNORECASE)
@@ -235,72 +244,67 @@ def _looks_like_nif(nif: str) -> bool:
     return (0 if check >= 10 else check) == int(nif[8])
 
 
-def _own_prefix(line: str) -> str:
-    """Text that can identify this document. A citation tail and a field line cannot."""
-    if not line or _FIELD_LINE.match(line):
-        return ""
-    cited = _CITATION.search(line)
-    if cited is None:
-        return line
-    return line[: cited.start()].strip()
+def _first_title_line(lines: list[str]) -> str:
+    """The top title or number line. Later lines cannot replace it."""
+    for line in lines:
+        if _TITLE_LINE.match(line) or INVOICE_NO.search(line):
+            return line
+    return ""
 
 
-def _line_has_nc_signal(fragment: str) -> bool:
-    if not fragment:
-        return False
-    if _NC_PHRASE.search(fragment):
-        return True
-    return any(match.group("series").upper() in {"NC", "ND"} for match in INVOICE_NO.finditer(fragment))
+def _title_series(line: str) -> Optional[str]:
+    """FT, FR or FS when the title itself says so. Never NC or ND."""
+    if _FATURA_SIMPLIFICADA.match(line):
+        return "FS"
+    if _FATURA_RECIBO.match(line):
+        return "FR"
+    if _FATURA.match(line):
+        return "FT"
+    return None
+
+
+def _invoice_from_title(line: str) -> Optional[str]:
+    """Number on the title line only. A bare nc/nd token is not a number."""
+    if not line:
+        return None
+    nota = bool(_NOTA_TITLE.search(line))
+    kept: list[re.Match[str]] = []
+    for match in INVOICE_NO.finditer(line):
+        series = match.group("series").upper()
+        number = match.group("number")
+        if series in {"NC", "ND"} and "/" not in number and not nota:
+            continue
+        kept.append(match)
+    if not kept:
+        return None
+
+    return _invoice_number_from_match(min(kept, key=lambda match: match.start()))
+
+
+def _credit_or_debit_signal(text: str) -> bool:
+    return bool(_CREDIT_DEBIT_SIGNAL.search(text or ""))
 
 
 @dataclass(frozen=True)
 class _DocumentIdentity:
-    """OCR type is a suggestion. Only the document's own title or number sets NC."""
+    """OCR never decides NC or ND. Only a clear fatura title may set FT/FR/FS."""
 
-    credit: bool
     invoice_number: Optional[str]
-    # An NC mention on an FT, or both an own NC and an own FT number.
-    conflict: bool
+    document_type: str
+    signal: bool
 
 
 def _classify_document(text: str) -> _DocumentIdentity:
-    own_lines: list[str] = []
-    mention = False
-    for raw in (text or "").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        own = _own_prefix(line)
-        if own:
-            own_lines.append(own)
-        cited = _CITATION.search(line)
-        tail = line[cited.start() :] if cited else ""
-        if _FIELD_LINE.match(line) and _line_has_nc_signal(line):
-            mention = True
-        elif tail and _line_has_nc_signal(tail):
-            mention = True
-
-    own_text = "\n".join(own_lines)
-    own_nc = any(_CREDIT_TITLE.match(line) for line in own_lines)
-    own_ft = False
-    for match in INVOICE_NO.finditer(own_text):
-        series = match.group("series").upper()
-        if series in {"NC", "ND"}:
-            own_nc = True
-        elif series in {"FT", "FR", "FS"}:
-            own_ft = True
-
-    credit = own_nc
-    invoice_number = _select_invoice_number(own_text, credit=credit)
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    title = _first_title_line(lines)
+    signal = _credit_or_debit_signal(text or "")
+    hinted = _title_series(title)
+    document_type = hinted if hinted and not signal else "unclassified"
     return _DocumentIdentity(
-        credit=credit,
-        invoice_number=invoice_number,
-        conflict=mention or (credit and own_ft),
+        invoice_number=_invoice_from_title(title),
+        document_type=document_type,
+        signal=signal,
     )
-
-
-def _is_credit_note(text: str) -> bool:
-    return _classify_document(text).credit
 
 
 def _amount_from_match(line: str, match: re.Match[str], *, credit: bool = False) -> Optional[Decimal]:
@@ -423,25 +427,6 @@ def _invoice_number_from_match(match: re.Match[str]) -> str:
     if series in _SERIES_CODES and not number.upper().startswith(series):
         return f"{series} {number}"[:100]
     return number[:100]
-
-
-def _select_invoice_number(text: str, *, credit: bool) -> Optional[str]:
-    matches = list(INVOICE_NO.finditer(text))
-    if not matches:
-        return None
-    if credit:
-        def rank(match: re.Match[str]) -> tuple[int, int]:
-            series = match.group("series").upper()
-            # The credit note's own number wins over the invoice it cites.
-            prefer_note = 0 if series in {"NC", "ND"} else 1
-            return (prefer_note, match.start())
-
-        return _invoice_number_from_match(min(matches, key=rank))
-    # An invoice that cites a credit note keeps the FT number.
-    own = [match for match in matches if match.group("series").upper() not in {"NC", "ND"}]
-    if not own:
-        return None
-    return _invoice_number_from_match(min(own, key=lambda match: match.start()))
 
 
 def _month_number(token: str) -> Optional[int]:
@@ -576,14 +561,13 @@ def extract_fields(text: str) -> ExtractedFields:
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     identity = _classify_document(text)
-    credit = identity.credit
+    credit = False
     result.vendor_name = _guess_vendor(lines)
     result.vendor_nif = extract_portuguese_nif(text)
     result.document_date, ambiguous_date = _choose_date(text)
 
     result.invoice_number = identity.invoice_number
-    if credit:
-        result.document_type = "NC"
+    result.document_type = identity.document_type
 
     vat_rate, vat_amount, vat_net, breakdown = _extract_vat(lines, credit=credit)
     result.vat_rate = vat_rate
@@ -655,8 +639,8 @@ def extract_fields(text: str) -> ExtractedFields:
         or not result.vendor_name
         or not result.gross_amount
         or not result.document_date
-        or credit
-        or identity.conflict
+        or identity.signal
+        or identity.document_type == "unclassified"
         or printed_minus
         or amounts_conflict
     )

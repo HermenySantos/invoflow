@@ -74,6 +74,8 @@ jobs:
         run: |
           alembic upgrade head
           alembic check
+      - name: Migration 008 round-trips amounts on Postgres
+        run: python scripts/check_migration_008.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base

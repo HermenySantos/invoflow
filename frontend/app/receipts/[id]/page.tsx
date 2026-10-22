@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { documentTypeLabel, saveEditPayload } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, saveEditPayload } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -111,7 +111,7 @@ export default function ReceiptDetailPage() {
     document_date: '',
     gross_amount: '',
     vat_amount: '',
-    document_type: '',
+    document_type: 'unclassified',
   });
 
   // Category picker
@@ -136,7 +136,7 @@ export default function ReceiptDetailPage() {
         document_date: data.document_date || '',
         gross_amount: data.gross_amount || '',
         vat_amount: data.vat_amount || '',
-        document_type: data.document_type || '',
+        document_type: data.document_type || 'unclassified',
       });
     } catch (err) {
       setError('Não foi possível carregar o recibo.');
@@ -164,7 +164,7 @@ export default function ReceiptDetailPage() {
           document_date: data.document_date || '',
           gross_amount: data.gross_amount || '',
           vat_amount: data.vat_amount || '',
-          document_type: data.document_type || '',
+          document_type: data.document_type || 'unclassified',
         });
       } catch {
         // Next tick retries.
@@ -445,12 +445,10 @@ export default function ReceiptDetailPage() {
                     onChange={(e) => setEditData(d => ({ ...d, document_type: e.target.value }))}
                     className="input"
                   >
-                    <option value="">Por classificar</option>
-                    <option value="FT">Fatura</option>
-                    <option value="NC">Nota de crédito</option>
-                    {editData.document_type && !['FT', 'NC'].includes(editData.document_type) && (
-                      <option value={editData.document_type}>{editData.document_type}</option>
-                    )}
+                    <option value="unclassified">Por classificar</option>
+                    {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
                   </select>
                 </div>
 

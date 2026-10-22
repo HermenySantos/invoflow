@@ -718,6 +718,19 @@ def _invoice_qr(file_content: bytes, mime_type: str) -> Optional[InvoiceQR]:
     return read_invoice_qr_from_file(file_content, mime_type, _pdf_first_page_image)
 
 
+def _qr_net_agrees(net: Optional[Decimal], vat: Optional[Decimal], gross: Optional[Decimal]) -> bool:
+    """True when a QR without base amounts can still trust the OCR net."""
+    if net is None:
+        return vat is None or gross is None or vat <= gross
+    if gross is None:
+        return True
+    if net < 0 or net > gross:
+        return False
+    if vat is None:
+        return True
+    return vat <= gross and abs((net + vat) - gross) <= Decimal("0.01")
+
+
 def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
     """The AT QR's NIF, date, number and amounts replace what OCR read; OCR keeps the vendor name."""
     result.vendor_nif = qr.vendor_nif
@@ -725,15 +738,20 @@ def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
     result.invoice_number = qr.invoice_number or result.invoice_number
     if qr.document_type:
         result.document_type = qr.document_type
-    result.net_amount = qr.net_amount if qr.net_amount is not None else result.net_amount
+    qr_has_base = qr.net_amount is not None
+    ocr_net = result.net_amount
+    result.net_amount = qr.net_amount if qr_has_base else ocr_net
     result.vat_amount = qr.vat_amount if qr.vat_amount is not None else result.vat_amount
     result.gross_amount = qr.gross_amount
     result.vat_rate = qr.vat_rate
     result.error = None
     result.confidence = max(result.confidence, 95.0)
     # Everything but the vendor name came from the issuer, so only a missing
-    # name still needs a person.
+    # name still needs a person. A QR with no base leaves the OCR net in
+    # place, and that net has to agree with the QR total.
     result.needs_review = not result.vendor_name
+    if not qr_has_base and not _qr_net_agrees(result.net_amount, result.vat_amount, result.gross_amount):
+        result.needs_review = True
     if result.backend == "mock":
         result.needs_review = True
 
@@ -814,10 +832,11 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
         "vat_amount",
         "gross_amount",
         "vat_rate",
-        "document_type",
     ):
         value = getattr(overlay, field) or getattr(base, field)
         setattr(merged, field, value)
+    # Azure does not classify the document. The text rules, then the QR, do.
+    merged.document_type = base.document_type or "unclassified"
     filled = sum(
         1
         for value in (
@@ -846,7 +865,7 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
         or not merged.vendor_name
         or not merged.gross_amount
         or (base.needs_review and base_was_complete)
-        or merged.document_type == "NC"
+        or merged.document_type == "unclassified"
         or amounts_conflict
     )
     return merged

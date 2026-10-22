@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Document } from '@/lib/api';
+import { DOCUMENT_TYPE_OPTIONS } from '@/lib/reviewEdit';
 import { ConfidenceIndicator } from './ConfidenceBadge';
 import { AlertCircle, Calculator, Building2, FileText, Euro } from 'lucide-react';
 
@@ -45,7 +46,7 @@ export function ReviewForm({
     vendor_name: document.vendor_name || '',
     vendor_nif: document.vendor_nif || '',
     invoice_number: document.invoice_number || '',
-    document_type: document.document_type || '',
+    document_type: document.document_type || 'unclassified',
     document_date: document.document_date || '',
     net_amount: document.net_amount || '',
     vat_amount: document.vat_amount || '',
@@ -220,12 +221,10 @@ export function ReviewForm({
               onChange={(e) => handleChange('document_type', e.target.value)}
               className={getFieldClass('document_type')}
             >
-              <option value="">Por classificar</option>
-              <option value="FT">Fatura</option>
-              <option value="NC">Nota de crédito</option>
-              {formData.document_type && !['FT', 'NC', ''].includes(formData.document_type) && (
-                <option value={formData.document_type}>{formData.document_type}</option>
-              )}
+              <option value="unclassified">Por classificar</option>
+              {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </div>
 

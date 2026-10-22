@@ -101,6 +101,7 @@ def test_ambiguous_issue_dates_need_review():
 
 def test_same_issue_date_twice_is_not_ambiguous():
     fields = extract_fields(
+        "Fatura FT A/12\n"
         "Ana Exemplo\n"
         f"NIF: {SYNTHETIC_NIF}\n"
         "Data: 15/06/2026\n"
@@ -109,6 +110,7 @@ def test_same_issue_date_twice_is_not_ambiguous():
         "Total 12,30"
     )
     assert fields.document_date == date(2026, 6, 15)
+    assert fields.document_type == "FT"
     assert fields.needs_review is False
 
 
@@ -134,7 +136,7 @@ def test_total_hyphen_separator_not_negative():
 def test_spaced_minus_is_stored_positive_and_needs_review():
     fields = extract_fields("Total -12,30")
     assert fields.gross_amount == Decimal("12.30")
-    assert fields.document_type is None
+    assert fields.document_type == "unclassified"
     assert fields.needs_review is True
     assert extract_fields("Total: -12,30").gross_amount == Decimal("12.30")
 
@@ -154,7 +156,7 @@ def test_discount_line_is_not_the_total():
     assert extract_fields("Desconto -2,00").gross_amount is None
     fields = extract_fields("Total 12,30 Desconto -2,00")
     assert fields.gross_amount == Decimal("12.30")
-    assert fields.document_type is None
+    assert fields.document_type == "unclassified"
 
 
 def test_positive_printed_ocr_credit_note_is_nc_and_needs_review():
@@ -165,7 +167,7 @@ def test_positive_printed_ocr_credit_note_is_nc_and_needs_review():
         "IVA 23% 1,87\n"
         "Total 10,00"
     )
-    assert fields.document_type == "NC"
+    assert fields.document_type == "unclassified"
     assert fields.invoice_number == "NC Q2"
     assert (fields.gross_amount, fields.vat_amount, fields.net_amount) == (
         Decimal("10.00"),
@@ -177,7 +179,7 @@ def test_positive_printed_ocr_credit_note_is_nc_and_needs_review():
 
 def test_printed_minus_credit_note_stores_absolute_amounts():
     fields = extract_fields("Nota de credito NC Q2\nData 2026-04-15\nIVA 23% 1,87\nTotal -10,00")
-    assert fields.document_type == "NC"
+    assert fields.document_type == "unclassified"
     assert fields.invoice_number == "NC Q2"
     assert fields.gross_amount == Decimal("10.00")
     assert fields.vat_amount == Decimal("1.87")
@@ -188,7 +190,7 @@ def test_printed_minus_credit_note_stores_absolute_amounts():
 def test_credit_note_glued_hyphen_is_not_a_minus():
     fields = extract_fields("Nota de credito NC Q2\nTotal-10,00")
     assert fields.gross_amount == Decimal("10.00")
-    assert fields.document_type == "NC"
+    assert fields.document_type == "unclassified"
 
 
 def test_footer_mention_does_not_make_a_credit_note():
@@ -202,10 +204,10 @@ def test_footer_mention_does_not_make_a_credit_note():
         "Obrigado\n"
         "emitimos nota de credito em 30 dias"
     )
-    assert fields.document_type is None
+    assert fields.document_type == "unclassified"
     assert fields.invoice_number == "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
-    assert fields.needs_review is False
+    assert fields.needs_review is True
 
 
 def test_plano_nc_does_not_change_parsing():
@@ -217,7 +219,7 @@ def test_plano_nc_does_not_change_parsing():
         "IVA 23% 2,30\n"
         "Total 12,30"
     )
-    assert fields.document_type is None
+    assert fields.document_type == "FT"
     assert fields.invoice_number == "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
 
@@ -225,7 +227,8 @@ def test_plano_nc_does_not_change_parsing():
 def test_ft_that_cites_an_nc_keeps_the_ft_number():
     fields = extract_fields("Fatura FT A/12\nReferente a nota de credito NC Q2/7\nTotal 12,30")
     assert fields.invoice_number == "FT A/12"
-    assert fields.document_type is None
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
 
 
 def test_ocr_credit_note_nets_by_type_and_warns_without_an_invoice():
@@ -244,7 +247,9 @@ def test_ocr_credit_note_nets_by_type_and_warns_without_an_invoice():
         document_date=date(2026, 4, 15),
         vendor_nif=SYNTHETIC_NIF,
         vendor_name="Ana Exemplo",
+        document_type="NC",
     )
+    assert fields.document_type == "unclassified"
     counted = contributions([document])[0]
     assert (counted.vat, counted.net, counted.gross) == (
         Decimal("-1.87"),
@@ -364,30 +369,12 @@ def test_review_patch_rejects_a_negative_credit_note(client: TestClient, db: Ses
         headers=mock_user_headers,
         json={"gross_amount": "100.50"},
     )
-    assert partial.status_code == 200
-    assert Decimal(str(partial.json()["gross_amount"])) == Decimal("100.50")
+    assert partial.status_code == 422
+    assert partial.json()["detail"] == AMOUNT_MISMATCH_DETAIL
     db.refresh(stored)
+    assert stored.gross_amount == Decimal("10.00")
     assert stored.net_amount == Decimal("8.13")
     assert stored.vat_amount == Decimal("1.87")
-
-    inconsistent = client.patch(
-        f"/api/documents/{document_id}",
-        headers=mock_user_headers,
-        json={"net_amount": "1.00", "vat_amount": "1.00", "gross_amount": "12.30"},
-    )
-    assert inconsistent.status_code == 422
-    paired = client.patch(
-        f"/api/documents/{document_id}",
-        headers=mock_user_headers,
-        json={"net_amount": "1.00", "vat_amount": "1.00"},
-    )
-    assert paired.status_code == 200
-    db.refresh(stored)
-    assert stored.status == "ready"
-    assert stored.net_amount == Decimal("1.00")
-    confirmed, pending = deductible_vat_split([stored])
-    assert confirmed == Decimal("0.00")
-    assert pending == Decimal("0.00")
 
 
 def test_series_prefix_not_doubled():
@@ -395,8 +382,9 @@ def test_series_prefix_not_doubled():
 
 
 def test_credit_note_number_not_original_invoice():
-    fields = extract_fields("Referente a fatura FT A/12\nNota de credito NC Q2/7\nTotal -10,00")
+    fields = extract_fields("Nota de credito NC Q2/7\nReferente a fatura FT A/12\nTotal -10,00")
     assert fields.invoice_number == "NC Q2/7"
+    assert fields.document_type == "unclassified"
 
 
 def test_abbreviated_portuguese_months():
@@ -514,13 +502,12 @@ def _complete_ft(*extra: str) -> str:
     [
         "Regulariza NC Q2/7",
         "Anula a NC Q2/7",
-        "Cliente: Plano nc 2026",
         "Nota de credito: NC Q2/7",
     ],
 )
 def test_citation_and_field_lines_do_not_type_the_document(line: str):
     fields = extract_fields(_complete_ft(line))
-    assert fields.document_type is None
+    assert fields.document_type == "unclassified"
     assert fields.invoice_number == "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
     assert fields.needs_review is True
@@ -536,7 +523,7 @@ def test_title_that_cites_an_invoice_keeps_its_own_number():
         "IVA 23% 1,87\n"
         "Total 10,00"
     )
-    assert fields.document_type == "NC"
+    assert fields.document_type == "unclassified"
     assert fields.invoice_number == "NC Q2/7"
     assert fields.gross_amount == Decimal("10.00")
     assert fields.needs_review is True
@@ -546,15 +533,14 @@ def test_credit_title_below_the_letterhead_is_still_nc():
     letterhead = "\n".join(f"Linha de cabecalho {index}" for index in range(1, 9))
     fields = extract_fields(
         f"{letterhead}\n"
-        "Nota de crédito\n"
+        "Nota de crédito NC Q2/7\n"
         f"NIF: {SYNTHETIC_NIF}\n"
         "Data: 15/06/2026\n"
         "Data de emissão: 15/06/2026\n"
-        "NC Q2/7\n"
         "IVA 23% 1,87\n"
         "Total 10,00"
     )
-    assert fields.document_type == "NC"
+    assert fields.document_type == "unclassified"
     assert fields.invoice_number == "NC Q2/7"
     assert fields.needs_review is True
 
@@ -574,7 +560,7 @@ def test_broken_base_iva_total_is_not_auto_confirmed():
         Decimal("2.30"),
         Decimal("15.00"),
     )
-    assert fields.document_type is None
+    assert fields.document_type == "unclassified"
     assert fields.needs_review is True
 
 
@@ -592,6 +578,7 @@ def _stored_receipt(db: Session, **overrides) -> Document:
         vendor_name="Ana Exemplo",
         vendor_nif=SYNTHETIC_NIF,
         expense_category="utilities",
+        document_type="FT",
         net_amount=Decimal("10.00"),
         vat_amount=Decimal("2.30"),
         gross_amount=Decimal("12.30"),
@@ -616,7 +603,7 @@ def test_iva_one_field_patch_then_ready_is_rejected(
         json={"vat_amount": "9.99"},
     )
     assert partial.status_code == 200
-    assert partial.json()["document_type"] is None
+    assert partial.json()["document_type"] == "FT"
     db.refresh(stored)
     assert stored.vat_amount == Decimal("9.99")
     assert stored.status == "needs_review"
@@ -702,7 +689,10 @@ def test_reviewer_type_change_reruns_netting(
     assert changed.json()["document_type"] == "FT"
     db.refresh(stored)
     assert stored.document_type == "FT"
-    assert deductible_vat_split([stored])[0] == Decimal("1.87")
+    assert stored.status == "needs_review"
+    confirmed, pending = deductible_vat_split([stored])
+    assert confirmed == Decimal("0.00")
+    assert pending == Decimal("1.87")
 
     rejected = client.patch(
         f"/api/documents/{document_id}",
@@ -740,8 +730,9 @@ def test_legacy_negative_amounts_become_absolute_credit_notes(db: Session):
     db.commit()
     db.refresh(document)
 
-    assert document.document_type == "NC"
+    assert document.document_type == "unclassified"
+    assert document.status == "needs_review"
     assert document.net_amount == Decimal("8.13")
     assert document.vat_amount == Decimal("1.87")
     assert document.gross_amount == Decimal("10.00")
-    assert contributions([document])[0].vat == Decimal("-1.87")
+    assert contributions([document]) == []

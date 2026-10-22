@@ -57,8 +57,26 @@ describe('saveEditPayload', () => {
 describe('documentTypeLabel', () => {
   it('uses the Portuguese labels', () => {
     expect(documentTypeLabel('FT')).toBe('Fatura');
+    expect(documentTypeLabel('FS')).toBe('Fatura simplificada');
+    expect(documentTypeLabel('FR')).toBe('Fatura-recibo');
     expect(documentTypeLabel('NC')).toBe('Nota de crédito');
+    expect(documentTypeLabel('ND')).toBe('Nota de débito');
     expect(documentTypeLabel(null)).toBe('Por classificar');
-    expect(documentTypeLabel('FR')).toBe('FR');
+    expect(documentTypeLabel('unclassified')).toBe('Por classificar');
+  });
+});
+
+describe('saveEditPayload drafts', () => {
+  it('keeps Por classificar as a draft', () => {
+    const payload = saveEditPayload({
+      vendor_name: 'Ana Exemplo',
+      document_date: '2026-03-31',
+      gross_amount: '12.30',
+      vat_amount: '2.30',
+      document_type: 'unclassified',
+    });
+    expect(payload.document_type).toBe('unclassified');
+    expect(payload.status).toBe('needs_review');
+    expect(payload.net_amount).toBe('10.00');
   });
 });

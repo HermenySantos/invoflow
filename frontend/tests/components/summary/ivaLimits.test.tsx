@@ -104,4 +104,33 @@ describe('summary IVA limits', () => {
     });
     expect(screen.queryByText(/ignora o IVA das vendas/)).not.toBeInTheDocument();
   });
+
+  it('lists receipts excluded from the IVA totals', async () => {
+    vi.mocked(api.getSummary).mockResolvedValue(
+      summary({
+        ready_count: 0,
+        excluded_count: 1,
+        excluded_documents: [
+          {
+            id: 'doc-1',
+            vendor_name: 'Ana Exemplo',
+            invoice_number: 'FT A/12',
+            document_type: 'unclassified',
+            status: 'needs_review',
+            reason: 'por classificar',
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <SummaryPage />
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByText(/Excluídos do IVA \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Ana Exemplo/)).toBeInTheDocument();
+    expect(screen.getByText(/por classificar/)).toBeInTheDocument();
+  });
 });
