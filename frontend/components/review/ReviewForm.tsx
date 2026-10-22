@@ -68,11 +68,9 @@ export function ReviewForm({
     const gross = parseFloat(formData.gross_amount);
     const vat = parseFloat(formData.vat_amount);
     
-    if (!isNaN(gross) && !isNaN(vat) && gross > 0) {
+    if (!isNaN(gross) && !isNaN(vat)) {
       const net = gross - vat;
-      if (net >= 0) {
-        handleChange('net_amount', net.toFixed(2));
-      }
+      handleChange('net_amount', net.toFixed(2));
     }
   }, [formData.gross_amount, formData.vat_amount, handleChange]);
 
@@ -252,7 +250,6 @@ export function ReviewForm({
             <input
               type="number"
               step="0.01"
-              min="0"
               value={formData.net_amount}
               onChange={(e) => handleChange('net_amount', e.target.value)}
               placeholder="0.00"
@@ -278,7 +275,6 @@ export function ReviewForm({
             <input
               type="number"
               step="0.01"
-              min="0"
               value={formData.vat_amount}
               onChange={(e) => handleChange('vat_amount', e.target.value)}
               placeholder="0.00"
@@ -304,7 +300,6 @@ export function ReviewForm({
             <input
               type="number"
               step="0.01"
-              min="0"
               value={formData.gross_amount}
               onChange={(e) => handleChange('gross_amount', e.target.value)}
               placeholder="0.00"

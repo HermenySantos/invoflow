@@ -43,37 +43,32 @@ SCORED = (
     ("vat_rate", "rate"),
 )
 
-# Measured on these same files before the extractor changes on this branch.
-# Text layer for the four PDFs (raster OCR missed the same cells). QR pipeline
-# for the thermal roll and the photo.
-BEFORE = {
-    "NIF": (4, 6),
-    "date": (2, 6),
-    "invoice number": (2, 6),
-    "net": (6, 6),
-    "IVA": (6, 6),
-    "gross": (4, 6),
-    "rate": (6, 6),
+# Two unique text layouts. The qpdf files repeat them. Thermal and photo are QR.
+UNIQUE = ("fatura-cafe-lisboa.pdf", "nota-credito.pdf")
+COPIES = {
+    "fatura-cafe-lisboa.qpdf.pdf": "fatura-cafe-lisboa.pdf",
+    "nota-credito.qpdf.pdf": "nota-credito.pdf",
 }
-BEFORE_HITS = 30
-BEFORE_CELLS = 42
+QR_ONLY = ("thermal-80mm.pdf", "fatura-photo.png")
 
-# Raster OCR of the four LibreOffice PDFs before the same extractor changes.
-# Thermal and photo glyphs were not in that pass. The QR pipeline scored them.
-BEFORE_PDF_RASTER = {
-    "NIF": (2, 4),
-    "date": (0, 4),
-    "invoice number": (0, 4),
-    "net": (4, 4),
-    "IVA": (4, 4),
-    "gross": (2, 4),
-    "rate": (4, 4),
+# The same 11 counted cells, measured before month-name dates, series prefixes,
+# and a spaced minus on the credit total. Café missed date and invoice number.
+# The credit note missed NIF, date, invoice number, and gross (read as +10.00).
+# Empty credit-note cells and both QR documents are not in these totals.
+BEFORE = {
+    "NIF": (1, 2),
+    "date": (0, 2),
+    "invoice number": (0, 2),
+    "net": (1, 1),
+    "IVA": (1, 1),
+    "gross": (1, 2),
+    "rate": (1, 1),
 }
-BEFORE_PDF_RASTER_HITS = 16
-BEFORE_PDF_RASTER_CELLS = 28
+BEFORE_HITS = 5
+BEFORE_CELLS = 11
 
 CAFE = {
-    "vendor_nif": "503504564",
+    "vendor_nif": "123456002",
     "document_date": "2026-03-31",
     "invoice_number": "FT A/12",
     "net_amount": "10.00",
@@ -91,7 +86,7 @@ CREDIT = {
     "vat_rate": None,
 }
 QR_FIELDS = {
-    "vendor_nif": "503504564",
+    "vendor_nif": "123456002",
     "document_date": "2026-09-15",
     "invoice_number": "FT A/12",
     "net_amount": "30.00",
@@ -132,14 +127,28 @@ def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join([head, rule, *body])
 
 
-def _summarise(cases: list[dict]) -> dict[str, tuple[int, int]]:
+def _is_empty(value) -> bool:
+    return value is None or value == ""
+
+
+def _honest(cases: list[dict]) -> tuple[dict[str, tuple[int, int]], int, int, int]:
+    """Score unique layouts only. Skip copies, QR-only files, and empty cells."""
     totals = {label: [0, 0] for _name, label in SCORED}
-    for case in cases:
-        for name, label in SCORED:
+    empty = 0
+    by_name = {case["name"]: case for case in cases}
+    for name in UNIQUE:
+        case = by_name[name]
+        for field, label in SCORED:
+            if _is_empty(case["expected"][field]):
+                empty += 1
+                continue
             totals[label][1] += 1
-            if case["hits"][name]:
+            if case["hits"][field]:
                 totals[label][0] += 1
-    return {label: (hits, total) for label, (hits, total) in totals.items()}
+    summary = {label: (got, total) for label, (got, total) in totals.items()}
+    hits = sum(got for got, _total in summary.values())
+    cells = sum(total for _got, total in summary.values())
+    return summary, empty, hits, cells
 
 
 def _summary_rows(summary: dict[str, tuple[int, int]]) -> list[list[str]]:
@@ -154,85 +163,107 @@ def _summary_rows(summary: dict[str, tuple[int, int]]) -> list[list[str]]:
     return rows
 
 
-def _case_rows(cases: list[dict]) -> list[list[str]]:
+def _counted_rows(cases: list[dict]) -> list[list[str]]:
+    by_name = {case["name"]: case for case in cases}
     rows = []
-    for case in cases:
+    for name in UNIQUE:
+        case = by_name[name]
         scored = []
-        for name, _label in SCORED:
-            mark = "hit" if case["hits"][name] else "miss"
-            got = case["actual"][name] if case["actual"][name] is not None else "empty"
-            scored.append(f"{mark} {got}")
-        rows.append([case["name"], case["path"], *scored])
+        for field, _label in SCORED:
+            if _is_empty(case["expected"][field]):
+                actual = case["actual"][field]
+                scored.append("flagged empty" if actual is None else f"filled {actual}")
+                continue
+            mark = "hit" if case["hits"][field] else "miss"
+            scored.append(f"{mark} {case['actual'][field]}")
+        rows.append([name, *scored])
     return rows
 
 
-def _static_summary(counts: dict[str, tuple[int, int]], hits: int, cells: int) -> list[list[str]]:
-    rows = [[label, str(got), str(total), _pct(got, total)] for label, (got, total) in counts.items()]
-    rows.append(["all", str(hits), str(cells), _pct(hits, cells)])
-    return rows
+def _raster_matches(production: list[dict], raster: list[dict]) -> tuple[int, int]:
+    produced = {case["name"]: case for case in production}
+    drawn = {case["name"]: case for case in raster}
+    hits = cells = 0
+    for name in UNIQUE:
+        for field, _label in SCORED:
+            if _is_empty(produced[name]["expected"][field]):
+                continue
+            cells += 1
+            if drawn[name]["actual"][field] == produced[name]["actual"][field]:
+                hits += 1
+    return hits, cells
 
 
 def _write_report(production: list[dict], raster: list[dict]) -> None:
-    prod_summary = _summarise(production)
-    raster_summary = _summarise(raster)
-    pdf_raster = [case for case in raster if case["name"] in {"fatura-cafe-lisboa.pdf", "fatura-cafe-lisboa.qpdf.pdf", "nota-credito.pdf", "nota-credito.qpdf.pdf"}]
-    headers = ["document", "path", *[label for _name, label in SCORED]]
+    summary, empty, hits, cells = _honest(production)
+    raster_hits, raster_cells = _raster_matches(production, raster)
+    headers = ["document", *[label for _name, label in SCORED]]
+    flagged = [
+        ["fatura-cafe-lisboa.qpdf.pdf", "same text as fatura-cafe-lisboa.pdf", "not scored"],
+        ["nota-credito.qpdf.pdf", "same text as nota-credito.pdf", "not scored"],
+        ["thermal-80mm.pdf", "QR payload only", "7 flagged"],
+        ["fatura-photo.png", "QR payload only", "7 flagged"],
+        ["nota-credito.pdf", "empty net, IVA, and rate", f"{empty} flagged"],
+    ]
     text = "\n".join(
         [
             "# OCR corpus accuracy",
             "",
-            "Synthetic fixtures only. Café Lisboa, the credit note, the thermal roll, and the photo use made-up names and numbers. Nothing here is a taxpayer record.",
+            "Counted cells come from two unique text layouts, `fatura-cafe-lisboa.pdf` and `nota-credito.pdf`.",
             "",
-            "Scored fields are NIF, date, invoice number, net, IVA, gross, and rate. An empty cell is a hit when the fixture prints nothing for that field. Net 10.00 and rate 23.00 on the café invoice are implied from the printed total and IVA.",
+            "`123456002` is a synthetic NIF with a valid mod-11 check digit. It replaces a real company NIF that used to appear in these fixtures. This report does not claim the number was checked against a taxpayer register. The credit note prints `501111111`, which fails the check digit, so that NIF cell stays empty.",
             "",
-            "## Before, production path",
+            "## What is counted",
             "",
-            "Same six documents, before the month-name, series-prefix, and credit-sign changes. The four PDFs were scored from the text layer. The thermal roll and the photo were scored from the QR pipeline.",
+            "A cell counts when the layout is unique and the fixture expects a value. The `.qpdf.pdf` files repeat those two layouts and are read, not scored. The thermal roll and the photo add 14 cells that come from the QR payload. Those cells are flagged, not counted. Empty expected cells are flagged, not counted. On the unique credit note that is net, IVA, and rate.",
             "",
-            _markdown_table(["field", "hits", "docs", "accuracy"], _static_summary(BEFORE, BEFORE_HITS, BEFORE_CELLS)),
+            "Counted cells: 11. The café invoice has 7. The credit note contributes NIF, date, invoice number, and gross.",
             "",
-            "## Before, Tesseract on the four PDF rasters",
+            "Net 10.00 and rate 23.00 on the café invoice are implied from the printed total and IVA. They are expected values, not empty cells.",
             "",
-            "Same poppler render and `por+eng` read, before those extractor changes. The four PDFs missed the same date, invoice number, and credit sign as the text layer. The thermal roll and the photo were not in this pass.",
+            "The credit-note total is printed as `Total: -10,00`, with a space before the minus. That sign is counted. A hyphen glued to a label, such as `Total-12,30`, is not a minus and is not a gain in this table.",
             "",
-            _markdown_table(
-                ["field", "hits", "docs", "accuracy"],
-                _static_summary(BEFORE_PDF_RASTER, BEFORE_PDF_RASTER_HITS, BEFORE_PDF_RASTER_CELLS),
-            ),
+            "## Before the extractor changes",
+            "",
+            "Same 11 cells, from the measurement taken before month-name dates, series prefixes, and the spaced minus on the credit total. The café invoice missed the date and the invoice number. The credit note missed NIF, date, invoice number, and gross, which was read as 10.00.",
+            "",
+            _markdown_table(["field", "hits", "counted", "accuracy"], _summary_rows(BEFORE)),
+            "",
+            "An earlier draft of this file scored 40 of 42 cells (95.2%), and 16 of 28 raster cells (57.1%). That draft counted the qpdf copies, 14 QR-only cells, 6 empty-equals-empty cells, and the credit-note gross. It is not the score.",
             "",
             "## After, production path",
             "",
-            "What `OCRService.process_document` returns with `OCR_BACKEND=tesseract`. Text PDFs use the text layer. The thermal roll and the photo use the raster plus the QR payload.",
+            "What `OCRService.process_document` returns with `OCR_BACKEND=tesseract` on the two unique text layouts. Text PDFs use the text layer. QR documents are not in this table.",
             "",
-            _markdown_table(["field", "hits", "docs", "accuracy"], _summary_rows(prod_summary)),
+            _markdown_table(["field", "hits", "counted", "accuracy"], _summary_rows(summary)),
             "",
-            _markdown_table(headers, _case_rows(production)),
+            _markdown_table(headers, _counted_rows(production)),
             "",
-            "## After, Tesseract on the raster",
+            f"Counted result: {hits} of {cells} ({_pct(hits, cells)}).",
             "",
-            "First page rendered with the same poppler cap as the app, then Tesseract `por+eng`, then the field extractor. The QR payload is not applied, so this table is the glyph read.",
+            "## Flagged, not counted",
             "",
-            "Four LibreOffice PDFs only, comparable to the before raster table.",
+            _markdown_table(["document", "why", "cells"], flagged),
             "",
-            _markdown_table(["field", "hits", "docs", "accuracy"], _summary_rows(_summarise(pdf_raster))),
+            "## Raster check",
             "",
-            "All six documents. The thermal roll and the photo add misses here because the QR is not applied.",
+            "Tesseract `por+eng` on the first page of each unique PDF, with the QR payload not applied. The counted cells are compared with the production text-layer read.",
             "",
-            _markdown_table(["field", "hits", "docs", "accuracy"], _summary_rows(raster_summary)),
-            "",
-            _markdown_table(headers, _case_rows(raster)),
+            f"Raster matched the production counted cells: {raster_hits} of {raster_cells}.",
             "",
             "## Follow-ups",
             "",
             "- The credit-note fixture prints NIF 501111111. That number fails the check digit, so the extractor leaves the NIF empty. The check stays.",
             "- Vendor lines still keep the first heading (`Fornecedor: Café Lisboa`, `Nota de crédito NC Q2`) instead of the name after Fornecedor.",
-            "- The credit note prints no net, IVA, or rate.",
-            "- On the thermal roll and the photo, the scored amounts come from the QR. Tesseract on the roll itself only has the word Talão plus the QR image.",
-            "- Month names cover `d de mês de yyyy`, with or without the accent on março. Other date layouts are unchanged.",
+            "- The credit note prints no net, IVA, or rate. Those three cells stay flagged.",
+            "- On the thermal roll and the photo, the pipeline amounts come from the QR. Tesseract on the roll itself only has the word Talão plus the QR image.",
+            "- Month names cover `d de mês de yyyy` and abbreviations such as `set` and `fev.`. Other date layouts are unchanged.",
             "- Crumpled photos and digit mixups are not in this corpus.",
             "",
         ]
     )
+    if hits != sum(got for got, _total in summary.values()) or cells != BEFORE_CELLS:
+        raise AssertionError(f"counted cells drifted: {hits}/{cells}")
     REPORT.write_text(text, encoding="utf-8")
 
 
@@ -283,28 +314,44 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
             text_fields = _readout(extract_fields(_extract_pdf_text(content)))
             assert text_fields == actual, name
 
+    by_name = {case["name"]: case for case in production}
+    for copy, original in COPIES.items():
+        assert by_name[copy]["actual"] == by_name[original]["actual"], copy
+    for name in QR_ONLY:
+        missed = [field for field, hit in by_name[name]["hits"].items() if not hit]
+        assert not missed, (name, missed, by_name[name]["actual"])
+    for name in UNIQUE:
+        if name.startswith("fatura-cafe"):
+            missed = [field for field, hit in by_name[name]["hits"].items() if not hit]
+            assert not missed, (name, missed, by_name[name]["actual"])
+        if name.startswith("nota-credito"):
+            credit = by_name[name]
+            assert credit["hits"]["document_date"]
+            assert credit["hits"]["invoice_number"]
+            assert credit["hits"]["gross_amount"]
+            assert credit["actual"]["vendor_nif"] is None
+            assert credit["actual"]["net_amount"] is None
+            assert credit["actual"]["vat_amount"] is None
+            assert credit["actual"]["vat_rate"] is None
+
+    summary, empty, hits, cells = _honest(production)
+    assert empty == 3
+    assert cells == 11
+    assert hits == 10
+    assert summary["NIF"] == (1, 2)
+    assert summary["date"] == (2, 2)
+    assert summary["invoice number"] == (2, 2)
+    assert summary["gross"] == (2, 2)
+    assert summary["net"] == (1, 1)
+    assert summary["IVA"] == (1, 1)
+    assert summary["rate"] == (1, 1)
+    assert _raster_matches(production, raster) == (cells, cells)
+    assert sum(1 for _name, _label in SCORED) * len(QR_ONLY) == 14
+
     _write_report(production, raster)
-
-    for case in production:
-        if case["name"].startswith("fatura-cafe") or case["name"] in {"thermal-80mm.pdf", "fatura-photo.png"}:
-            missed = [name for name, hit in case["hits"].items() if not hit]
-            assert not missed, (case["name"], missed, case["actual"])
-        if case["name"].startswith("nota-credito"):
-            assert case["hits"]["document_date"]
-            assert case["hits"]["invoice_number"]
-            assert case["hits"]["gross_amount"]
-            assert case["actual"]["vendor_nif"] is None
-            assert case["hits"]["vendor_nif"] is False
-
-    for case in raster:
-        if case["name"].startswith("fatura-cafe") or case["name"].startswith("nota-credito"):
-            assert case["hits"]["document_date"], case
-            assert case["hits"]["invoice_number"], case
-            assert case["hits"]["gross_amount"], case
-
-    prod_summary = _summarise(production)
-    assert prod_summary["date"][0] == 6
-    assert prod_summary["invoice number"][0] == 6
-    assert prod_summary["gross"][0] == 6
-    assert prod_summary["NIF"] == (4, 6)
-    assert REPORT.is_file()
+    written = REPORT.read_text(encoding="utf-8")
+    assert "10 of 11" in written
+    assert "95.2%" in written
+    assert "made-up" not in written
+    assert "taxpayer record" not in written
+    assert "503504564" not in written

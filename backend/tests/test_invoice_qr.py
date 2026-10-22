@@ -23,7 +23,7 @@ from app.services.pt_qr import parse_invoice_qr, read_invoice_qr
 from app.services.storage import get_storage_service
 
 MAINLAND = (
-    "A:503504564*B:999999990*C:PT*D:FT*E:N*F:20260915*G:FT A/12*H:ABCD1234-12*"
+    "A:123456002*B:999999990*C:PT*D:FT*E:N*F:20260915*G:FT A/12*H:ABCD1234-12*"
     "I1:PT*I3:10.00*I4:0.60*I7:20.00*I8:4.60*N:5.20*O:35.20*Q:abcd*R:1234"
 )
 
@@ -41,7 +41,7 @@ def fatura_photo(payload: str) -> Image.Image:
 
 def test_mainland_qr_with_two_rates():
     qr = parse_invoice_qr(MAINLAND)
-    assert qr.vendor_nif == "503504564"
+    assert qr.vendor_nif == "123456002"
     assert qr.document_date == date(2026, 9, 15)
     assert qr.invoice_number == "FT A/12"
     assert qr.net_amount == Decimal("30.00")
@@ -68,7 +68,7 @@ def test_qr_is_found_in_a_photo():
 def test_upload_stores_the_qr_totals(client: TestClient):
     document = _upload(client, _png_bytes(fatura_photo(MAINLAND)), "fatura.png", "image/png")
 
-    assert document["vendor_nif"] == "503504564"
+    assert document["vendor_nif"] == "123456002"
     assert document["invoice_number"] == "FT A/12"
     assert document["document_date"] == "2026-09-15"
     assert document["gross_amount"] == "35.20"
@@ -79,7 +79,7 @@ def test_upload_stores_the_qr_totals(client: TestClient):
 def test_upload_reads_an_at_qr_embedded_in_a_pdf(client: TestClient):
     document = _upload(client, _pdf_bytes(fatura_photo(MAINLAND)), "fatura.pdf", "application/pdf")
 
-    assert document["vendor_nif"] == "503504564"
+    assert document["vendor_nif"] == "123456002"
     assert document["invoice_number"] == "FT A/12"
     assert document["document_date"] == "2026-09-15"
     assert document["gross_amount"] == "35.20"
@@ -97,7 +97,7 @@ def test_upload_reads_the_qr_on_a_narrow_thermal_receipt(client: TestClient):
 
     document = _upload(client, content, "talao.pdf", "application/pdf")
 
-    assert document["vendor_nif"] == "503504564"
+    assert document["vendor_nif"] == "123456002"
     assert document["invoice_number"] == "FT A/12"
     assert document["gross_amount"] == "35.20"
     assert document["status"] != "failed"

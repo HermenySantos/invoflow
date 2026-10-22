@@ -31,9 +31,9 @@ class DocumentUpdate(BaseModel):
     vendor_nif: Optional[str] = Field(None, max_length=20)
     invoice_number: Optional[str] = Field(None, max_length=100)
     document_date: Optional[date] = None
-    net_amount: Optional[Decimal] = Field(None, ge=0)
-    vat_amount: Optional[Decimal] = Field(None, ge=0)
-    gross_amount: Optional[Decimal] = Field(None, ge=0)
+    net_amount: Optional[Decimal] = Field(None, ge=Decimal("-1000000"), le=Decimal("1000000"))
+    vat_amount: Optional[Decimal] = Field(None, ge=Decimal("-1000000"), le=Decimal("1000000"))
+    gross_amount: Optional[Decimal] = Field(None, ge=Decimal("-1000000"), le=Decimal("1000000"))
     vat_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     status: Optional[str] = Field(None, pattern=r"^(pending|processing|ready|needs_review|accountant_review|failed)$")
     review_notes: Optional[str] = Field(None, max_length=1000)

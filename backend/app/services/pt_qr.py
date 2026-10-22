@@ -4,7 +4,7 @@ Portuguese invoice QR code (Portaria 195/2020, required on faturas since 2022).
 The code holds the issuer NIF, date, document number and the VAT split as
 `key:value` pairs joined by `*`, e.g.
 
-    A:503504564*B:999999990*C:PT*D:FT*E:N*F:20260915*G:FT A/12*H:ATCUD*
+    A:123456002*B:999999990*C:PT*D:FT*E:N*F:20260915*G:FT A/12*H:ATCUD*
     I1:PT*I3:10.00*I4:0.60*I7:20.00*I8:4.60*N:5.20*O:35.20*Q:hash*R:cert
 
 When it decodes, its numbers are the ones the issuer reported to the AT, so

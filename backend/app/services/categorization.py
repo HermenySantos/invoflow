@@ -217,7 +217,6 @@ _NIF_MAP: dict[str, Tuple[str, str]] = {
     "502428880": ("equipment", "geral"),  # Worten
     "504499777": ("fuel", "geral"),       # GALP Energia
     "504448064": ("utilities", "geral"),  # NOS Comunicações
-    "503504564": ("utilities", "geral"),  # EDP Comercial
     "502793208": ("utilities", "geral"),  # MEO / Altice
     "501507930": ("utilities", "geral"),  # Vodafone Portugal
     "500273066": ("travel", "geral"),     # TAP

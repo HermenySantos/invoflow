@@ -93,12 +93,13 @@ IVA is an **estimate for review**, not a filing. Sales VAT is not entered in thi
 
 `OCR_BACKEND=auto|tesseract|mock|azure`
 
-- `auto` (default): Tesseract when the binary and the `por` and `eng` packs are present. Otherwise mock, with a warning in the log.
-- `tesseract`: open-source OCR + Portuguese field extractor (NIF, dates, IVA 6/13/23). Startup fails when the binary or either language pack is missing.
-- `mock`: demo vendors/amounts, no image reading. This choice does not log a fallback.
+- `auto` (default): Tesseract when the binary and the `por` and `eng` packs are present. Otherwise mock, with a warning in the log. `APP_ENV=production` refuses to start with `auto`.
+- `tesseract`: open-source OCR + Portuguese field extractor (NIF, dates, IVA 6/13/23). Startup fails when the binary crashes, when either language pack is missing, or when a pack does not load.
+- `mock`: demo vendors/amounts, no image reading. This choice does not log a fallback. `APP_ENV=production` refuses to start with `mock`.
 - `azure`: optional paid Document Intelligence. Ignored unless endpoint + key are set.
+- Any other value, including `tesseract-ocr`, is an error at startup. It is not treated as mock. `/health` reports `degraded`.
 
-`pytest -m ocr_corpus` with `OCR_CORPUS=1` runs Tesseract over the synthetic fixtures and writes `docs/ocr-accuracy.md`. The default `pytest` run skips that suite. CI runs it in the `ocr-corpus` job.
+`pytest -m ocr_corpus` with `OCR_CORPUS=1` runs Tesseract over the synthetic fixtures and writes `docs/ocr-accuracy.md`. The score counts two unique text layouts and leaves out qpdf copies, QR-only cells, and empty cells. The default `pytest` run skips that suite. The `ocr-corpus` CI job regenerates the report and fails if it differs from the committed file.
 
 Field extraction ideas (schema after OCR text) were adapted from the TaxHacker OSS pipeline. No proprietary blobs were copied.
 

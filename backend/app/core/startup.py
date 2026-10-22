@@ -5,7 +5,7 @@ Ensures required configuration is present before the application starts.
 
 import logging
 from typing import List, Tuple
-from app.core.config import get_settings, known_app_env, mock_auth_env_allowed
+from app.core.config import app_env_name, get_settings, known_app_env, mock_auth_env_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +67,24 @@ def validate_configuration() -> List[str]:
 
     requested = (settings.ocr_backend or "auto").strip().lower()
     gap = tesseract_gap()
-    if requested == "tesseract" and gap:
+    known_backends = {"mock", "tesseract", "azure", "auto"}
+    if requested not in known_backends:
         errors.append(
-            f"OCR_BACKEND is tesseract but {gap}. "
-            "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng, "
-            "or set OCR_BACKEND=mock or OCR_BACKEND=auto."
+            f"OCR_BACKEND={requested!r} is not a known backend. "
+            "Use auto, tesseract, mock, or azure."
         )
+    if app_env_name(settings.app_env) == "production" and requested in {"auto", "mock", ""}:
+        errors.append(
+            "OCR_BACKEND must be tesseract or azure when APP_ENV is production. "
+            f"Got {requested or 'auto'}."
+        )
+    if requested == "tesseract" and gap:
+        install = "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng"
+        if app_env_name(settings.app_env) == "production":
+            hint = f"{install}."
+        else:
+            hint = f"{install}, or set OCR_BACKEND=mock or OCR_BACKEND=auto."
+        errors.append(f"OCR_BACKEND is tesseract but {gap}. {hint}")
     if requested == "azure":
         if not settings.azure_doc_endpoint or not settings.azure_doc_key:
             errors.append(

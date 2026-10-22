@@ -18,7 +18,7 @@ def seed(db: Session) -> dict:
     db.add(user)
     db.commit()
     rows = [
-        ("Pingo Doce", "503504564", "FT 2026/12", date(2026, 9, 3), "12.40"),
+        ("Pingo Doce", "123456002", "FT 2026/12", date(2026, 9, 3), "12.40"),
         ("Galp Energia", "504499777", "FT A/77", date(2026, 9, 20), "85.00"),
         ("100% Bio_Loja", None, None, date(2026, 10, 1), "40.00"),
     ]

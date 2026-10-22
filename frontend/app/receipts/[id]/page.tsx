@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
+import { saveEditPayload } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -246,13 +247,7 @@ export default function ReceiptDetailPage() {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, {
-        vendor_name: editData.vendor_name || null,
-        document_date: editData.document_date || null,
-        gross_amount: editData.gross_amount || null,
-        vat_amount: editData.vat_amount || null,
-        status: 'ready',
-      });
+      await api.updateDocument(document.id, saveEditPayload(editData));
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
@@ -456,7 +451,6 @@ export default function ReceiptDetailPage() {
                     <input
                       type="number"
                       step="0.01"
-                      min="0"
                       inputMode="decimal"
                       value={editData.gross_amount}
                       onChange={(e) => setEditData(d => ({ ...d, gross_amount: e.target.value }))}
@@ -469,7 +463,6 @@ export default function ReceiptDetailPage() {
                     <input
                       type="number"
                       step="0.01"
-                      min="0"
                       inputMode="decimal"
                       value={editData.vat_amount}
                       onChange={(e) => setEditData(d => ({ ...d, vat_amount: e.target.value }))}

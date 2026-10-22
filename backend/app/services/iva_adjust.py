@@ -114,14 +114,23 @@ def _prefer(candidate, incumbent) -> bool:
     return str(getattr(candidate, "id", "")) > str(getattr(incumbent, "id", ""))
 
 
+def _raw_money(value) -> Decimal:
+    if value is None:
+        return _ZERO
+    return Decimal(value).quantize(_CENT)
+
+
 def _signed(document, mark: FiscalMark) -> Counted:
-    sign = -1 if mark.document_type == "NC" else 1
-    return Counted(
-        document=document,
-        net=(_money(document.net_amount) * sign).quantize(_CENT),
-        vat=(_money(document.vat_amount) * sign).quantize(_CENT),
-        gross=(_money(document.gross_amount) * sign).quantize(_CENT),
-    )
+    net = _raw_money(document.net_amount)
+    vat = _raw_money(document.vat_amount)
+    gross = _raw_money(document.gross_amount)
+    # QR credit notes store positive amounts and a document type of NC.
+    # An OCR credit note already stores the minus, and must not be clamped to 0
+    # or flipped a second time.
+    already_negative = net < 0 or vat < 0 or gross < 0
+    if mark.document_type == "NC" and not already_negative:
+        net, vat, gross = -net, -vat, -gross
+    return Counted(document=document, net=net, vat=vat, gross=gross)
 
 
 def _in_period(document, period_ids: set, period_tokens: set) -> bool:

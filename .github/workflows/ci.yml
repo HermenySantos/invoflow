@@ -43,6 +43,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng poppler-utils
       - name: real OCR over the synthetic corpus
         run: python -m pytest -q -m ocr_corpus
+      - name: accuracy report matches the committed file
+        working-directory: ${{ github.workspace }}
+        run: git diff --exit-code -- docs/ocr-accuracy.md
 
   migrations:
     runs-on: ubuntu-latest

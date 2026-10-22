@@ -14,7 +14,7 @@ Health: http://localhost:8000/health
 
 PDF rasterization allows 2 poppler renders in each API process. Started with more than one uvicorn worker, that limit is 2 per worker. `docs/security/poppler.md` tracks CVE-2026-107705.
 
-Default OCR is Tesseract (`por` and `eng`) when those packs are installed, otherwise mock. The mock fallback is logged. Azure is optional and paid.
+Default OCR is Tesseract (`por` and `eng`) when those packs are installed, otherwise mock. The mock fallback is logged. Azure is optional and paid. `APP_ENV=production` refuses `OCR_BACKEND=auto` and `OCR_BACKEND=mock`. An unknown value such as `tesseract-ocr` fails startup instead of selecting mock. A crashing binary is reported separately from a missing or corrupt language pack.
 
 ```bash
 sudo apt-get install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng poppler-utils

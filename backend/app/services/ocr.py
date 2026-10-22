@@ -2,7 +2,8 @@
 OCR backends behind one interface.
 
 Default is open-source:
-  auto       → Tesseract if installed, otherwise mock (no keys)
+  auto       → Tesseract if installed, otherwise mock (no keys).
+               APP_ENV=production refuses auto and mock at startup.
   tesseract  → Tesseract + PT field extractor (optional local LLM polish)
   mock       → deterministic demo data, no system OCR
   azure      → optional paid Azure Document Intelligence
@@ -80,12 +81,26 @@ def tesseract_available() -> bool:
     return True
 
 
+class TesseractProbeError(Exception):
+    """The tesseract binary crashed, or a language pack did not load."""
+
+    def __init__(self, kind: str):
+        self.kind = kind
+        super().__init__(kind)
+
+
 _tesseract_languages: Optional[frozenset[str]] = None
+_tesseract_packs_loaded: Optional[bool] = None
 _tesseract_fallback_logged = False
+_KNOWN_OCR_BACKENDS = {"mock", "tesseract", "azure", "auto"}
 
 
 def tesseract_languages() -> frozenset[str]:
-    """Language codes Tesseract can load. Empty when the binary is missing."""
+    """Language codes Tesseract reports. Empty when the binary is missing.
+
+    A binary that exits while listing languages raises TesseractProbeError('crash')
+    instead of looking like a missing language pack.
+    """
     global _tesseract_languages
     if _tesseract_languages is not None:
         return _tesseract_languages
@@ -96,23 +111,47 @@ def tesseract_languages() -> frozenset[str]:
 
         listed = pytesseract.get_languages(config="")
     except Exception:
-        logger.warning(
-            "Could not list Tesseract languages. "
-            "Install tesseract-ocr-por and tesseract-ocr-eng."
-        )
-        listed = []
+        logger.warning("Tesseract binary failed while listing languages.", exc_info=True)
+        raise TesseractProbeError("crash") from None
     _tesseract_languages = frozenset(listed)
     return _tesseract_languages
+
+
+def tesseract_packs_load() -> bool:
+    """True when por and eng can actually OCR a blank image."""
+    global _tesseract_packs_loaded
+    if _tesseract_packs_loaded is not None:
+        return _tesseract_packs_loaded
+    try:
+        import pytesseract
+
+        pytesseract.image_to_string(Image.new("L", (16, 16), 255), lang="por+eng")
+    except Exception:
+        logger.warning(
+            "Tesseract language packs failed to load. "
+            "tesseract-ocr-por or tesseract-ocr-eng may be corrupt.",
+            exc_info=True,
+        )
+        _tesseract_packs_loaded = False
+        return False
+    _tesseract_packs_loaded = True
+    return True
 
 
 def tesseract_gap() -> Optional[str]:
     """None when por and eng can run. Otherwise a short reason."""
     if not tesseract_available():
         return "the tesseract binary is not installed"
-    missing = [lang for lang in ("por", "eng") if lang not in tesseract_languages()]
+    try:
+        languages = tesseract_languages()
+    except TesseractProbeError:
+        return "the tesseract binary failed to run"
+    missing = [lang for lang in ("por", "eng") if lang not in languages]
     if missing:
         packs = ", ".join(f"tesseract-ocr-{lang}" for lang in missing)
         return f"language packs are missing ({packs})"
+    if not tesseract_packs_load():
+        return "language packs failed to load (tesseract-ocr-por, tesseract-ocr-eng)"
     return None
 
 
@@ -148,12 +187,13 @@ def resolve_ocr_backend() -> str:
     """
     current = get_settings()
     requested = (current.ocr_backend or "auto").strip().lower()
-    if requested in {"mock", "tesseract", "azure", "auto"}:
-        backend = requested
-    elif current.ocr_mock_mode:
-        backend = "mock"
-    else:
-        backend = "auto"
+    if requested not in _KNOWN_OCR_BACKENDS:
+        logger.error(
+            "OCR_BACKEND=%s is not a known backend. Use auto, tesseract, mock, or azure.",
+            requested,
+        )
+        return requested
+    backend = requested
 
     if backend == "auto":
         backend = _tesseract_or_mock(requested or "auto")
@@ -179,8 +219,15 @@ class OCRService:
                 result = self._generate_mock_result(mime_type)
             elif backend == "azure":
                 result = await self._process_with_azure(file_content, mime_type)
-            else:
+            elif backend == "tesseract":
                 result = await self._process_with_tesseract(file_content, mime_type)
+            else:
+                return OCRResult(
+                    error=f"Unknown OCR backend {backend}",
+                    confidence=0,
+                    needs_review=True,
+                    backend=backend,
+                )
             qr = await asyncio.to_thread(_invoice_qr, file_content, mime_type)
         except PdfRasterLimited:
             if result is None:
@@ -197,7 +244,7 @@ class OCRService:
             ("Worten", "502428880"),
             ("GALP Energia", "504499777"),
             ("NOS Comunicações", "504448064"),
-            ("EDP Comercial", "503504564"),
+            ("Luz Exemplo", "123456002"),
             ("Uber Portugal", "514111111"),
             ("Bolt Technology", None),
             ("Restaurante O Manel", "123456789"),
@@ -744,12 +791,18 @@ _ocr_service: Optional[OCRService] = None
 
 
 def ocr_runtime_status() -> dict:
-    requested = (get_settings().ocr_backend or "auto").strip().lower()
+    from app.core.config import app_env_name
+
+    current = get_settings()
+    requested = (current.ocr_backend or "auto").strip().lower()
     ready = tesseract_gap() is None
-    degraded = requested == "tesseract" and not ready
+    backend = resolve_ocr_backend()
+    unknown = requested not in _KNOWN_OCR_BACKENDS
+    production_mock = app_env_name(current.app_env) == "production" and backend == "mock"
+    degraded = (requested == "tesseract" and not ready) or unknown or production_mock
     return {
         "status": "degraded" if degraded else "healthy",
-        "ocr_backend": resolve_ocr_backend(),
+        "ocr_backend": backend,
         "tesseract": ready,
     }
 

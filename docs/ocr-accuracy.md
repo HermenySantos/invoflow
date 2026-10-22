@@ -1,107 +1,79 @@
 # OCR corpus accuracy
 
-Synthetic fixtures only. Café Lisboa, the credit note, the thermal roll, and the photo use made-up names and numbers. Nothing here is a taxpayer record.
+Counted cells come from two unique text layouts, `fatura-cafe-lisboa.pdf` and `nota-credito.pdf`.
 
-Scored fields are NIF, date, invoice number, net, IVA, gross, and rate. An empty cell is a hit when the fixture prints nothing for that field. Net 10.00 and rate 23.00 on the café invoice are implied from the printed total and IVA.
+`123456002` is a synthetic NIF with a valid mod-11 check digit. It replaces a real company NIF that used to appear in these fixtures. This report does not claim the number was checked against a taxpayer register. The credit note prints `501111111`, which fails the check digit, so that NIF cell stays empty.
 
-## Before, production path
+## What is counted
 
-Same six documents, before the month-name, series-prefix, and credit-sign changes. The four PDFs were scored from the text layer. The thermal roll and the photo were scored from the QR pipeline.
+A cell counts when the layout is unique and the fixture expects a value. The `.qpdf.pdf` files repeat those two layouts and are read, not scored. The thermal roll and the photo add 14 cells that come from the QR payload. Those cells are flagged, not counted. Empty expected cells are flagged, not counted. On the unique credit note that is net, IVA, and rate.
 
-| field | hits | docs | accuracy |
+Counted cells: 11. The café invoice has 7. The credit note contributes NIF, date, invoice number, and gross.
+
+Net 10.00 and rate 23.00 on the café invoice are implied from the printed total and IVA. They are expected values, not empty cells.
+
+The credit-note total is printed as `Total: -10,00`, with a space before the minus. That sign is counted. A hyphen glued to a label, such as `Total-12,30`, is not a minus and is not a gain in this table.
+
+## Before the extractor changes
+
+Same 11 cells, from the measurement taken before month-name dates, series prefixes, and the spaced minus on the credit total. The café invoice missed the date and the invoice number. The credit note missed NIF, date, invoice number, and gross, which was read as 10.00.
+
+| field | hits | counted | accuracy |
 | --- | --- | --- | --- |
-| NIF | 4 | 6 | 66.7% |
-| date | 2 | 6 | 33.3% |
-| invoice number | 2 | 6 | 33.3% |
-| net | 6 | 6 | 100.0% |
-| IVA | 6 | 6 | 100.0% |
-| gross | 4 | 6 | 66.7% |
-| rate | 6 | 6 | 100.0% |
-| all | 30 | 42 | 71.4% |
+| NIF | 1 | 2 | 50.0% |
+| date | 0 | 2 | 0.0% |
+| invoice number | 0 | 2 | 0.0% |
+| net | 1 | 1 | 100.0% |
+| IVA | 1 | 1 | 100.0% |
+| gross | 1 | 2 | 50.0% |
+| rate | 1 | 1 | 100.0% |
+| all | 5 | 11 | 45.5% |
 
-## Before, Tesseract on the four PDF rasters
-
-Same poppler render and `por+eng` read, before those extractor changes. The four PDFs missed the same date, invoice number, and credit sign as the text layer. The thermal roll and the photo were not in this pass.
-
-| field | hits | docs | accuracy |
-| --- | --- | --- | --- |
-| NIF | 2 | 4 | 50.0% |
-| date | 0 | 4 | 0.0% |
-| invoice number | 0 | 4 | 0.0% |
-| net | 4 | 4 | 100.0% |
-| IVA | 4 | 4 | 100.0% |
-| gross | 2 | 4 | 50.0% |
-| rate | 4 | 4 | 100.0% |
-| all | 16 | 28 | 57.1% |
+An earlier draft of this file scored 40 of 42 cells (95.2%), and 16 of 28 raster cells (57.1%). That draft counted the qpdf copies, 14 QR-only cells, 6 empty-equals-empty cells, and the credit-note gross. It is not the score.
 
 ## After, production path
 
-What `OCRService.process_document` returns with `OCR_BACKEND=tesseract`. Text PDFs use the text layer. The thermal roll and the photo use the raster plus the QR payload.
+What `OCRService.process_document` returns with `OCR_BACKEND=tesseract` on the two unique text layouts. Text PDFs use the text layer. QR documents are not in this table.
 
-| field | hits | docs | accuracy |
+| field | hits | counted | accuracy |
 | --- | --- | --- | --- |
-| NIF | 4 | 6 | 66.7% |
-| date | 6 | 6 | 100.0% |
-| invoice number | 6 | 6 | 100.0% |
-| net | 6 | 6 | 100.0% |
-| IVA | 6 | 6 | 100.0% |
-| gross | 6 | 6 | 100.0% |
-| rate | 6 | 6 | 100.0% |
-| all | 40 | 42 | 95.2% |
+| NIF | 1 | 2 | 50.0% |
+| date | 2 | 2 | 100.0% |
+| invoice number | 2 | 2 | 100.0% |
+| net | 1 | 1 | 100.0% |
+| IVA | 1 | 1 | 100.0% |
+| gross | 2 | 2 | 100.0% |
+| rate | 1 | 1 | 100.0% |
+| all | 10 | 11 | 90.9% |
 
-| document | path | NIF | date | invoice number | net | IVA | gross | rate |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| fatura-cafe-lisboa.pdf | pipeline | hit 503504564 | hit 2026-03-31 | hit FT A/12 | hit 10.00 | hit 2.30 | hit 12.30 | hit 23.00 |
-| fatura-cafe-lisboa.qpdf.pdf | pipeline | hit 503504564 | hit 2026-03-31 | hit FT A/12 | hit 10.00 | hit 2.30 | hit 12.30 | hit 23.00 |
-| nota-credito.pdf | pipeline | miss empty | hit 2026-04-15 | hit NC Q2 | hit empty | hit empty | hit -10.00 | hit empty |
-| nota-credito.qpdf.pdf | pipeline | miss empty | hit 2026-04-15 | hit NC Q2 | hit empty | hit empty | hit -10.00 | hit empty |
-| thermal-80mm.pdf | pipeline | hit 503504564 | hit 2026-09-15 | hit FT A/12 | hit 30.00 | hit 5.20 | hit 35.20 | hit empty |
-| fatura-photo.png | pipeline | hit 503504564 | hit 2026-09-15 | hit FT A/12 | hit 30.00 | hit 5.20 | hit 35.20 | hit empty |
+| document | NIF | date | invoice number | net | IVA | gross | rate |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| fatura-cafe-lisboa.pdf | hit 123456002 | hit 2026-03-31 | hit FT A/12 | hit 10.00 | hit 2.30 | hit 12.30 | hit 23.00 |
+| nota-credito.pdf | miss None | hit 2026-04-15 | hit NC Q2 | flagged empty | flagged empty | hit -10.00 | flagged empty |
 
-## After, Tesseract on the raster
+Counted result: 10 of 11 (90.9%).
 
-First page rendered with the same poppler cap as the app, then Tesseract `por+eng`, then the field extractor. The QR payload is not applied, so this table is the glyph read.
+## Flagged, not counted
 
-Four LibreOffice PDFs only, comparable to the before raster table.
+| document | why | cells |
+| --- | --- | --- |
+| fatura-cafe-lisboa.qpdf.pdf | same text as fatura-cafe-lisboa.pdf | not scored |
+| nota-credito.qpdf.pdf | same text as nota-credito.pdf | not scored |
+| thermal-80mm.pdf | QR payload only | 7 flagged |
+| fatura-photo.png | QR payload only | 7 flagged |
+| nota-credito.pdf | empty net, IVA, and rate | 3 flagged |
 
-| field | hits | docs | accuracy |
-| --- | --- | --- | --- |
-| NIF | 2 | 4 | 50.0% |
-| date | 4 | 4 | 100.0% |
-| invoice number | 4 | 4 | 100.0% |
-| net | 4 | 4 | 100.0% |
-| IVA | 4 | 4 | 100.0% |
-| gross | 4 | 4 | 100.0% |
-| rate | 4 | 4 | 100.0% |
-| all | 26 | 28 | 92.9% |
+## Raster check
 
-All six documents. The thermal roll and the photo add misses here because the QR is not applied.
+Tesseract `por+eng` on the first page of each unique PDF, with the QR payload not applied. The counted cells are compared with the production text-layer read.
 
-| field | hits | docs | accuracy |
-| --- | --- | --- | --- |
-| NIF | 2 | 6 | 33.3% |
-| date | 4 | 6 | 66.7% |
-| invoice number | 4 | 6 | 66.7% |
-| net | 4 | 6 | 66.7% |
-| IVA | 4 | 6 | 66.7% |
-| gross | 4 | 6 | 66.7% |
-| rate | 6 | 6 | 100.0% |
-| all | 28 | 42 | 66.7% |
-
-| document | path | NIF | date | invoice number | net | IVA | gross | rate |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| fatura-cafe-lisboa.pdf | tesseract | hit 503504564 | hit 2026-03-31 | hit FT A/12 | hit 10.00 | hit 2.30 | hit 12.30 | hit 23.00 |
-| fatura-cafe-lisboa.qpdf.pdf | tesseract | hit 503504564 | hit 2026-03-31 | hit FT A/12 | hit 10.00 | hit 2.30 | hit 12.30 | hit 23.00 |
-| nota-credito.pdf | tesseract | miss empty | hit 2026-04-15 | hit NC Q2 | hit empty | hit empty | hit -10.00 | hit empty |
-| nota-credito.qpdf.pdf | tesseract | miss empty | hit 2026-04-15 | hit NC Q2 | hit empty | hit empty | hit -10.00 | hit empty |
-| thermal-80mm.pdf | tesseract | miss empty | miss empty | miss empty | miss empty | miss empty | miss empty | hit empty |
-| fatura-photo.png | tesseract | miss empty | miss empty | miss empty | miss empty | miss empty | miss empty | hit empty |
+Raster matched the production counted cells: 11 of 11.
 
 ## Follow-ups
 
 - The credit-note fixture prints NIF 501111111. That number fails the check digit, so the extractor leaves the NIF empty. The check stays.
 - Vendor lines still keep the first heading (`Fornecedor: Café Lisboa`, `Nota de crédito NC Q2`) instead of the name after Fornecedor.
-- The credit note prints no net, IVA, or rate.
-- On the thermal roll and the photo, the scored amounts come from the QR. Tesseract on the roll itself only has the word Talão plus the QR image.
-- Month names cover `d de mês de yyyy`, with or without the accent on março. Other date layouts are unchanged.
+- The credit note prints no net, IVA, or rate. Those three cells stay flagged.
+- On the thermal roll and the photo, the pipeline amounts come from the QR. Tesseract on the roll itself only has the word Talão plus the QR image.
+- Month names cover `d de mês de yyyy` and abbreviations such as `set` and `fev.`. Other date layouts are unchanged.
 - Crumpled photos and digit mixups are not in this corpus.

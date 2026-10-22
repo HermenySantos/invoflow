@@ -42,7 +42,27 @@ DATE_YMD = re.compile(
     r"\b(\d{4})[./-](\d{1,2})[./-](\d{1,2})\b"
 )
 DATE_PT_TEXT = re.compile(
-    r"\b(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})\b",
+    r"\b(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]{3,})\.?\s+de\s+(\d{4})\b",
+    re.IGNORECASE,
+)
+DATE_PT_ABBR = re.compile(
+    r"\b(\d{1,2})[./-]([A-Za-zÀ-ÿ]{3,})\.?[./-](\d{4})\b",
+    re.IGNORECASE,
+)
+_ISSUE_LABEL = re.compile(
+    r"data\s+de\s+emiss[aã]o|data\s+do\s+documento|issue\s+date|invoice\s+date|"
+    r"(?<![A-Za-zÀ-ÿ])(?:data|date)\b",
+    re.IGNORECASE,
+)
+_DUE_LABEL = re.compile(
+    r"vencimento|due(?:\s+date)?|data\s+limite|pagamento\s+at[eé]",
+    re.IGNORECASE,
+)
+_LETTERHEAD = re.compile(
+    r"^[A-ZÀ-Ý][\wÀ-ÿ.'’\- ]{1,40},\s*\d{1,2}\s+de\s+",
+)
+_CREDIT_NOTE = re.compile(
+    r"nota\s+de\s+cr[eé]dito|(?<![A-Za-z])NC(?![A-Za-z])",
     re.IGNORECASE,
 )
 # Series codes stay on the number ("FT A/12"). Words such as Invoice do not.
@@ -52,23 +72,25 @@ INVOICE_NO = re.compile(
     r"[:\s#º°]+(?=\S*\d)(?P<number>[A-Z0-9][A-Z0-9/.\-]{1,30})",
     re.IGNORECASE,
 )
-# A minus counts only when it touches the digits ("-10,00"), not " - 34,09".
+# A hyphen glued to a label ("Total-12,30", "IVA 23%-2,30") is not a minus.
+# A minus is a sign when whitespace (or the start of the line) precedes it.
 MONEY = re.compile(
-    r"(?<![\d.,])\$?\s*(-)?(\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})(?!\d)"
+    r"(?<![\d.,])(?P<prefix>[-−])?"
+    r"(?P<amount>\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})(?!\d)"
 )
 _PT_MONTHS = {
-    "janeiro": 1,
-    "fevereiro": 2,
-    "marco": 3,
-    "abril": 4,
-    "maio": 5,
-    "junho": 6,
-    "julho": 7,
-    "agosto": 8,
-    "setembro": 9,
-    "outubro": 10,
-    "novembro": 11,
-    "dezembro": 12,
+    "janeiro": 1, "jan": 1,
+    "fevereiro": 2, "fev": 2,
+    "marco": 3, "mar": 3,
+    "abril": 4, "abr": 4,
+    "maio": 5, "mai": 5,
+    "junho": 6, "jun": 6,
+    "julho": 7, "jul": 7,
+    "agosto": 8, "ago": 8,
+    "setembro": 9, "set": 9,
+    "outubro": 10, "out": 10,
+    "novembro": 11, "nov": 11,
+    "dezembro": 12, "dez": 12,
 }
 DATE_BROKEN_YEAR = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2})\s+(\d{2})(?!\d|:)")
 VAT_LABEL = re.compile(
@@ -201,46 +223,67 @@ def _looks_like_nif(nif: str) -> bool:
     return (0 if check >= 10 else check) == int(nif[8])
 
 
-def _money_amounts(line: str) -> list[Decimal]:
+def _is_credit_note(text: str) -> bool:
+    return bool(_CREDIT_NOTE.search(text or ""))
+
+
+def _amount_from_match(line: str, match: re.Match[str], *, credit: bool) -> Optional[Decimal]:
+    value = parse_pt_amount(match.group("amount"))
+    if value is None:
+        return None
+    prefix = match.group("prefix") or ""
+    if not prefix:
+        return value
+    before = line[: match.start("prefix")]
+    if before == "" or before[-1].isspace() or credit:
+        return -value
+    return value
+
+
+def _money_amounts(line: str, *, credit: bool = False) -> list[Decimal]:
     """Money tokens on one line. A number followed by % is a rate, not an amount."""
     amounts: list[Decimal] = []
     for match in MONEY.finditer(line):
         if line[match.end() :].lstrip().startswith("%"):
             continue
-        amount = parse_pt_amount(f"{match.group(1) or ''}{match.group(2)}")
+        amount = _amount_from_match(line, match, credit=credit)
         if amount is not None and amount != 0:
             amounts.append(amount)
     return amounts
 
 
-def _last_labeled_amount(lines: list[str], label: re.Pattern[str]) -> Optional[Decimal]:
+def _last_labeled_amount(
+    lines: list[str], label: re.Pattern[str], *, credit: bool = False
+) -> Optional[Decimal]:
     found: Optional[Decimal] = None
     for line in lines:
         if SKIP_TOTAL_LINE.search(line):
             continue
         if not label.search(line):
             continue
-        amounts = _money_amounts(line)
+        amounts = _money_amounts(line, credit=credit)
         if amounts:
             found = amounts[-1]
     return found
 
 
-def _largest_labeled_amount(lines: list[str], label: re.Pattern[str]) -> Optional[Decimal]:
+def _largest_labeled_amount(
+    lines: list[str], label: re.Pattern[str], *, credit: bool = False
+) -> Optional[Decimal]:
     found: list[Decimal] = []
     for line in lines:
         if SKIP_TOTAL_LINE.search(line):
             continue
         if not label.search(line):
             continue
-        amounts = _money_amounts(line)
+        amounts = _money_amounts(line, credit=credit)
         if amounts:
             found.append(amounts[-1])
     return max(found) if found else None
 
 
 def _extract_vat(
-    lines: list[str],
+    lines: list[str], *, credit: bool = False
 ) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal], list[dict]]:
     """Return (rate, vat amount, net, per-rate breakdown) from the tax summary.
 
@@ -254,7 +297,7 @@ def _extract_vat(
     for line in lines:
         if VAT_SKIP.search(line) or not VAT_LABEL.search(line):
             continue
-        amounts = _money_amounts(line)
+        amounts = _money_amounts(line, credit=credit)
         rate_match = RATE_IN_LINE.search(line)
         if not amounts and not rate_match:
             continue
@@ -283,41 +326,103 @@ def _fold_letters(value: str) -> str:
 def _invoice_number_from_match(match: re.Match[str]) -> str:
     series = match.group("series").upper()
     number = match.group("number").strip()
-    if series in _SERIES_CODES and not number.upper().startswith(f"{series} "):
+    # "FT FT2026/1" already carries the series. Do not write "FT FT2026/1".
+    if series in _SERIES_CODES and not number.upper().startswith(series):
         return f"{series} {number}"[:100]
     return number[:100]
 
 
-def _parse_date(text: str) -> Optional[date]:
-    for match in DATE_PT_TEXT.finditer(text):
-        month = _PT_MONTHS.get(_fold_letters(match.group(2)))
-        if month is None:
-            continue
-        parsed = _safe_date(int(match.group(3)), month, int(match.group(1)))
-        if parsed:
-            return parsed
-    for match in DATE_YMD.finditer(text):
+def _select_invoice_number(text: str) -> Optional[str]:
+    matches = list(INVOICE_NO.finditer(text))
+    if not matches:
+        return None
+
+    def rank(match: re.Match[str]) -> tuple[int, int]:
+        series = match.group("series").upper()
+        # A credit note that cites the original invoice should keep the NC number.
+        prefer_note = 0 if series in {"NC", "ND"} else 1
+        return (prefer_note, match.start())
+
+    return _invoice_number_from_match(min(matches, key=rank))
+
+
+def _month_number(token: str) -> Optional[int]:
+    return _PT_MONTHS.get(_fold_letters(token).rstrip("."))
+
+
+def _line_kind(line: str) -> str:
+    if _DUE_LABEL.search(line):
+        return "due"
+    if _ISSUE_LABEL.search(line):
+        return "issue"
+    if _LETTERHEAD.match(line.strip()):
+        return "letterhead"
+    return "other"
+
+
+def _dates_on_line(line: str) -> list[date]:
+    found: list[tuple[int, int, date]] = []
+
+    def add(start: int, end: int, parsed: Optional[date]) -> None:
+        if parsed is None:
+            return
+        for old_start, old_end, _old in found:
+            if start < old_end and end > old_start:
+                return
+        found.append((start, end, parsed))
+
+    for match in DATE_PT_TEXT.finditer(line):
+        month = _month_number(match.group(2))
+        parsed = _safe_date(int(match.group(3)), month, int(match.group(1))) if month else None
+        add(match.start(), match.end(), parsed)
+    for match in DATE_PT_ABBR.finditer(line):
+        month = _month_number(match.group(2))
+        parsed = _safe_date(int(match.group(3)), month, int(match.group(1))) if month else None
+        add(match.start(), match.end(), parsed)
+    for match in DATE_YMD.finditer(line):
         year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
-        parsed = _safe_date(year, month, day)
-        if parsed:
-            return parsed
-    for match in DATE_DMY.finditer(text):
-        # "11/15/20 19" is a year split by the PDF reader, not 2020.
-        if match.group(3).__len__() == 2 and DATE_BROKEN_YEAR.match(text, match.start()):
+        add(match.start(), match.end(), _safe_date(year, month, day))
+    for match in DATE_DMY.finditer(line):
+        if match.group(3).__len__() == 2 and DATE_BROKEN_YEAR.match(line, match.start()):
             continue
         first, second, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
         if year < 100:
             year += 2000
-        parsed = _safe_date(year, second, first) or _safe_date(year, first, second)
-        if parsed:
-            return parsed
-    for match in DATE_BROKEN_YEAR.finditer(text):
+        add(match.start(), match.end(), _safe_date(year, second, first) or _safe_date(year, first, second))
+    for match in DATE_BROKEN_YEAR.finditer(line):
         first, second = int(match.group(1)), int(match.group(2))
         year = int(match.group(3) + match.group(4))
-        parsed = _safe_date(year, second, first) or _safe_date(year, first, second)
-        if parsed:
-            return parsed
-    return None
+        add(match.start(), match.end(), _safe_date(year, second, first) or _safe_date(year, first, second))
+    return [item[2] for item in found]
+
+
+def _choose_date(text: str) -> tuple[Optional[date], bool]:
+    """Issue label wins over a due date or a letterhead date.
+
+    Two different issue dates, or two different unlabelled dates, are ambiguous.
+    """
+    buckets: dict[str, list[date]] = {"issue": [], "other": [], "letterhead": []}
+    for raw in text.splitlines() or [text]:
+        line = raw.strip()
+        if not line:
+            continue
+        kind = _line_kind(line)
+        if kind == "due":
+            continue
+        buckets[kind].extend(_dates_on_line(line))
+    for kind in ("issue", "other", "letterhead"):
+        unique: list[date] = []
+        for item in buckets[kind]:
+            if item not in unique:
+                unique.append(item)
+        if unique:
+            return unique[0], len(unique) > 1
+    return None, False
+
+
+def _parse_date(text: str) -> Optional[date]:
+    chosen, _ambiguous = _choose_date(text)
+    return chosen
 
 
 def _safe_date(year: int, month: int, day: int) -> Optional[date]:
@@ -361,15 +466,14 @@ def extract_fields(text: str) -> ExtractedFields:
         return result
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    credit = _is_credit_note(text)
     result.vendor_name = _guess_vendor(lines)
     result.vendor_nif = extract_portuguese_nif(text)
-    result.document_date = _parse_date(text)
+    result.document_date, ambiguous_date = _choose_date(text)
 
-    invoice = INVOICE_NO.search(text)
-    if invoice:
-        result.invoice_number = _invoice_number_from_match(invoice)
+    result.invoice_number = _select_invoice_number(text)
 
-    vat_rate, vat_amount, vat_net, breakdown = _extract_vat(lines)
+    vat_rate, vat_amount, vat_net, breakdown = _extract_vat(lines, credit=credit)
     result.vat_rate = vat_rate
     result.vat_amount = vat_amount
     result.net_amount = vat_net
@@ -379,9 +483,9 @@ def extract_fields(text: str) -> ExtractedFields:
             {key: str(value) for key, value in entry.items()} for entry in breakdown
         ]
 
-    result.gross_amount = _last_labeled_amount(lines, STRONG_TOTAL)
+    result.gross_amount = _last_labeled_amount(lines, STRONG_TOTAL, credit=credit)
     if result.gross_amount is None:
-        result.gross_amount = _largest_labeled_amount(lines, PAYMENT_TOTAL)
+        result.gross_amount = _largest_labeled_amount(lines, PAYMENT_TOTAL, credit=credit)
 
     net_match = None if mixed_rates else NET_LINE.search(text)
     if net_match:
@@ -389,21 +493,37 @@ def extract_fields(text: str) -> ExtractedFields:
         if labeled_net is not None:
             result.net_amount = labeled_net
 
-    if result.gross_amount and result.vat_amount and result.net_amount is None:
-        result.net_amount = result.gross_amount - result.vat_amount
-    if result.gross_amount and result.net_amount and result.vat_amount is None:
-        vat = result.gross_amount - result.net_amount
-        if vat >= 0:
+    if result.gross_amount is not None and result.gross_amount < 0:
+        if result.vat_amount is not None and result.vat_amount > 0:
+            result.vat_amount = -result.vat_amount
+        if result.net_amount is not None and result.net_amount > 0:
+            result.net_amount = -result.net_amount
+        if result.vat_breakdown:
+            flipped = []
+            for entry in result.vat_breakdown:
+                flipped.append(
+                    {
+                        key: (f"-{value}" if key in {"net", "vat"} and not str(value).startswith("-") else value)
+                        for key, value in entry.items()
+                    }
+                )
+            result.vat_breakdown = flipped
+
+    if result.gross_amount is not None and result.vat_amount is not None and result.net_amount is None:
+        result.net_amount = (result.gross_amount - result.vat_amount).quantize(Decimal("0.01"))
+    if result.gross_amount is not None and result.net_amount is not None and result.vat_amount is None:
+        vat = (result.gross_amount - result.net_amount).quantize(Decimal("0.01"))
+        if result.gross_amount < 0 or vat >= 0:
             result.vat_amount = vat
 
     if (
         result.net_amount
         and result.vat_amount
-        and result.net_amount > 0
         and result.vat_rate is None
         and not mixed_rates
+        and abs(result.net_amount) > 0
     ):
-        guessed = (result.vat_amount / result.net_amount * 100).quantize(Decimal("0.01"))
+        guessed = (abs(result.vat_amount) / abs(result.net_amount) * 100).quantize(Decimal("0.01"))
         result.vat_rate = _nearest_vat_rate(guessed) or guessed
 
     filled = sum(
@@ -419,7 +539,8 @@ def extract_fields(text: str) -> ExtractedFields:
     )
     result.confidence = min(95.0, 20.0 * filled)
     result.needs_review = (
-        result.confidence < 85
+        ambiguous_date
+        or result.confidence < 85
         or not result.vendor_name
         or not result.gross_amount
         or not result.document_date
