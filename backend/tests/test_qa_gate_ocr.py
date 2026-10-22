@@ -353,12 +353,29 @@ def test_review_patch_rejects_a_negative_credit_note(client: TestClient, db: Ses
     assert confirmed == Decimal("-1.87")
     assert pending == Decimal("0.00")
 
+    partial = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"gross_amount": "100.50"},
+    )
+    assert partial.status_code == 200
+    assert Decimal(str(partial.json()["gross_amount"])) == Decimal("100.50")
+    db.refresh(stored)
+    assert stored.net_amount == Decimal("8.13")
+    assert stored.vat_amount == Decimal("1.87")
+
     inconsistent = client.patch(
         f"/api/documents/{document_id}",
         headers=mock_user_headers,
-        json={"gross_amount": "99.00"},
+        json={"net_amount": "1.00", "vat_amount": "1.00", "gross_amount": "12.30"},
     )
     assert inconsistent.status_code == 422
+    paired = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"net_amount": "1.00", "vat_amount": "1.00"},
+    )
+    assert paired.status_code == 422
 
 
 def test_series_prefix_not_doubled():

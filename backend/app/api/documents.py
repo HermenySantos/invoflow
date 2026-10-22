@@ -433,14 +433,22 @@ async def update_document(
     try:
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
-        merged_net = update_data.get("net_amount", document.net_amount)
-        merged_vat = update_data.get("vat_amount", document.vat_amount)
-        merged_gross = update_data.get("gross_amount", document.gross_amount)
-        if not amounts_are_consistent(merged_net, merged_vat, merged_gross):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="net + IVA must match gross",
-            )
+        # Omitted amount fields stay as stored. A single-field correction is
+        # not a complete triple: the other two still describe the previous
+        # total. When two or three are sent, the missing one is filled from
+        # the row and net + IVA must match gross.
+        sent_amounts = [
+            field for field in ("net_amount", "vat_amount", "gross_amount") if field in update_data
+        ]
+        if len(sent_amounts) >= 2:
+            merged_net = update_data.get("net_amount", document.net_amount)
+            merged_vat = update_data.get("vat_amount", document.vat_amount)
+            merged_gross = update_data.get("gross_amount", document.gross_amount)
+            if not amounts_are_consistent(merged_net, merged_vat, merged_gross):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="net + IVA must match gross",
+                )
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields
