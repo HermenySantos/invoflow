@@ -38,26 +38,33 @@ def _money(value) -> Decimal:
 def _code(value) -> Optional[str]:
     if not isinstance(value, str):
         return None
-    text = value.strip().upper()
-    return text or None
+    text = value.strip()
+    if not text:
+        return None
+    if text.lower() == "unclassified":
+        return "unclassified"
+    return text.upper()
 
 
 def fiscal_mark(document) -> FiscalMark:
+    # The column is the reviewer's choice and wins over the raw reading.
+    column_type = _code(getattr(document, "document_type", None))
     raw = getattr(document, "ocr_raw_response", None)
     if not raw:
-        return FiscalMark(None, None, None)
+        return FiscalMark(column_type, None, None)
     try:
         payload = json.loads(raw)
     except (TypeError, json.JSONDecodeError):
-        return FiscalMark(None, None, None)
+        return FiscalMark(column_type, None, None)
     if not isinstance(payload, dict):
-        return FiscalMark(None, None, None)
+        return FiscalMark(column_type, None, None)
     qr = payload.get("qr")
     if not isinstance(qr, dict):
         qr = {}
     digest = payload.get("file_sha256")
+    hinted = _code(qr.get("document_type")) or _code(payload.get("document_type"))
     return FiscalMark(
-        document_type=_code(qr.get("document_type")),
+        document_type=column_type or hinted,
         fiscal_status=_code(qr.get("fiscal_status")),
         file_sha256=digest if isinstance(digest, str) and digest else None,
     )
@@ -114,14 +121,44 @@ def _prefer(candidate, incumbent) -> bool:
     return str(getattr(candidate, "id", "")) > str(getattr(incumbent, "id", ""))
 
 
+def _raw_money(value) -> Decimal:
+    if value is None:
+        return _ZERO
+    return Decimal(value).quantize(_CENT)
+
+
 def _signed(document, mark: FiscalMark) -> Counted:
-    sign = -1 if mark.document_type == "NC" else 1
-    return Counted(
-        document=document,
-        net=(_money(document.net_amount) * sign).quantize(_CENT),
-        vat=(_money(document.vat_amount) * sign).quantize(_CENT),
-        gross=(_money(document.gross_amount) * sign).quantize(_CENT),
-    )
+    # Amounts are stored non-negative. Only document type NC applies the minus.
+    # A negative field is not a second sign and must not cancel the type.
+    net = abs(_raw_money(document.net_amount))
+    vat = abs(_raw_money(document.vat_amount))
+    gross = abs(_raw_money(document.gross_amount))
+    if mark.document_type == "NC":
+        net, vat, gross = -net, -vat, -gross
+    return Counted(document=document, net=net, vat=vat, gross=gross)
+
+
+def exclusion_reason(document) -> Optional[str]:
+    """Why a row is left out of both IVA totals, or None when it can count."""
+    if fiscal_mark(document).document_type == "unclassified":
+        return "por classificar"
+    if not _amounts_count(document):
+        return "valores inconsistentes"
+    return None
+
+
+def _amounts_count(document) -> bool:
+    """A complete triple that does not add up is left out of both IVA totals."""
+    net = getattr(document, "net_amount", None)
+    vat = getattr(document, "vat_amount", None)
+    gross = getattr(document, "gross_amount", None)
+    if net is None:
+        if vat is not None and gross is not None and Decimal(vat) > Decimal(gross):
+            return False
+        return True
+    if vat is None or gross is None:
+        return True
+    return abs((Decimal(net) + Decimal(vat)) - Decimal(gross)) <= _CENT
 
 
 def _in_period(document, period_ids: set, period_tokens: set) -> bool:
@@ -175,7 +212,11 @@ def contributions(documents, library=None) -> list[Counted]:
     rows = [
         _signed(document, mark)
         for document, mark in list(chosen.values()) + loose
-        if _in_period(document, period_ids, period_tokens)
+        if (
+            _in_period(document, period_ids, period_tokens)
+            and _amounts_count(document)
+            and mark.document_type != "unclassified"
+        )
     ]
     rows.sort(key=lambda row: _when(row.document))
     return rows

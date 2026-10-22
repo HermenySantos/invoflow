@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { AppLayout } from '@/components/layout/AppLayout';
 import { parseAmountInput } from "@/lib/amount";
 import { api, Summary, CategoryBreakdown } from "@/lib/api";
@@ -373,6 +374,24 @@ export default function SummaryPage() {
                   <span className="text-sm text-gray-500">
                     {formatCurrency(summary.deductible_vat_pending)}
                   </span>
+                </div>
+              )}
+              {(summary.excluded_count ?? 0) > 0 && (
+                <div className="py-2.5">
+                  <p className="text-sm font-medium text-gray-900">
+                    Excluídos do IVA ({summary.excluded_count}) — por rever
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {(summary.excluded_documents ?? []).map((item) => (
+                      <li key={item.id} className="text-sm text-gray-600">
+                        <Link href={`/receipts/${item.id}`} className="underline">
+                          {item.vendor_name || "Sem fornecedor"}
+                          {item.invoice_number ? ` · ${item.invoice_number}` : ""}
+                        </Link>
+                        <span className="text-gray-500"> — {item.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               <div className="flex items-center justify-between py-2.5">

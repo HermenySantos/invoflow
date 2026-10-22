@@ -63,6 +63,7 @@ async def _read_into(db: Session, document: Document) -> None:
     document.vendor_name = result.vendor_name
     document.vendor_nif = result.vendor_nif
     document.invoice_number = result.invoice_number
+    document.document_type = result.document_type
     document.document_date = result.document_date
     document.net_amount = result.net_amount
     document.vat_amount = result.vat_amount

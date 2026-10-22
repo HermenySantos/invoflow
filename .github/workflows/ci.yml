@@ -23,6 +23,30 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: python -m pytest -q
 
+  ocr-corpus:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      OCR_CORPUS: "1"
+      OCR_BACKEND: tesseract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: tesseract por+eng and poppler
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng poppler-utils
+      - name: real OCR over the synthetic corpus
+        run: python -m pytest -q -m ocr_corpus
+      - name: accuracy report matches the committed file
+        working-directory: ${{ github.workspace }}
+        run: git diff --exit-code -- docs/ocr-accuracy.md
+
   migrations:
     runs-on: ubuntu-latest
     services:
@@ -50,6 +74,8 @@ jobs:
         run: |
           alembic upgrade head
           alembic check
+      - name: Migration 008 round-trips amounts on Postgres
+        run: python scripts/check_migration_008.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base

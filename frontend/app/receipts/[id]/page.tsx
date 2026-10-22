@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
+import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, saveEditPayload } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -68,6 +69,15 @@ const AUDIT_SOURCE_BADGE: Record<string, { label: string; className: string }> =
   system: { label: 'Sistema', className: 'bg-gray-100 text-gray-600' },
 };
 
+/** The API's Portuguese 422, or a generic save failure. */
+function saveError(err: unknown): string {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const message = String((err as { message: unknown }).message);
+    if (message && !message.startsWith('API Error')) return message;
+  }
+  return 'Não foi possível guardar. Tente novamente.';
+}
+
 /** Relative timestamp in Portuguese */
 function relativeTime(dateStr: string): string {
   const now = Date.now();
@@ -101,6 +111,7 @@ export default function ReceiptDetailPage() {
     document_date: '',
     gross_amount: '',
     vat_amount: '',
+    document_type: 'unclassified',
   });
 
   // Category picker
@@ -125,6 +136,7 @@ export default function ReceiptDetailPage() {
         document_date: data.document_date || '',
         gross_amount: data.gross_amount || '',
         vat_amount: data.vat_amount || '',
+        document_type: data.document_type || 'unclassified',
       });
     } catch (err) {
       setError('Não foi possível carregar o recibo.');
@@ -152,6 +164,7 @@ export default function ReceiptDetailPage() {
           document_date: data.document_date || '',
           gross_amount: data.gross_amount || '',
           vat_amount: data.vat_amount || '',
+          document_type: data.document_type || 'unclassified',
         });
       } catch {
         // Next tick retries.
@@ -233,7 +246,7 @@ export default function ReceiptDetailPage() {
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to confirm:', err);
-      setError('Não foi possível guardar. Tente novamente.');
+      setError(saveError(err));
     } finally {
       setIsSaving(false);
     }
@@ -246,17 +259,11 @@ export default function ReceiptDetailPage() {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, {
-        vendor_name: editData.vendor_name || null,
-        document_date: editData.document_date || null,
-        gross_amount: editData.gross_amount || null,
-        vat_amount: editData.vat_amount || null,
-        status: 'ready',
-      });
+      await api.updateDocument(document.id, saveEditPayload(editData));
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
-      setError('Não foi possível guardar. Tente novamente.');
+      setError(saveError(err));
     } finally {
       setIsSaving(false);
     }
@@ -429,6 +436,23 @@ export default function ReceiptDetailPage() {
                 </div>
 
                 <div>
+                  <label htmlFor="edit-document-type" className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de documento
+                  </label>
+                  <select
+                    id="edit-document-type"
+                    value={editData.document_type}
+                    onChange={(e) => setEditData(d => ({ ...d, document_type: e.target.value }))}
+                    className="input"
+                  >
+                    <option value="unclassified">Por classificar</option>
+                    {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
                   <input
                     type="text"
@@ -504,6 +528,18 @@ export default function ReceiptDetailPage() {
 
                 {/* Extracted data summary */}
                 <div className="card divide-y divide-gray-100">
+                  <div className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Receipt className="w-5 h-5 text-gray-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-500">Tipo</p>
+                      <p className="font-semibold text-gray-900">
+                        {documentTypeLabel(document.document_type)}
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Vendor */}
                   <div className="p-4 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">

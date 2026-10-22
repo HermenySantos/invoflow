@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 
 class UploadUrlRequest(BaseModel):
@@ -25,11 +25,43 @@ class DocumentCreate(BaseModel):
     file_size: Optional[int] = None
 
 
+_AMOUNT_TOLERANCE = Decimal("0.01")
+_CENT = Decimal("0.01")
+AMOUNT_MISMATCH_DETAIL = "O valor líquido mais o IVA tem de ser igual ao total."
+TYPE_REQUIRED_DETAIL = "Indique o tipo de documento antes de o marcar como pronto."
+CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
+DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
+
+
+def _round_cents(value):
+    if value is None or value == "":
+        return None
+    return Decimal(str(value)).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def amounts_are_consistent(net: Optional[Decimal], vat: Optional[Decimal], gross: Optional[Decimal]) -> bool:
+    """Gross, net and IVA are non-negative. When all three are present, net + IVA matches gross.
+
+    When net is missing, IVA cannot exceed gross (the implied net would be negative).
+    """
+    for amount in (net, vat, gross):
+        if amount is not None and amount < 0:
+            return False
+    if net is None:
+        if vat is not None and gross is not None and vat > gross:
+            return False
+        return True
+    if vat is None or gross is None:
+        return True
+    return abs((net + vat) - gross) <= _AMOUNT_TOLERANCE
+
+
 class DocumentUpdate(BaseModel):
     """Update extracted document fields."""
     vendor_name: Optional[str] = Field(None, max_length=255)
     vendor_nif: Optional[str] = Field(None, max_length=20)
     invoice_number: Optional[str] = Field(None, max_length=100)
+    document_type: Optional[str] = Field(None, pattern=r"^(FT|FR|FS|ND|NC|unclassified)$")
     document_date: Optional[date] = None
     net_amount: Optional[Decimal] = Field(None, ge=0)
     vat_amount: Optional[Decimal] = Field(None, ge=0)
@@ -41,6 +73,19 @@ class DocumentUpdate(BaseModel):
     irs_sector: Optional[str] = Field(None, max_length=50)
     # 0-100; send null to go back to the category rule.
     deductible_pct_override: Optional[int] = Field(None, ge=0, le=100)
+
+    @field_validator("net_amount", "vat_amount", "gross_amount", mode="before")
+    @classmethod
+    def round_money(cls, value):
+        return _round_cents(value)
+
+    @model_validator(mode="after")
+    def amounts_match(self) -> "DocumentUpdate":
+        # A partial edit may leave the stored row inconsistent. Sending all
+        # three amounts that do not add up is a complete, rejected triple.
+        if not amounts_are_consistent(self.net_amount, self.vat_amount, self.gross_amount):
+            raise ValueError(AMOUNT_MISMATCH_DETAIL)
+        return self
 
 
 class FieldConfidence(BaseModel):
@@ -69,6 +114,7 @@ class DocumentResponse(BaseModel):
     vendor_name: Optional[str]
     vendor_nif: Optional[str]
     invoice_number: Optional[str]
+    document_type: Optional[str] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]

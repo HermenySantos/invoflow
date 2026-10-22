@@ -19,7 +19,7 @@ from app.core.security import get_current_user, CurrentUser
 from app.models.user import User
 from app.models.document import Document
 from app.models.vat_sales import VatSalesEntry
-from app.schemas.summary import SummaryResponse, CategoryBreakdown
+from app.schemas.summary import SummaryResponse, CategoryBreakdown, ExcludedDocument
 from app.api.documents import get_or_create_user
 from app.services.categorization import (
     get_expense_category_label,
@@ -28,7 +28,12 @@ from app.services.categorization import (
     deductible_vat_split,
     effective_deductible_pct,
 )
-from app.services.iva_adjust import contributions, credit_note_warnings, duplicate_warnings
+from app.services.iva_adjust import (
+    contributions,
+    credit_note_warnings,
+    duplicate_warnings,
+    exclusion_reason,
+)
 from app.services.validation import validate_period_documents
 
 router = APIRouter()
@@ -124,7 +129,26 @@ async def get_summary(
     
     # ── Counts ──
     total_documents = len(documents)
-    ready_count = sum(1 for d in documents if d.status == "ready")
+    excluded = []
+    for document in documents:
+        if document.status not in ("ready", "needs_review", "accountant_review"):
+            continue
+        reason = exclusion_reason(document)
+        if reason is None:
+            continue
+        excluded.append(
+            ExcludedDocument(
+                id=document.id,
+                vendor_name=document.vendor_name,
+                invoice_number=document.invoice_number,
+                document_type=document.document_type,
+                status=document.status,
+                reason=reason,
+            )
+        )
+    ready_count = sum(
+        1 for d in documents if d.status == "ready" and exclusion_reason(d) is None
+    )
     needs_review_count = sum(1 for d in documents if d.status == "needs_review")
     processing_count = sum(1 for d in documents if d.status == "processing")
     failed_count = sum(1 for d in documents if d.status == "failed")
@@ -245,6 +269,8 @@ async def get_summary(
         period_value=period_value,
         total_documents=total_documents,
         ready_count=ready_count,
+        excluded_count=len(excluded),
+        excluded_documents=excluded,
         needs_review_count=needs_review_count,
         processing_count=processing_count,
         failed_count=failed_count,

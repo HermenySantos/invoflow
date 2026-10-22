@@ -39,9 +39,9 @@ def receipt(user: User, **fields) -> Document:
 
 def test_same_invoice_number_from_same_vendor_is_a_duplicate():
     user = User(id="u", clerk_id="c", email="")
-    first = receipt(user, vendor_nif="503504564", invoice_number="FT 2026/12")
-    again = receipt(user, vendor_nif="503504564", invoice_number="ft 2026/12", gross_amount=Decimal("99"))
-    other = receipt(user, vendor_nif="503504564", invoice_number="FT 2026/13")
+    first = receipt(user, vendor_name="Ana Exemplo", vendor_nif="123456002", invoice_number="FT 2026/12")
+    again = receipt(user, vendor_name="Ana Exemplo", vendor_nif="123456002", invoice_number="ft 2026/12", gross_amount=Decimal("99"))
+    other = receipt(user, vendor_name="Ana Exemplo", vendor_nif="123456002", invoice_number="FT 2026/13")
     assert count_duplicates([first, again, other]) == 1
 
 

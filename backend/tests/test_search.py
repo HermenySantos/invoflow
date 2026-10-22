@@ -18,7 +18,7 @@ def seed(db: Session) -> dict:
     db.add(user)
     db.commit()
     rows = [
-        ("Pingo Doce", "503504564", "FT 2026/12", date(2026, 9, 3), "12.40"),
+        ("Ana Exemplo", "123456002", "FT 2026/12", date(2026, 9, 3), "12.40"),
         ("Galp Energia", "504499777", "FT A/77", date(2026, 9, 20), "85.00"),
         ("100% Bio_Loja", None, None, date(2026, 10, 1), "40.00"),
     ]
@@ -40,7 +40,8 @@ def vendors(client: TestClient, headers: dict, **params) -> list[str]:
 
 def test_text_search_matches_vendor_nif_and_invoice(client: TestClient, db: Session):
     headers = seed(db)
-    assert vendors(client, headers, q="pingo") == ["Pingo Doce"]
+    assert vendors(client, headers, q="ana") == ["Ana Exemplo"]
+    assert vendors(client, headers, q="123456002") == ["Ana Exemplo"]
     assert vendors(client, headers, q="504499") == ["Galp Energia"]
     assert vendors(client, headers, q="a/77") == ["Galp Energia"]
 

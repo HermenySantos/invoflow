@@ -5,7 +5,7 @@ Ensures required configuration is present before the application starts.
 
 import logging
 from typing import List, Tuple
-from app.core.config import get_settings, known_app_env, mock_auth_env_allowed
+from app.core.config import app_env_name, get_settings, known_app_env, mock_auth_env_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -62,23 +62,40 @@ def validate_configuration() -> List[str]:
             "Configure R2 for production!"
         )
     
-    # OCR: Tesseract is the default. Azure is required only when explicitly selected.
-    from app.services.ocr import tesseract_available
+    # OCR: Tesseract (por + eng) is the default. Azure is required only when explicitly selected.
+    from app.services.ocr import tesseract_fallback_message, tesseract_gap
 
-    if settings.ocr_backend.strip().lower() == "tesseract" and not tesseract_available():
+    requested = (settings.ocr_backend or "auto").strip().lower()
+    gap = tesseract_gap()
+    known_backends = {"mock", "tesseract", "azure", "auto"}
+    if requested not in known_backends:
         errors.append(
-            "OCR_BACKEND is tesseract but the tesseract binary is not installed. "
-            "Install tesseract, or set OCR_BACKEND=mock or OCR_BACKEND=auto."
+            f"OCR_BACKEND={requested!r} is not a known backend. "
+            "Use auto, tesseract, mock, or azure."
         )
-    if settings.ocr_backend == "azure":
+    if app_env_name(settings.app_env) == "production" and requested in {"auto", "mock", ""}:
+        errors.append(
+            "OCR_BACKEND must be tesseract or azure when APP_ENV is production. "
+            f"Got {requested or 'auto'}."
+        )
+    if requested == "tesseract" and gap:
+        install = "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng"
+        if app_env_name(settings.app_env) == "production":
+            hint = f"{install}."
+        else:
+            hint = f"{install}, or set OCR_BACKEND=mock or OCR_BACKEND=auto."
+        errors.append(f"OCR_BACKEND is tesseract but {gap}. {hint}")
+    if requested == "azure":
         if not settings.azure_doc_endpoint or not settings.azure_doc_key:
             errors.append(
                 "OCR_BACKEND is azure but AZURE_DOC_ENDPOINT or AZURE_DOC_KEY is not set."
             )
-    elif settings.ocr_mock_mode or settings.ocr_backend == "mock":
+    elif settings.ocr_mock_mode or requested == "mock":
         warnings.append(
             "OCR mock data is enabled. The default open-source backend is Tesseract."
         )
+    if requested in {"auto", ""} and gap:
+        warnings.append(tesseract_fallback_message("auto"))
     
     # e-Fatura pull is off by default. A configured endpoint with a missing
     # sandbox secret warns and does not refuse to start.
@@ -160,7 +177,7 @@ def get_environment_status() -> dict:
     Get a summary of the current environment configuration.
     Useful for debugging and health checks.
     """
-    from app.services.ocr import resolve_ocr_backend, tesseract_available
+    from app.services.ocr import resolve_ocr_backend, tesseract_gap
 
     settings = get_settings()
     backend = resolve_ocr_backend()
@@ -172,7 +189,7 @@ def get_environment_status() -> dict:
             "ocr": backend == "mock",
         },
         "ocr_backend": backend,
-        "tesseract": tesseract_available(),
+        "tesseract": tesseract_gap() is None,
         "debug_mode": settings.app_debug,
         "database_type": "SQLite" if "sqlite" in settings.database_url.lower() else "PostgreSQL",
         "configured_services": {

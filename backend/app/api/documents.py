@@ -27,6 +27,10 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    AMOUNT_MISMATCH_DETAIL,
+    CONCRETE_DOCUMENT_TYPES,
+    TYPE_REQUIRED_DETAIL,
+    amounts_are_consistent,
 )
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.processing import read_receipt
@@ -142,6 +146,7 @@ def build_document_response(
         vendor_name=document.vendor_name,
         vendor_nif=document.vendor_nif,
         invoice_number=document.invoice_number,
+        document_type=document.document_type,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -432,6 +437,43 @@ async def update_document(
     try:
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
+        confirmed = {"ready", "accountant_review"}
+        amount_fields = ("net_amount", "vat_amount", "gross_amount")
+        was_confirmed = document.status in confirmed
+        type_changed = (
+            "document_type" in update_data
+            and update_data["document_type"] != document.document_type
+        )
+        merged_net = update_data.get("net_amount", document.net_amount)
+        merged_vat = update_data.get("vat_amount", document.vat_amount)
+        merged_gross = update_data.get("gross_amount", document.gross_amount)
+        merged_type = update_data.get("document_type", document.document_type)
+        # A ready row is re-checked on every amount or type edit, not only
+        # when the status itself moves. A draft may stay inconsistent.
+        if was_confirmed and any(field in update_data for field in (*amount_fields, "document_type")):
+            if not amounts_are_consistent(merged_net, merged_vat, merged_gross):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=AMOUNT_MISMATCH_DETAIL,
+                )
+        if update_data.get("status") in confirmed and not amounts_are_consistent(
+            merged_net, merged_vat, merged_gross
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=AMOUNT_MISMATCH_DETAIL,
+            )
+        # Retyping a checked row sends it back to review.
+        if type_changed and was_confirmed:
+            update_data["status"] = "needs_review"
+        if (
+            update_data.get("status") in confirmed
+            and merged_type not in CONCRETE_DOCUMENT_TYPES
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=TYPE_REQUIRED_DETAIL,
+            )
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields

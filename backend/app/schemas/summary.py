@@ -17,6 +17,16 @@ class CategoryBreakdown(BaseModel):
     deductible_pct: Optional[int] = None   # 0-100
 
 
+class ExcludedDocument(BaseModel):
+    """A receipt left out of both IVA totals."""
+    id: str
+    vendor_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    document_type: Optional[str] = None
+    status: str
+    reason: str
+
+
 class SummaryResponse(BaseModel):
     """IVA summary for a period."""
     
@@ -29,6 +39,8 @@ class SummaryResponse(BaseModel):
     # Counts
     total_documents: int
     ready_count: int
+    excluded_count: int = 0
+    excluded_documents: list[ExcludedDocument] = []
     needs_review_count: int
     processing_count: int
     failed_count: int

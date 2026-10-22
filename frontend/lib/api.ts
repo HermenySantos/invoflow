@@ -316,6 +316,7 @@ export interface Document {
   vendor_name: string | null;
   vendor_nif: string | null;
   invoice_number: string | null;
+  document_type: string | null;
   document_date: string | null;
   net_amount: string | null;
   vat_amount: string | null;
@@ -348,6 +349,15 @@ export interface DocumentListResponse {
   has_more: boolean;
 }
 
+export interface ExcludedDocument {
+  id: string;
+  vendor_name: string | null;
+  invoice_number: string | null;
+  document_type: string | null;
+  status: string;
+  reason: string;
+}
+
 export interface CategoryBreakdown {
   category: string;
   label: string;
@@ -365,6 +375,9 @@ export interface Summary {
   period_value: number;
   total_documents: number;
   ready_count: number;
+  /** receipts left out of both IVA totals */
+  excluded_count?: number;
+  excluded_documents?: ExcludedDocument[];
   needs_review_count: number;
   processing_count: number;
   failed_count: number;
