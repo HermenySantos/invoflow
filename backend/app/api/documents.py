@@ -27,6 +27,7 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    amounts_are_consistent,
 )
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.processing import read_receipt
@@ -432,6 +433,14 @@ async def update_document(
     try:
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
+        merged_net = update_data.get("net_amount", document.net_amount)
+        merged_vat = update_data.get("vat_amount", document.vat_amount)
+        merged_gross = update_data.get("gross_amount", document.gross_amount)
+        if not amounts_are_consistent(merged_net, merged_vat, merged_gross):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="net + IVA must match gross",
+            )
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields

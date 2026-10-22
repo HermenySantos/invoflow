@@ -5,7 +5,7 @@ export interface ReviewEditFields {
   vat_amount: string;
 }
 
-/** Payload for the receipt review save. A credit-note minus is kept. */
+/** Payload for the receipt review save. Amounts stay non-negative; NC is the sign. */
 export function saveEditPayload(editData: ReviewEditFields) {
   return {
     vendor_name: editData.vendor_name || null,

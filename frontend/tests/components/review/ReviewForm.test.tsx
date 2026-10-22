@@ -72,21 +72,12 @@ describe('ReviewForm', () => {
     );
   });
 
-  it('accepts a negative credit-note total', () => {
+  it('keeps amount inputs non-negative', () => {
     const onChange = vi.fn();
-    const credit = {
-      ...mockDocument,
-      gross_amount: '-10.00',
-      vat_amount: '-1.87',
-      net_amount: '-8.13',
-    };
-    render(<ReviewForm document={credit} onChange={onChange} />);
-    const gross = screen.getByDisplayValue('-10.00');
-    expect(gross).not.toHaveAttribute('min', '0');
-    fireEvent.change(gross, { target: { value: '-10.50' } });
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ gross_amount: '-10.50' })
-    );
+    render(<ReviewForm document={mockDocument} onChange={onChange} />);
+    expect(screen.getByDisplayValue('100.00')).toHaveAttribute('min', '0');
+    expect(screen.getByDisplayValue('18.70')).toHaveAttribute('min', '0');
+    expect(screen.getByDisplayValue('81.30')).toHaveAttribute('min', '0');
   });
 
   it('displays validation errors', () => {

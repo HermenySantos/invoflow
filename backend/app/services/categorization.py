@@ -212,6 +212,7 @@ _VENDOR_NAME_MAP: list[Tuple[str, str, str]] = [
 
 # ── NIF prefix map (first 3 digits of known chains) ──
 _NIF_MAP: dict[str, Tuple[str, str]] = {
+    "503504564": ("utilities", "geral"),  # EDP Comercial. Production map only; fixtures use a placeholder.
     "500100144": ("food", "geral"),       # Continente / Sonae
     "500829993": ("food", "geral"),       # Pingo Doce / Jerónimo Martins
     "502428880": ("equipment", "geral"),  # Worten

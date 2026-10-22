@@ -55,18 +55,6 @@ QR_ONLY = ("thermal-80mm.pdf", "fatura-photo.png")
 # and a spaced minus on the credit total. Café missed date and invoice number.
 # The credit note missed NIF, date, invoice number, and gross (read as +10.00).
 # Empty credit-note cells and both QR documents are not in these totals.
-BEFORE = {
-    "NIF": (1, 2),
-    "date": (0, 2),
-    "invoice number": (0, 2),
-    "net": (1, 1),
-    "IVA": (1, 1),
-    "gross": (1, 2),
-    "rate": (1, 1),
-}
-BEFORE_HITS = 5
-BEFORE_CELLS = 11
-
 CAFE = {
     "vendor_nif": "123456002",
     "document_date": "2026-03-31",
@@ -82,7 +70,7 @@ CREDIT = {
     "invoice_number": "NC Q2",
     "net_amount": None,
     "vat_amount": None,
-    "gross_amount": "-10.00",
+    "gross_amount": "10.00",
     "vat_rate": None,
 }
 QR_FIELDS = {
@@ -194,9 +182,27 @@ def _raster_matches(production: list[dict], raster: list[dict]) -> tuple[int, in
     return hits, cells
 
 
+def _before_summary() -> tuple[dict[str, tuple[int, int]], int, int]:
+    """Score the merge-base extractor on the current unique layouts."""
+    from pypdf import PdfReader
+    from tests.ocr_extract_baseline import extract_fields as baseline_extract
+
+    cases = []
+    for name, expected in (("fatura-cafe-lisboa.pdf", CAFE), ("nota-credito.pdf", CREDIT)):
+        reader = PdfReader(str(FIXTURES / name))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        actual = _readout(baseline_extract(text))
+        cases.append({"name": name, "expected": expected, "hits": _hits(expected, actual)})
+    summary, _empty, hits, cells = _honest(cases)
+    return summary, hits, cells
+
+
 def _write_report(production: list[dict], raster: list[dict]) -> None:
     summary, empty, hits, cells = _honest(production)
+    before, before_hits, before_cells = _before_summary()
     raster_hits, raster_cells = _raster_matches(production, raster)
+    if raster_hits != raster_cells:
+        raise AssertionError(f"raster disagreed with the text layer: {raster_hits}/{raster_cells}")
     headers = ["document", *[label for _name, label in SCORED]]
     flagged = [
         ["fatura-cafe-lisboa.qpdf.pdf", "same text as fatura-cafe-lisboa.pdf", "not scored"],
@@ -211,7 +217,7 @@ def _write_report(production: list[dict], raster: list[dict]) -> None:
             "",
             "Counted cells come from two unique text layouts, `fatura-cafe-lisboa.pdf` and `nota-credito.pdf`.",
             "",
-            "`123456002` is a synthetic NIF with a valid mod-11 check digit. It replaces a real company NIF that used to appear in these fixtures. This report does not claim the number was checked against a taxpayer register. The credit note prints `501111111`, which fails the check digit, so that NIF cell stays empty.",
+            "`123456002` is a synthetic placeholder, not verified unissued. Decreto-Lei n.º 14/2013, artigo 4.º, n.º 2, assigns a first digit of 1, 2, 3 or 4 to a pessoa singular, so this number is not a company NIF. The café fixture names the supplier Ana Costa. The credit note prints `501111111`, which fails the check digit, so that NIF cell stays empty.",
             "",
             "## What is counted",
             "",
@@ -221,13 +227,15 @@ def _write_report(production: list[dict], raster: list[dict]) -> None:
             "",
             "Net 10.00 and rate 23.00 on the café invoice are implied from the printed total and IVA. They are expected values, not empty cells.",
             "",
-            "The credit-note total is printed as `Total: -10,00`, with a space before the minus. That sign is counted. A hyphen glued to a label, such as `Total-12,30`, is not a minus and is not a gain in this table.",
+            "The credit-note total is printed as `Total: -10,00`. The stored amount is the absolute value and the document type is NC, which is how a credit note changes the VAT. A hyphen glued to a label, such as `Total-12,30`, is not a minus.",
             "",
             "## Before the extractor changes",
             "",
-            "Same 11 cells, from the measurement taken before month-name dates, series prefixes, and the spaced minus on the credit total. The café invoice missed the date and the invoice number. The credit note missed NIF, date, invoice number, and gross, which was read as 10.00.",
+            "The before column runs `tests/ocr_extract_baseline.py`, a snapshot of the extractor at merge-base 441b3dd, on the text layer of these two layouts. It is scored against the same expected cells. The hits are computed by that run.",
             "",
-            _markdown_table(["field", "hits", "counted", "accuracy"], _summary_rows(BEFORE)),
+            _markdown_table(["field", "hits", "counted", "accuracy"], _summary_rows(before)),
+            "",
+            f"Before, on these fixtures: {before_hits} of {before_cells} ({_pct(before_hits, before_cells)}).",
             "",
             "An earlier draft of this file scored 40 of 42 cells (95.2%), and 16 of 28 raster cells (57.1%). That draft counted the qpdf copies, 14 QR-only cells, 6 empty-equals-empty cells, and the credit-note gross. It is not the score.",
             "",
@@ -247,14 +255,12 @@ def _write_report(production: list[dict], raster: list[dict]) -> None:
             "",
             "## Raster check",
             "",
-            "Tesseract `por+eng` on the first page of each unique PDF, with the QR payload not applied. The counted cells are compared with the production text-layer read.",
-            "",
-            f"Raster matched the production counted cells: {raster_hits} of {raster_cells}.",
+            "Tesseract `por+eng` on the first page of each unique PDF, with the QR payload not applied, agreed with the text-layer read on the counted cells.",
             "",
             "## Follow-ups",
             "",
             "- The credit-note fixture prints NIF 501111111. That number fails the check digit, so the extractor leaves the NIF empty. The check stays.",
-            "- Vendor lines still keep the first heading (`Fornecedor: Café Lisboa`, `Nota de crédito NC Q2`) instead of the name after Fornecedor.",
+            "- Vendor lines still keep the first heading (`Fornecedor: Ana Costa`, `Nota de crédito NC Q2`) instead of the name after Fornecedor.",
             "- The credit note prints no net, IVA, or rate. Those three cells stay flagged.",
             "- On the thermal roll and the photo, the pipeline amounts come from the QR. Tesseract on the roll itself only has the word Talão plus the QR image.",
             "- Month names cover `d de mês de yyyy` and abbreviations such as `set` and `fev.`. Other date layouts are unchanged.",
@@ -262,9 +268,16 @@ def _write_report(production: list[dict], raster: list[dict]) -> None:
             "",
         ]
     )
-    if hits != sum(got for got, _total in summary.values()) or cells != BEFORE_CELLS:
-        raise AssertionError(f"counted cells drifted: {hits}/{cells}")
+    if hits != sum(got for got, _total in summary.values()) or cells != 11 or before_cells != 11:
+        raise AssertionError(f"counted cells drifted: {hits}/{cells}, before {before_hits}/{before_cells}")
     REPORT.write_text(text, encoding="utf-8")
+
+
+def test_before_score_is_computed_from_the_baseline_extractor():
+    summary, hits, cells = _before_summary()
+    assert cells == 11
+    assert hits == sum(got for got, _total in summary.values())
+    assert hits < 10
 
 
 def test_real_ocr_corpus_writes_accuracy(monkeypatch):
@@ -351,7 +364,9 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
     _write_report(production, raster)
     written = REPORT.read_text(encoding="utf-8")
     assert "10 of 11" in written
-    assert "95.2%" in written
+    assert "11 of 11" not in written
     assert "made-up" not in written
-    assert "taxpayer record" not in written
+    assert "not verified unissued" in written
     assert "503504564" not in written
+    _before, before_hits, before_cells = _before_summary()
+    assert f"Before, on these fixtures: {before_hits} of {before_cells}" in written

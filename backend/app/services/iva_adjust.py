@@ -56,8 +56,10 @@ def fiscal_mark(document) -> FiscalMark:
     if not isinstance(qr, dict):
         qr = {}
     digest = payload.get("file_sha256")
+    # The QR type wins. An OCR credit note stores document_type beside it.
+    document_type = _code(qr.get("document_type")) or _code(payload.get("document_type"))
     return FiscalMark(
-        document_type=_code(qr.get("document_type")),
+        document_type=document_type,
         fiscal_status=_code(qr.get("fiscal_status")),
         file_sha256=digest if isinstance(digest, str) and digest else None,
     )
@@ -121,14 +123,12 @@ def _raw_money(value) -> Decimal:
 
 
 def _signed(document, mark: FiscalMark) -> Counted:
-    net = _raw_money(document.net_amount)
-    vat = _raw_money(document.vat_amount)
-    gross = _raw_money(document.gross_amount)
-    # QR credit notes store positive amounts and a document type of NC.
-    # An OCR credit note already stores the minus, and must not be clamped to 0
-    # or flipped a second time.
-    already_negative = net < 0 or vat < 0 or gross < 0
-    if mark.document_type == "NC" and not already_negative:
+    # Amounts are stored non-negative. Only document type NC applies the minus.
+    # A negative field is not a second sign and must not cancel the type.
+    net = abs(_raw_money(document.net_amount))
+    vat = abs(_raw_money(document.vat_amount))
+    gross = abs(_raw_money(document.gross_amount))
+    if mark.document_type == "NC":
         net, vat, gross = -net, -vat, -gross
     return Counted(document=document, net=net, vat=vat, gross=gross)
 

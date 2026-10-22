@@ -58,10 +58,13 @@ def test_portuguese_month_name_dates():
     assert extract_fields("Data: 1 de marco de 2026\nTotal 1,00").document_date == date(2026, 3, 1)
 
 
-def test_spaced_minus_is_a_credit_total():
+def test_spaced_minus_is_stored_as_an_absolute_total():
     assert parse_pt_amount("-10,00") == Decimal("-10.00")
     assert parse_pt_amount("23,00") == Decimal("23.00")
-    assert extract_fields("Total: -10,00 EUR").gross_amount == Decimal("-10.00")
+    fields = extract_fields("Total: -10,00 EUR")
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.document_type is None
+    assert fields.needs_review is True
 
 
 def _pdf_text(name: str) -> str:
@@ -80,11 +83,13 @@ def test_cafe_lisboa_fixture_text():
     assert fields.vat_rate == Decimal("23.00")
 
 
-def test_credit_note_fixture_keeps_series_date_and_sign():
+def test_credit_note_fixture_keeps_series_date_and_absolute_total():
     fields = extract_fields(_pdf_text("nota-credito.pdf"))
     assert fields.invoice_number == "NC Q2"
     assert fields.document_date == date(2026, 4, 15)
-    assert fields.gross_amount == Decimal("-10.00")
+    assert fields.document_type == "NC"
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.needs_review is True
     assert fields.net_amount is None
     assert fields.vat_amount is None
     assert fields.vat_rate is None
@@ -162,7 +167,7 @@ def test_unlabeled_noise_does_not_invent_a_total():
 
 def test_receipt_with_two_vat_rates_sums_both():
     fields = extract_fields(
-        "Pingo Doce\nNIF 123456002\n01/10/2026\n"
+        "Ana Exemplo\nNIF 123456002\n01/10/2026\n"
         "IVA 6% 10,00 0,60\nIVA 23% 20,00 4,60\nTOTAL 35,20"
     )
     assert fields.vat_amount == Decimal("5.20")

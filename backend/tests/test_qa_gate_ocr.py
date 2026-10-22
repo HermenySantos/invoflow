@@ -1,30 +1,45 @@
 """QA gate on the real-OCR branch.
 
-Synthetic NIF 123456002 has a valid mod-11 check digit and replaces the real
-company number that used to sit in these fixtures.
+123456002 is a synthetic placeholder, not verified unissued. Decreto-Lei
+n.º 14/2013, art. 4.º n.º 2, assigns first digit 1-4 to a pessoa singular,
+so the number is not a company NIF. It is not proven unissued.
 """
 
 from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
+import shutil
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from reportlab.pdfgen import canvas
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.startup import ConfigurationError, validate_configuration
+from app.models.document import Document
 from app.schemas.document import DocumentUpdate
-from app.services.iva_adjust import contributions
-from app.services.ocr import OCRService, TesseractProbeError, resolve_ocr_backend, tesseract_gap
+from app.services.categorization import deductible_vat_split
+from app.services.iva_adjust import contributions, credit_note_warnings
+from app.services.ocr import (
+    OCRService,
+    TesseractProbeError,
+    probe_tesseract_language,
+    resolve_ocr_backend,
+    tesseract_gap,
+)
 from app.services.ocr_extract import extract_fields
 from app.services.storage import get_storage_service
 
+# Pessoa singular range (DL 14/2013 art. 4.º). Not a company. Not verified unissued.
 SYNTHETIC_NIF = "123456002"
 _JPEG = b"\xff\xd8\xff\xd9"
 
@@ -49,7 +64,7 @@ def _process(pdf: bytes, monkeypatch):
 def test_issue_date_wins_over_text_due_date_end_to_end(monkeypatch):
     pdf = _text_pdf(
         [
-            "Papelaria Exemplo Lda",
+            "Ana Exemplo",
             f"NIF: {SYNTHETIC_NIF}",
             "Fatura FT A/12",
             "Data de emissao: 31-03-2026",
@@ -70,7 +85,7 @@ def test_letterhead_text_date_beats_invoice_date():
 
 def test_ambiguous_issue_dates_need_review():
     fields = extract_fields(
-        "Loja Exemplo\n"
+        "Ana Exemplo\n"
         f"NIF: {SYNTHETIC_NIF}\n"
         "Data: 15/06/2026\n"
         "Data de emissao: 31-03-2026\n"
@@ -83,7 +98,7 @@ def test_ambiguous_issue_dates_need_review():
 
 def test_same_issue_date_twice_is_not_ambiguous():
     fields = extract_fields(
-        "Loja Exemplo\n"
+        "Ana Exemplo\n"
         f"NIF: {SYNTHETIC_NIF}\n"
         "Data: 15/06/2026\n"
         "Data de emissão: 15/06/2026\n"
@@ -113,47 +128,189 @@ def test_total_hyphen_separator_not_negative():
     assert extract_fields("Total EUR-12,30").gross_amount == Decimal("12.30")
 
 
-def test_spaced_minus_on_a_positive_invoice_is_negative():
-    assert extract_fields("Total -12,30").gross_amount == Decimal("-12.30")
-    assert extract_fields("Total: -12,30").gross_amount == Decimal("-12.30")
+def test_spaced_minus_is_stored_positive_and_needs_review():
+    fields = extract_fields("Total -12,30")
+    assert fields.gross_amount == Decimal("12.30")
+    assert fields.document_type is None
+    assert fields.needs_review is True
+    assert extract_fields("Total: -12,30").gross_amount == Decimal("12.30")
 
 
-def test_ocr_only_credit_note_nets_negative():
-    fields = extract_fields("Nota de credito NC Q2\nData 2026-04-15\nIVA 23% 1,87\nTotal -10,00")
+def test_same_line_issue_date_beats_due_date():
+    fields = extract_fields("Data: 31-03-2026   Vencimento: 30-04-2026\nTotal 12,30")
+    assert fields.document_date == date(2026, 3, 31)
+    assert fields.needs_review is True
+
+
+def test_due_matches_on_word_boundaries():
+    fields = extract_fields("overdue 30-04-2026\nTotal 1,00")
+    assert fields.document_date == date(2026, 4, 30)
+
+
+def test_discount_line_is_not_the_total():
+    assert extract_fields("Desconto -2,00").gross_amount is None
+    fields = extract_fields("Total 12,30 Desconto -2,00")
+    assert fields.gross_amount == Decimal("12.30")
+    assert fields.document_type is None
+
+
+def test_positive_printed_ocr_credit_note_is_nc_and_needs_review():
+    fields = extract_fields(
+        "Nota de credito NC Q2\n"
+        f"NIF {SYNTHETIC_NIF}\n"
+        "Data 2026-04-15\n"
+        "IVA 23% 1,87\n"
+        "Total 10,00"
+    )
+    assert fields.document_type == "NC"
     assert fields.invoice_number == "NC Q2"
-    assert fields.gross_amount == Decimal("-10.00")
-    assert fields.vat_amount == Decimal("-1.87")
-    assert fields.net_amount == Decimal("-8.13")
+    assert (fields.gross_amount, fields.vat_amount, fields.net_amount) == (
+        Decimal("10.00"),
+        Decimal("1.87"),
+        Decimal("8.13"),
+    )
+    assert fields.needs_review is True
 
 
-def test_credit_note_glued_minus_stays_negative():
-    assert extract_fields("Nota de credito NC Q2\nTotal-10,00").gross_amount == Decimal("-10.00")
+def test_printed_minus_credit_note_stores_absolute_amounts():
+    fields = extract_fields("Nota de credito NC Q2\nData 2026-04-15\nIVA 23% 1,87\nTotal -10,00")
+    assert fields.document_type == "NC"
+    assert fields.invoice_number == "NC Q2"
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.vat_amount == Decimal("1.87")
+    assert fields.net_amount == Decimal("8.13")
+    assert fields.needs_review is True
 
 
-def test_credit_note_negative_gross_counts_in_iva_netting():
+def test_credit_note_glued_hyphen_is_not_a_minus():
+    fields = extract_fields("Nota de credito NC Q2\nTotal-10,00")
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.document_type == "NC"
+
+
+def test_footer_mention_does_not_make_a_credit_note():
+    fields = extract_fields(
+        "Fatura FT A/12\n"
+        f"NIF {SYNTHETIC_NIF}\n"
+        "Data: 31-03-2026\n"
+        "IVA 23% 2,30\n"
+        "Total 12,30\n"
+        "\n"
+        "Obrigado\n"
+        "emitimos nota de credito em 30 dias"
+    )
+    assert fields.document_type is None
+    assert fields.invoice_number == "FT A/12"
+    assert fields.gross_amount == Decimal("12.30")
+    assert fields.needs_review is False
+
+
+def test_plano_nc_does_not_change_parsing():
+    fields = extract_fields(
+        "Fatura FT A/12\n"
+        f"NIF {SYNTHETIC_NIF}\n"
+        "Data: 31-03-2026\n"
+        "Plano nc\n"
+        "IVA 23% 2,30\n"
+        "Total 12,30"
+    )
+    assert fields.document_type is None
+    assert fields.invoice_number == "FT A/12"
+    assert fields.gross_amount == Decimal("12.30")
+
+
+def test_ft_that_cites_an_nc_keeps_the_ft_number():
+    fields = extract_fields("Fatura FT A/12\nReferente a nota de credito NC Q2/7\nTotal 12,30")
+    assert fields.invoice_number == "FT A/12"
+    assert fields.document_type is None
+
+
+def test_ocr_credit_note_nets_by_type_and_warns_without_an_invoice():
+    fields = extract_fields("Nota de credito NC Q2\nData 2026-04-15\nIVA 23% 1,87\nTotal 10,00")
     document = SimpleNamespace(
-        id="nc1",
+        id="nc-ocr",
         status="ready",
-        net_amount=Decimal("-8.13"),
-        vat_amount=Decimal("-1.87"),
+        net_amount=fields.net_amount,
+        vat_amount=fields.vat_amount,
+        gross_amount=fields.gross_amount,
+        invoice_number=fields.invoice_number,
+        ocr_raw_response=json.dumps({"backend": "tesseract", "document_type": fields.document_type}),
+        expense_category="utilities",
+        deductible_pct_override=None,
+        created_at=None,
+        document_date=date(2026, 4, 15),
+        vendor_nif=SYNTHETIC_NIF,
+        vendor_name="Ana Exemplo",
+    )
+    counted = contributions([document])[0]
+    assert (counted.vat, counted.net, counted.gross) == (
+        Decimal("-1.87"),
+        Decimal("-8.13"),
+        Decimal("-10.00"),
+    )
+    warnings = credit_note_warnings([document], [])
+    assert any("nota de crédito sem fatura associada" in warning for warning in warnings)
+
+
+def test_negative_fields_do_not_cancel_an_nc_type():
+    document = SimpleNamespace(
+        id="nc-bad",
+        status="ready",
+        net_amount=Decimal("8.13"),
+        vat_amount=Decimal("1.87"),
         gross_amount=Decimal("-10.00"),
-        ocr_raw_response='{"backend":"tesseract"}',
+        ocr_raw_response='{"qr":{"document_type":"NC"}}',
+        expense_category="utilities",
+        deductible_pct_override=None,
         created_at=None,
         document_date=date(2026, 4, 15),
         vendor_nif=SYNTHETIC_NIF,
     )
     assert contributions([document])[0].vat == Decimal("-1.87")
-    assert contributions([document])[0].net == Decimal("-8.13")
-    assert contributions([document])[0].gross == Decimal("-10.00")
+    confirmed, pending = deductible_vat_split([document])
+    assert confirmed == Decimal("-1.87")
+    assert pending == Decimal("0.00")
 
 
-def test_review_form_can_save_ocr_credit_note_gross():
-    updated = DocumentUpdate(gross_amount=Decimal("-10.00"), vendor_name="x", status="ready")
-    assert updated.gross_amount == Decimal("-10.00")
-    assert updated.vat_amount is None
+def test_ft_with_all_negative_amounts_counts_positive():
+    document = SimpleNamespace(
+        id="ft-neg",
+        status="ready",
+        net_amount=Decimal("-8.13"),
+        vat_amount=Decimal("-1.87"),
+        gross_amount=Decimal("-10.00"),
+        ocr_raw_response='{"qr":{"document_type":"FT"}}',
+        created_at=None,
+        document_date=date(2026, 3, 31),
+        vendor_nif=SYNTHETIC_NIF,
+    )
+    counted = contributions([document])[0]
+    assert (counted.vat, counted.net, counted.gross) == (
+        Decimal("1.87"),
+        Decimal("8.13"),
+        Decimal("10.00"),
+    )
 
 
-def test_review_patch_saves_negative_credit_note(client: TestClient, mock_user_headers: dict):
+def test_mixed_signs_and_inconsistent_amounts_are_rejected():
+    with pytest.raises(ValidationError):
+        DocumentUpdate(gross_amount=Decimal("10.00"), vat_amount=Decimal("-1.87"), net_amount=Decimal("8.13"))
+    with pytest.raises(ValidationError):
+        DocumentUpdate(gross_amount=Decimal("-10.00"))
+    with pytest.raises(ValidationError, match="net \\+ IVA must match gross"):
+        DocumentUpdate(
+            gross_amount=Decimal("12.30"),
+            vat_amount=Decimal("1.00"),
+            net_amount=Decimal("10.00"),
+        )
+    assert DocumentUpdate(
+        gross_amount=Decimal("10.00"),
+        vat_amount=Decimal("1.87"),
+        net_amount=Decimal("8.13"),
+    ).gross_amount == Decimal("10.00")
+
+
+def test_review_patch_rejects_a_negative_credit_note(client: TestClient, db: Session, mock_user_headers: dict):
     upload = client.post(
         "/api/documents/upload-url",
         headers=mock_user_headers,
@@ -172,22 +329,36 @@ def test_review_patch_saves_negative_credit_note(client: TestClient, mock_user_h
         },
     )
     document_id = created.json()["id"]
-    response = client.patch(
+    stored = db.query(Document).filter(Document.id == document_id).one()
+    stored.status = "ready"
+    stored.vendor_name = "Ana Exemplo"
+    stored.vendor_nif = SYNTHETIC_NIF
+    stored.document_date = date(2026, 4, 15)
+    stored.net_amount = Decimal("8.13")
+    stored.vat_amount = Decimal("1.87")
+    stored.gross_amount = Decimal("10.00")
+    stored.expense_category = "utilities"
+    stored.ocr_raw_response = json.dumps({"qr": {"document_type": "NC", "fiscal_status": "N"}})
+    db.commit()
+
+    rejected = client.patch(
         f"/api/documents/{document_id}",
         headers=mock_user_headers,
-        json={
-            "vendor_name": "x",
-            "status": "ready",
-            "gross_amount": "-10.00",
-            "vat_amount": "-1.87",
-            "net_amount": "-8.13",
-        },
+        json={"gross_amount": "-10.00", "status": "ready"},
     )
-    assert response.status_code == 200
-    body = response.json()
-    assert Decimal(str(body["gross_amount"])) == Decimal("-10.00")
-    assert Decimal(str(body["vat_amount"])) == Decimal("-1.87")
-    assert Decimal(str(body["net_amount"])) == Decimal("-8.13")
+    assert rejected.status_code == 422
+    db.refresh(stored)
+    assert stored.gross_amount == Decimal("10.00")
+    confirmed, pending = deductible_vat_split([stored])
+    assert confirmed == Decimal("-1.87")
+    assert pending == Decimal("0.00")
+
+    inconsistent = client.patch(
+        f"/api/documents/{document_id}",
+        headers=mock_user_headers,
+        json={"gross_amount": "99.00"},
+    )
+    assert inconsistent.status_code == 422
 
 
 def test_series_prefix_not_doubled():
@@ -219,6 +390,28 @@ def test_crashing_binary_is_not_reported_as_missing_packs(monkeypatch):
     assert "language packs are missing" not in str(raised.value)
 
 
+def _eng_traineddata() -> Path | None:
+    found = sorted(Path("/usr/share").glob("**/eng.traineddata"))
+    return found[0] if found else None
+
+
+@pytest.mark.ocr_corpus
+def test_corrupt_por_pack_file_fails_the_load_check(tmp_path):
+    """Runs Tesseract against a real corrupt por.traineddata. Not a monkeypatch."""
+    if shutil.which("tesseract") is None:
+        pytest.skip("tesseract binary is not installed")
+    eng = _eng_traineddata()
+    if eng is None:
+        pytest.skip("eng.traineddata is not installed")
+    shutil.copy(eng, tmp_path / "eng.traineddata")
+    (tmp_path / "por.traineddata").write_bytes(b"this is not a tesseract language pack\n")
+    failure = probe_tesseract_language("por", tessdata_dir=str(tmp_path))
+    assert failure is not None
+    assert "tesseract-ocr-por" in failure
+    assert "missing" not in failure
+    assert probe_tesseract_language("eng", tessdata_dir=str(tmp_path)) is None
+
+
 def test_corrupt_language_pack_fails_the_load_check(monkeypatch):
     monkeypatch.setattr(get_settings(), "ocr_backend", "tesseract")
     monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: True)
@@ -232,10 +425,16 @@ def test_corrupt_language_pack_fails_the_load_check(monkeypatch):
 
 
 def test_unknown_ocr_backend_is_not_silent_mock(monkeypatch, caplog):
+    import app.services.ocr as ocr_module
+
+    ocr_module._unknown_backend_logged = False
     monkeypatch.setattr(get_settings(), "ocr_backend", "tesseract-ocr")
     with caplog.at_level(logging.ERROR, logger="app.services.ocr"):
         assert resolve_ocr_backend() == "tesseract-ocr"
-    assert any("not a known backend" in record.message for record in caplog.records)
+        assert resolve_ocr_backend() == "tesseract-ocr"
+    errors = [record for record in caplog.records if "not a known backend" in record.message]
+    assert len(errors) == 1
+    assert errors[0].levelno == logging.ERROR
     with pytest.raises(ConfigurationError, match="not a known backend"):
         validate_configuration()
     result = asyncio.run(OCRService().process_document(b"%PDF-1.4", "application/pdf"))

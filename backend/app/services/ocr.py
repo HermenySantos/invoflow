@@ -18,6 +18,8 @@ import json
 import logging
 import random
 import shutil
+import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -91,7 +93,9 @@ class TesseractProbeError(Exception):
 
 _tesseract_languages: Optional[frozenset[str]] = None
 _tesseract_packs_loaded: Optional[bool] = None
+_tesseract_pack_failures: list[str] = []
 _tesseract_fallback_logged = False
+_unknown_backend_logged = False
 _KNOWN_OCR_BACKENDS = {"mock", "tesseract", "azure", "auto"}
 
 
@@ -117,25 +121,44 @@ def tesseract_languages() -> frozenset[str]:
     return _tesseract_languages
 
 
+def probe_tesseract_language(lang: str, tessdata_dir: Optional[str] = None) -> Optional[str]:
+    """None when this one pack loads. Otherwise a short reason.
+
+    por and eng are probed separately. Stderr containing
+    'Failed loading language' is a failure even when Tesseract exits 0
+    after falling back to another pack.
+    """
+    if not tesseract_available():
+        return "the tesseract binary is not installed"
+    with tempfile.NamedTemporaryFile(suffix=".png") as image_file:
+        Image.new("L", (16, 16), 255).save(image_file.name)
+        command = ["tesseract", image_file.name, "stdout", "-l", lang, "--psm", "7"]
+        if tessdata_dir:
+            command.extend(["--tessdata-dir", tessdata_dir])
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            return f"language pack failed to load (tesseract-ocr-{lang})"
+    stderr = completed.stderr or ""
+    if "Failed loading language" in stderr or completed.returncode != 0:
+        return f"language pack failed to load (tesseract-ocr-{lang})"
+    return None
+
+
 def tesseract_packs_load() -> bool:
-    """True when por and eng can actually OCR a blank image."""
-    global _tesseract_packs_loaded
+    """True when por and eng each load. A fallback from one to the other is a failure."""
+    global _tesseract_packs_loaded, _tesseract_pack_failures
     if _tesseract_packs_loaded is not None:
         return _tesseract_packs_loaded
-    try:
-        import pytesseract
-
-        pytesseract.image_to_string(Image.new("L", (16, 16), 255), lang="por+eng")
-    except Exception:
+    failures = [lang for lang in ("por", "eng") if probe_tesseract_language(lang)]
+    if failures:
         logger.warning(
-            "Tesseract language packs failed to load. "
-            "tesseract-ocr-por or tesseract-ocr-eng may be corrupt.",
-            exc_info=True,
+            "Tesseract language packs failed to load: %s.",
+            ", ".join(failures),
         )
-        _tesseract_packs_loaded = False
-        return False
-    _tesseract_packs_loaded = True
-    return True
+    _tesseract_pack_failures = failures
+    _tesseract_packs_loaded = not failures
+    return _tesseract_packs_loaded
 
 
 def tesseract_gap() -> Optional[str]:
@@ -151,7 +174,9 @@ def tesseract_gap() -> Optional[str]:
         packs = ", ".join(f"tesseract-ocr-{lang}" for lang in missing)
         return f"language packs are missing ({packs})"
     if not tesseract_packs_load():
-        return "language packs failed to load (tesseract-ocr-por, tesseract-ocr-eng)"
+        failed = _tesseract_pack_failures or ["por", "eng"]
+        packs = ", ".join(f"tesseract-ocr-{lang}" for lang in failed)
+        return f"language packs failed to load ({packs})"
     return None
 
 
@@ -161,6 +186,17 @@ def tesseract_fallback_message(requested: str) -> str:
         f"OCR_BACKEND={requested} fell back to mock because {gap}. "
         "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng. "
         "Set OCR_BACKEND=mock to choose mock data on purpose."
+    )
+
+
+def _log_unknown_backend(requested: str) -> None:
+    global _unknown_backend_logged
+    if _unknown_backend_logged:
+        return
+    _unknown_backend_logged = True
+    logger.error(
+        "OCR_BACKEND=%s is not a known backend. Use auto, tesseract, mock, or azure.",
+        requested,
     )
 
 
@@ -188,10 +224,7 @@ def resolve_ocr_backend() -> str:
     current = get_settings()
     requested = (current.ocr_backend or "auto").strip().lower()
     if requested not in _KNOWN_OCR_BACKENDS:
-        logger.error(
-            "OCR_BACKEND=%s is not a known backend. Use auto, tesseract, mock, or azure.",
-            requested,
-        )
+        _log_unknown_backend(requested)
         return requested
     backend = requested
 
@@ -244,7 +277,9 @@ class OCRService:
             ("Worten", "502428880"),
             ("GALP Energia", "504499777"),
             ("NOS Comunicações", "504448064"),
-            ("Luz Exemplo", "123456002"),
+            # 123456002 is a synthetic placeholder, not verified unissued.
+            # Decreto-Lei n.º 14/2013, art. 4.º n.º 2: first digit 1-4 is a pessoa singular, not a company.
+            ("Ana Exemplo", "123456002"),
             ("Uber Portugal", "514111111"),
             ("Bolt Technology", None),
             ("Restaurante O Manel", "123456789"),
@@ -729,7 +764,14 @@ def _fields_to_result(fields: ExtractedFields, text: str, backend: str) -> OCRRe
         gross_amount=fields.gross_amount,
         vat_rate=fields.vat_rate,
         confidence=fields.confidence,
-        raw_response=extracted_to_json(fields, extra={"backend": backend, "text": text[:4000]}),
+        raw_response=extracted_to_json(
+            fields,
+            extra={
+                "backend": backend,
+                "text": text[:4000],
+                **({"document_type": fields.document_type} if fields.document_type else {}),
+            },
+        ),
         needs_review=fields.needs_review,
         backend=backend,
     )

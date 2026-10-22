@@ -451,6 +451,7 @@ export default function ReceiptDetailPage() {
                     <input
                       type="number"
                       step="0.01"
+                      min="0"
                       inputMode="decimal"
                       value={editData.gross_amount}
                       onChange={(e) => setEditData(d => ({ ...d, gross_amount: e.target.value }))}
@@ -463,6 +464,7 @@ export default function ReceiptDetailPage() {
                     <input
                       type="number"
                       step="0.01"
+                      min="0"
                       inputMode="decimal"
                       value={editData.vat_amount}
                       onChange={(e) => setEditData(d => ({ ...d, vat_amount: e.target.value }))}

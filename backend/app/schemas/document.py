@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
@@ -25,15 +25,28 @@ class DocumentCreate(BaseModel):
     file_size: Optional[int] = None
 
 
+_AMOUNT_TOLERANCE = Decimal("0.01")
+
+
+def amounts_are_consistent(net: Optional[Decimal], vat: Optional[Decimal], gross: Optional[Decimal]) -> bool:
+    """Gross, net and IVA are non-negative. When all three are present, net + IVA matches gross."""
+    for amount in (net, vat, gross):
+        if amount is not None and amount < 0:
+            return False
+    if net is None or vat is None or gross is None:
+        return True
+    return abs((net + vat) - gross) <= _AMOUNT_TOLERANCE
+
+
 class DocumentUpdate(BaseModel):
     """Update extracted document fields."""
     vendor_name: Optional[str] = Field(None, max_length=255)
     vendor_nif: Optional[str] = Field(None, max_length=20)
     invoice_number: Optional[str] = Field(None, max_length=100)
     document_date: Optional[date] = None
-    net_amount: Optional[Decimal] = Field(None, ge=Decimal("-1000000"), le=Decimal("1000000"))
-    vat_amount: Optional[Decimal] = Field(None, ge=Decimal("-1000000"), le=Decimal("1000000"))
-    gross_amount: Optional[Decimal] = Field(None, ge=Decimal("-1000000"), le=Decimal("1000000"))
+    net_amount: Optional[Decimal] = Field(None, ge=0)
+    vat_amount: Optional[Decimal] = Field(None, ge=0)
+    gross_amount: Optional[Decimal] = Field(None, ge=0)
     vat_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     status: Optional[str] = Field(None, pattern=r"^(pending|processing|ready|needs_review|accountant_review|failed)$")
     review_notes: Optional[str] = Field(None, max_length=1000)
@@ -41,6 +54,12 @@ class DocumentUpdate(BaseModel):
     irs_sector: Optional[str] = Field(None, max_length=50)
     # 0-100; send null to go back to the category rule.
     deductible_pct_override: Optional[int] = Field(None, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def amounts_match(self) -> "DocumentUpdate":
+        if not amounts_are_consistent(self.net_amount, self.vat_amount, self.gross_amount):
+            raise ValueError("net + IVA must match gross")
+        return self
 
 
 class FieldConfidence(BaseModel):
