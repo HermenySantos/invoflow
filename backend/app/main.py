@@ -24,7 +24,7 @@ from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
 from app.core.rate_limit import limiter
 from app.core.startup import get_environment_status, run_startup_checks
-from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_available
+from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_gap
 from app.services.processing import read_receipt, stuck_document_ids
 
 settings = get_settings()
@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
     logger.info(
         f"Auth mock: {settings.auth_mock_mode}; "
         f"Storage mock: {settings.storage_mock_mode}; "
-        f"OCR backend: {backend} (tesseract installed: {tesseract_available()})"
+        f"OCR backend: {backend} (tesseract ready: {tesseract_gap() is None})"
     )
     env_status = get_environment_status()
     logger.info(f"Database: {env_status['database_type']}")

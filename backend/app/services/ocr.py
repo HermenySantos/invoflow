@@ -80,8 +80,72 @@ def tesseract_available() -> bool:
     return True
 
 
+_tesseract_languages: Optional[frozenset[str]] = None
+_tesseract_fallback_logged = False
+
+
+def tesseract_languages() -> frozenset[str]:
+    """Language codes Tesseract can load. Empty when the binary is missing."""
+    global _tesseract_languages
+    if _tesseract_languages is not None:
+        return _tesseract_languages
+    if not tesseract_available():
+        return frozenset()
+    try:
+        import pytesseract
+
+        listed = pytesseract.get_languages(config="")
+    except Exception:
+        logger.warning(
+            "Could not list Tesseract languages. "
+            "Install tesseract-ocr-por and tesseract-ocr-eng."
+        )
+        listed = []
+    _tesseract_languages = frozenset(listed)
+    return _tesseract_languages
+
+
+def tesseract_gap() -> Optional[str]:
+    """None when por and eng can run. Otherwise a short reason."""
+    if not tesseract_available():
+        return "the tesseract binary is not installed"
+    missing = [lang for lang in ("por", "eng") if lang not in tesseract_languages()]
+    if missing:
+        packs = ", ".join(f"tesseract-ocr-{lang}" for lang in missing)
+        return f"language packs are missing ({packs})"
+    return None
+
+
+def tesseract_fallback_message(requested: str) -> str:
+    gap = tesseract_gap() or "Tesseract is not ready"
+    return (
+        f"OCR_BACKEND={requested} fell back to mock because {gap}. "
+        "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng. "
+        "Set OCR_BACKEND=mock to choose mock data on purpose."
+    )
+
+
+def _log_tesseract_fallback(requested: str) -> None:
+    global _tesseract_fallback_logged
+    if _tesseract_fallback_logged:
+        return
+    _tesseract_fallback_logged = True
+    logger.warning(tesseract_fallback_message(requested))
+
+
+def _tesseract_or_mock(requested: str) -> str:
+    if tesseract_gap() is None:
+        return "tesseract"
+    _log_tesseract_fallback(requested)
+    return "mock"
+
+
 def resolve_ocr_backend() -> str:
-    """Pick a runnable backend. Azure is opt-in only."""
+    """Pick a runnable backend. Azure is opt-in only.
+
+    auto uses mock when the binary or the por/eng packs are missing, and logs that once.
+    OCR_BACKEND=mock is an explicit choice and does not log a fallback.
+    """
     current = get_settings()
     requested = (current.ocr_backend or "auto").strip().lower()
     if requested in {"mock", "tesseract", "azure", "auto"}:
@@ -92,9 +156,9 @@ def resolve_ocr_backend() -> str:
         backend = "auto"
 
     if backend == "auto":
-        backend = "tesseract" if tesseract_available() else "mock"
+        backend = _tesseract_or_mock(requested or "auto")
     if backend == "azure" and (not current.azure_doc_endpoint or not current.azure_doc_key):
-        backend = "tesseract" if tesseract_available() else "mock"
+        backend = _tesseract_or_mock("azure")
     return backend
 
 
@@ -681,12 +745,12 @@ _ocr_service: Optional[OCRService] = None
 
 def ocr_runtime_status() -> dict:
     requested = (get_settings().ocr_backend or "auto").strip().lower()
-    available = tesseract_available()
-    degraded = requested == "tesseract" and not available
+    ready = tesseract_gap() is None
+    degraded = requested == "tesseract" and not ready
     return {
         "status": "degraded" if degraded else "healthy",
         "ocr_backend": resolve_ocr_backend(),
-        "tesseract": available,
+        "tesseract": ready,
     }
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -40,14 +41,35 @@ DATE_DMY = re.compile(
 DATE_YMD = re.compile(
     r"\b(\d{4})[./-](\d{1,2})[./-](\d{1,2})\b"
 )
-INVOICE_NO = re.compile(
-    r"(?<![A-Za-z])(?:FT|FR|FS|NC|ND|Fatura|Factura|Recibo|Invoice)"
-    r"[:\s#º°]+(?=\S*\d)([A-Z0-9][A-Z0-9/.\-]{1,30})",
+DATE_PT_TEXT = re.compile(
+    r"\b(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})\b",
     re.IGNORECASE,
 )
-MONEY = re.compile(
-    r"(?<!\d)\$?\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})(?!\d)"
+# Series codes stay on the number ("FT A/12"). Words such as Invoice do not.
+_SERIES_CODES = {"FT", "FR", "FS", "NC", "ND"}
+INVOICE_NO = re.compile(
+    r"(?<![A-Za-z])(?P<series>FT|FR|FS|NC|ND|Fatura|Factura|Recibo|Invoice)"
+    r"[:\s#º°]+(?=\S*\d)(?P<number>[A-Z0-9][A-Z0-9/.\-]{1,30})",
+    re.IGNORECASE,
 )
+# A minus counts only when it touches the digits ("-10,00"), not " - 34,09".
+MONEY = re.compile(
+    r"(?<![\d.,])\$?\s*(-)?(\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})(?!\d)"
+)
+_PT_MONTHS = {
+    "janeiro": 1,
+    "fevereiro": 2,
+    "marco": 3,
+    "abril": 4,
+    "maio": 5,
+    "junho": 6,
+    "julho": 7,
+    "agosto": 8,
+    "setembro": 9,
+    "outubro": 10,
+    "novembro": 11,
+    "dezembro": 12,
+}
 DATE_BROKEN_YEAR = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2})\s+(\d{2})(?!\d|:)")
 VAT_LABEL = re.compile(
     r"\b(?:IVA|I\.V\.A\.|VAT|MwSt\.?|Sales\s+tax|Imposta)\b",
@@ -106,16 +128,20 @@ class ExtractedFields:
 
 
 def parse_pt_amount(raw: str) -> Optional[Decimal]:
-    """Parse a PT/EU money string (1.234,56 or 12,50 or 12.50)."""
+    """Parse a PT/EU money string (1.234,56 or 12,50 or 12.50 or -10,00)."""
     if not raw:
         return None
     cleaned = raw.strip().replace(" ", "").replace("€", "").replace("EUR", "")
+    sign = 1
+    if cleaned[:1] in "+-":
+        sign = -1 if cleaned[0] == "-" else 1
+        cleaned = cleaned[1:]
     cleaned = _normalise_separators(cleaned)
     try:
-        value = Decimal(cleaned)
+        value = Decimal(cleaned) * sign
     except InvalidOperation:
         return None
-    if value < 0 or value > Decimal("1000000"):
+    if abs(value) > Decimal("1000000"):
         return None
     return value.quantize(Decimal("0.01"))
 
@@ -181,8 +207,8 @@ def _money_amounts(line: str) -> list[Decimal]:
     for match in MONEY.finditer(line):
         if line[match.end() :].lstrip().startswith("%"):
             continue
-        amount = parse_pt_amount(match.group(1))
-        if amount is not None and amount > 0:
+        amount = parse_pt_amount(f"{match.group(1) or ''}{match.group(2)}")
+        if amount is not None and amount != 0:
             amounts.append(amount)
     return amounts
 
@@ -249,7 +275,27 @@ def _extract_vat(
     return rate, vat_amount, net_amount, breakdown
 
 
+def _fold_letters(value: str) -> str:
+    decomposed = unicodedata.normalize("NFD", value)
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn").lower()
+
+
+def _invoice_number_from_match(match: re.Match[str]) -> str:
+    series = match.group("series").upper()
+    number = match.group("number").strip()
+    if series in _SERIES_CODES and not number.upper().startswith(f"{series} "):
+        return f"{series} {number}"[:100]
+    return number[:100]
+
+
 def _parse_date(text: str) -> Optional[date]:
+    for match in DATE_PT_TEXT.finditer(text):
+        month = _PT_MONTHS.get(_fold_letters(match.group(2)))
+        if month is None:
+            continue
+        parsed = _safe_date(int(match.group(3)), month, int(match.group(1)))
+        if parsed:
+            return parsed
     for match in DATE_YMD.finditer(text):
         year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
         parsed = _safe_date(year, month, day)
@@ -321,7 +367,7 @@ def extract_fields(text: str) -> ExtractedFields:
 
     invoice = INVOICE_NO.search(text)
     if invoice:
-        result.invoice_number = invoice.group(1).strip()[:100]
+        result.invoice_number = _invoice_number_from_match(invoice)
 
     vat_rate, vat_amount, vat_net, breakdown = _extract_vat(lines)
     result.vat_rate = vat_rate

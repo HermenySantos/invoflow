@@ -62,23 +62,28 @@ def validate_configuration() -> List[str]:
             "Configure R2 for production!"
         )
     
-    # OCR: Tesseract is the default. Azure is required only when explicitly selected.
-    from app.services.ocr import tesseract_available
+    # OCR: Tesseract (por + eng) is the default. Azure is required only when explicitly selected.
+    from app.services.ocr import tesseract_fallback_message, tesseract_gap
 
-    if settings.ocr_backend.strip().lower() == "tesseract" and not tesseract_available():
+    requested = (settings.ocr_backend or "auto").strip().lower()
+    gap = tesseract_gap()
+    if requested == "tesseract" and gap:
         errors.append(
-            "OCR_BACKEND is tesseract but the tesseract binary is not installed. "
-            "Install tesseract, or set OCR_BACKEND=mock or OCR_BACKEND=auto."
+            f"OCR_BACKEND is tesseract but {gap}. "
+            "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng, "
+            "or set OCR_BACKEND=mock or OCR_BACKEND=auto."
         )
-    if settings.ocr_backend == "azure":
+    if requested == "azure":
         if not settings.azure_doc_endpoint or not settings.azure_doc_key:
             errors.append(
                 "OCR_BACKEND is azure but AZURE_DOC_ENDPOINT or AZURE_DOC_KEY is not set."
             )
-    elif settings.ocr_mock_mode or settings.ocr_backend == "mock":
+    elif settings.ocr_mock_mode or requested == "mock":
         warnings.append(
             "OCR mock data is enabled. The default open-source backend is Tesseract."
         )
+    if requested in {"auto", ""} and gap:
+        warnings.append(tesseract_fallback_message("auto"))
     
     # e-Fatura pull is off by default. A configured endpoint with a missing
     # sandbox secret warns and does not refuse to start.
@@ -160,7 +165,7 @@ def get_environment_status() -> dict:
     Get a summary of the current environment configuration.
     Useful for debugging and health checks.
     """
-    from app.services.ocr import resolve_ocr_backend, tesseract_available
+    from app.services.ocr import resolve_ocr_backend, tesseract_gap
 
     settings = get_settings()
     backend = resolve_ocr_backend()
@@ -172,7 +177,7 @@ def get_environment_status() -> dict:
             "ocr": backend == "mock",
         },
         "ocr_backend": backend,
-        "tesseract": tesseract_available(),
+        "tesseract": tesseract_gap() is None,
         "debug_mode": settings.app_debug,
         "database_type": "SQLite" if "sqlite" in settings.database_url.lower() else "PostgreSQL",
         "configured_services": {

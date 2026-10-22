@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+# por and eng are the packs the field extractor asks for.
+# OCR_BACKEND=auto logs and uses mock when the binary or either pack is missing.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-por \

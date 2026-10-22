@@ -8,9 +8,11 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models.document import Document
 from app.models.user import User
 from app.services import processing
+from app.services.ocr import OCRService
 from tests.conftest import TestingSessionLocal
 
 
@@ -27,7 +29,10 @@ def processing_receipt(db: Session) -> str:
     return document.id
 
 
-def test_mock_read_fills_the_receipt(db: Session):
+def test_mock_read_fills_the_receipt(db: Session, monkeypatch):
+    """Mock is the case under test, including on a machine that has Tesseract."""
+    monkeypatch.setattr(get_settings(), "ocr_backend", "mock")
+    monkeypatch.setattr(processing, "get_ocr_service", lambda: OCRService())
     document_id = processing_receipt(db)
     asyncio.run(processing.read_receipt(TestingSessionLocal, document_id))
     db.expire_all()

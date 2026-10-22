@@ -60,7 +60,7 @@ npm run dev
 
 Open http://localhost:3000
 
-This path uses SQLite (`backend/invoflow.db`) and local files (`backend/mock_storage/`). If Tesseract is not installed, OCR falls back to mock data.
+This path uses SQLite (`backend/invoflow.db`) and local files (`backend/mock_storage/`). If Tesseract or the `por` and `eng` packs are missing, OCR uses mock data and logs a warning that names `tesseract-ocr`, `tesseract-ocr-por`, and `tesseract-ocr-eng`.
 
 Optional system OCR (Debian/Ubuntu):
 
@@ -93,10 +93,12 @@ IVA is an **estimate for review**, not a filing. Sales VAT is not entered in thi
 
 `OCR_BACKEND=auto|tesseract|mock|azure`
 
-- `auto` (default): Tesseract when the binary is present, otherwise mock.
-- `tesseract`: open-source OCR + Portuguese field extractor (NIF, dates, IVA 6/13/23).
-- `mock`: demo vendors/amounts, no image reading.
+- `auto` (default): Tesseract when the binary and the `por` and `eng` packs are present. Otherwise mock, with a warning in the log.
+- `tesseract`: open-source OCR + Portuguese field extractor (NIF, dates, IVA 6/13/23). Startup fails when the binary or either language pack is missing.
+- `mock`: demo vendors/amounts, no image reading. This choice does not log a fallback.
 - `azure`: optional paid Document Intelligence. Ignored unless endpoint + key are set.
+
+`pytest -m ocr_corpus` with `OCR_CORPUS=1` runs Tesseract over the synthetic fixtures and writes `docs/ocr-accuracy.md`. The default `pytest` run skips that suite. CI runs it in the `ocr-corpus` job.
 
 Field extraction ideas (schema after OCR text) were adapted from the TaxHacker OSS pipeline. No proprietary blobs were copied.
 

@@ -1,9 +1,13 @@
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
 
 from app.services.ocr_extract import extract_fields, extract_portuguese_nif, parse_pt_amount
+
+FIXTURES = Path(__file__).parent / "fixtures" / "libreoffice"
 
 
 SAMPLE = """
@@ -34,11 +38,58 @@ def test_extract_continente_receipt():
     fields = extract_fields(SAMPLE)
     assert fields.vendor_name and "CONTINENTE" in fields.vendor_name.upper()
     assert fields.vendor_nif == "500100144"
+    assert fields.invoice_number == "FT 2026/1842"
     assert fields.document_date == date(2026, 3, 15)
     assert fields.gross_amount == Decimal("23.00")
     assert fields.vat_amount == Decimal("4.30")
     assert fields.vat_rate == Decimal("23.00")
     assert fields.net_amount == Decimal("18.70")
+
+
+def test_series_code_stays_on_the_invoice_number():
+    assert extract_fields("Fatura FT A/12\nTotal 1,00").invoice_number == "FT A/12"
+    assert extract_fields("Nota de crédito NC Q2\nTotal 1,00").invoice_number == "NC Q2"
+    assert extract_fields(CONTOSO).invoice_number == "INV-100"
+
+
+def test_portuguese_month_name_dates():
+    assert extract_fields("Data: 31 de março de 2026\nTotal 1,00").document_date == date(2026, 3, 31)
+    assert extract_fields("Data: 15 de abril de 2026\nTotal 1,00").document_date == date(2026, 4, 15)
+    assert extract_fields("Data: 1 de marco de 2026\nTotal 1,00").document_date == date(2026, 3, 1)
+
+
+def test_glued_minus_is_a_credit_total():
+    assert parse_pt_amount("-10,00") == Decimal("-10.00")
+    assert parse_pt_amount("23,00") == Decimal("23.00")
+    assert extract_fields("Total: -10,00 EUR").gross_amount == Decimal("-10.00")
+
+
+def _pdf_text(name: str) -> str:
+    reader = PdfReader(FIXTURES / name)
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def test_cafe_lisboa_fixture_text():
+    fields = extract_fields(_pdf_text("fatura-cafe-lisboa.pdf"))
+    assert fields.vendor_nif == "503504564"
+    assert fields.document_date == date(2026, 3, 31)
+    assert fields.invoice_number == "FT A/12"
+    assert fields.gross_amount == Decimal("12.30")
+    assert fields.vat_amount == Decimal("2.30")
+    assert fields.net_amount == Decimal("10.00")
+    assert fields.vat_rate == Decimal("23.00")
+
+
+def test_credit_note_fixture_keeps_series_date_and_sign():
+    fields = extract_fields(_pdf_text("nota-credito.pdf"))
+    assert fields.invoice_number == "NC Q2"
+    assert fields.document_date == date(2026, 4, 15)
+    assert fields.gross_amount == Decimal("-10.00")
+    assert fields.net_amount is None
+    assert fields.vat_amount is None
+    assert fields.vat_rate is None
+    # 501111111 fails the check digit. The extractor leaves it empty.
+    assert fields.vendor_nif is None
 
 
 def test_empty_text_needs_review():
