@@ -13,8 +13,57 @@ const CONCRETE_TYPES = new Set(['FT', 'FS', 'FR', 'NC', 'ND']);
 /** Shown when a series prefix and the chosen type disagree. Same string as the API 422. */
 export const SERIES_MISMATCH_DETAIL = 'O n.º do documento não corresponde ao tipo indicado.';
 
-// Two leading letters, optionally split (N/C, N.C, N-C). "FRANGO" is not a series.
-const SERIES_PREFIX = /^\s*([A-Za-z])(?:[\s./-]+)?([A-Za-z])(.*)$/;
+// A series token, then a boundary. "frete", "fr001", "FS2026/12" and "FRA2026/12" are not one.
+const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/.\-]|$)/i;
+// "NCA/5": the code, one extra letter, then a separator.
+const SERIES_GLUED_LETTER = /^(FT|FS|FR|NC|ND)[A-Za-z](?=[\s/.\-])/i;
+// "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
+const SERIES_SPLIT = /^([A-Za-z])[\s./\-]+([A-Za-z])(?=[\s/.\-]|$)/;
+
+// Cyrillic and Greek letters that stand in for the Latin series codes.
+// U+041D (Н) folds to N so "НC" is the NC series.
+const CONFUSABLES = new Map<number, string>([
+  [0x0391, 'A'], [0x03b1, 'a'],
+  [0x0392, 'B'], [0x03b2, 'b'],
+  [0x0395, 'E'], [0x03b5, 'e'],
+  [0x0396, 'Z'], [0x03b6, 'z'],
+  [0x0397, 'H'], [0x03b7, 'h'],
+  [0x0399, 'I'], [0x03b9, 'i'],
+  [0x039a, 'K'], [0x03ba, 'k'],
+  [0x039c, 'M'], [0x03bc, 'm'],
+  [0x039d, 'N'], [0x03bd, 'n'],
+  [0x039f, 'O'], [0x03bf, 'o'],
+  [0x03a1, 'P'], [0x03c1, 'p'],
+  [0x03a4, 'T'], [0x03c4, 't'],
+  [0x03a5, 'Y'], [0x03c5, 'y'],
+  [0x03a7, 'X'], [0x03c7, 'x'],
+  [0x0410, 'A'], [0x0430, 'a'],
+  [0x0412, 'B'], [0x0432, 'b'],
+  [0x0415, 'E'], [0x0435, 'e'],
+  [0x041a, 'K'], [0x043a, 'k'],
+  [0x041c, 'M'], [0x043c, 'm'],
+  [0x041d, 'N'], [0x043d, 'n'],
+  [0x041e, 'O'], [0x043e, 'o'],
+  [0x0420, 'P'], [0x0440, 'p'],
+  [0x0421, 'C'], [0x0441, 'c'],
+  [0x0422, 'T'], [0x0442, 't'],
+  [0x0423, 'Y'], [0x0443, 'y'],
+  [0x0425, 'X'], [0x0445, 'x'],
+  [0x0406, 'I'], [0x0456, 'i'],
+  [0x0407, 'I'], [0x0457, 'i'],
+  [0x0408, 'J'], [0x0458, 'j'],
+]);
+
+/** NFKC, then the small confusables fold. */
+export function foldSeriesText(value: string | null | undefined): string {
+  if (value == null || value === '') return '';
+  let folded = '';
+  for (const ch of value.normalize('NFKC')) {
+    const code = ch.codePointAt(0);
+    folded += code === undefined ? ch : (CONFUSABLES.get(code) ?? ch);
+  }
+  return folded.trim();
+}
 
 /** A stored or explicitly picked AT type. A suggestion is not one. */
 export function isConcreteDocumentType(code: string | null | undefined): boolean {
@@ -22,17 +71,21 @@ export function isConcreteDocumentType(code: string | null | undefined): boolean
 }
 
 /**
- * FT, FS, FR, NC or ND at the start of a document number.
- * 'NC-A/5', 'NCA/5' and 'N/C' count. A number with no recognisable prefix does not.
+ * FT, FS, FR, NC or ND as a token at the start of a document number.
+ * 'NC-A/5', 'NCA/5', 'N/C' and 'N C A/5' count. 'frete 12', 'fr001',
+ * 'FS2026/12' and 'FRA2026/12' do not.
  */
 export function invoiceSeriesPrefix(number: string | null | undefined): string | null {
-  if (!number || !number.trim()) return null;
-  const match = SERIES_PREFIX.exec(number.trim());
-  if (!match) return null;
-  const code = (match[1] + match[2]).toUpperCase();
+  const text = foldSeriesText(number);
+  if (!text) return null;
+  const token = SERIES_TOKEN.exec(text);
+  if (token) return token[1].toUpperCase();
+  const glued = SERIES_GLUED_LETTER.exec(text);
+  if (glued) return glued[1].toUpperCase();
+  const split = SERIES_SPLIT.exec(text);
+  if (!split) return null;
+  const code = (split[1] + split[2]).toUpperCase();
   if (!CONCRETE_TYPES.has(code)) return null;
-  const rest = match[3] ?? '';
-  if (rest && /^[\sA-Za-zÀ-ÿ]*$/.test(rest)) return null;
   return code;
 }
 
@@ -44,6 +97,35 @@ export function seriesAgrees(
   if (!isConcreteDocumentType(documentType)) return true;
   const prefix = invoiceSeriesPrefix(invoiceNumber);
   return prefix === null || prefix === documentType;
+}
+
+function sameSeriesText(left: string | null | undefined, right: string | null | undefined): boolean {
+  return foldSeriesText(left).toUpperCase() === foldSeriesText(right).toUpperCase();
+}
+
+/** True when the chosen type and number are still the pair AT issued. */
+export function isAtIssuedPair(
+  atType: string | null | undefined,
+  atNumber: string | null | undefined,
+  documentType: string | null | undefined,
+  invoiceNumber: string | null | undefined,
+): boolean {
+  if (!atType || atNumber == null || atNumber === '') return false;
+  return sameSeriesText(documentType, atType) && sameSeriesText(invoiceNumber, atNumber);
+}
+
+/**
+ * Block a save or a confirm when a concrete type disagrees with the number.
+ * An unchanged AT pair is legal, so it is not a mismatch.
+ */
+export function seriesBlocks(
+  documentType: string | null | undefined,
+  invoiceNumber: string | null | undefined,
+  atType?: string | null,
+  atNumber?: string | null,
+): boolean {
+  if (isAtIssuedPair(atType, atNumber, documentType, invoiceNumber)) return false;
+  return !seriesAgrees(documentType, invoiceNumber);
 }
 
 /** Prefill the review form. A suggestion never fills the type or the number. */

@@ -88,16 +88,25 @@ _ND_HEAD = re.compile(
 _FUTURE_MENTION = re.compile(r"\bemitid", re.IGNORECASE)
 _CREDIT_DEBIT_SIGNAL = re.compile(
     r"n[o0]ta\s*de\s*cr[eé]d(?:ito|lto|1to)|"
+    r"n[o0]ta\s*cr[eé]dito|"
+    r"n[o0]ta\s+cr\.|"
     r"n[o0]ta\s*de\s*d[eé]bito|"
     r"notade\s+cr[eé]dito|"
     r"notade\s+d[eé]bito|"
     r"credit\s+note|"
+    r"credit\s+memo|"
     r"debit\s+note|"
     r"\bcr[eé]dlto\b|"
     r"a\s+creditar|"
     r"a\s+debitar|"
-    r"retificativa|"
-    r"rectificativa|"
+    r"retificativ[oa]|"
+    r"rectificativ[oa]|"
+    r"\bestorno\b|"
+    r"\bdevolu[cç][aã]o\b|"
+    r"\brefund\b|"
+    r"(?<![A-Za-z0-9])n\s*/\s*c(?![A-Za-z0-9])|"
+    r"(?<![A-Za-z0-9])nc-[A-Za-z0-9]|"
+    r"(?<![A-Za-z0-9])nca/|"
     r"anula",
     re.IGNORECASE,
 )

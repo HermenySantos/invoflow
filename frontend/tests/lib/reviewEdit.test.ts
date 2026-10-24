@@ -6,6 +6,7 @@ import {
   invoiceSeriesPrefix,
   saveEditPayload,
   seriesAgrees,
+  seriesBlocks,
 } from '@/lib/reviewEdit';
 
 describe('saveEditPayload', () => {
@@ -116,6 +117,21 @@ describe('invoice series prefix', () => {
     expect(invoiceSeriesPrefix('CN-2026-7')).toBeNull();
     expect(invoiceSeriesPrefix('Q2/7')).toBeNull();
     expect(invoiceSeriesPrefix('FRANGO')).toBeNull();
+    expect(invoiceSeriesPrefix('frete 12')).toBeNull();
+    expect(invoiceSeriesPrefix('fr001')).toBeNull();
+    expect(invoiceSeriesPrefix('FS2026/12')).toBeNull();
+    expect(invoiceSeriesPrefix('FRA2026/12')).toBeNull();
+    expect(invoiceSeriesPrefix('nc a/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N C A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('NC.A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N.C. A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N/C A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('  NC A/5  ')).toBe('NC');
+    expect(invoiceSeriesPrefix('NC\tA/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('NC\u00A0A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N\u0421 A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\u041DC A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\uFF2E\uFF23 A/5')).toBe('NC');
     expect(invoiceSeriesPrefix('')).toBeNull();
     expect(invoiceSeriesPrefix(null)).toBeNull();
   });
@@ -129,7 +145,23 @@ describe('invoice series prefix', () => {
     expect(seriesAgrees('unclassified', 'FT A/12')).toBe(true);
     expect(seriesAgrees('NC', '')).toBe(true);
     expect(seriesAgrees('NC', null)).toBe(true);
+    expect(seriesAgrees('FT', 'frete 12')).toBe(true);
+    expect(seriesAgrees('FT', 'FRA2026/12')).toBe(true);
+    expect(seriesAgrees('FT', 'N\u0421 A/5')).toBe(false);
+    expect(seriesAgrees('FT', '\u041DC A/5')).toBe(false);
+    expect(seriesAgrees('FT', '\uFF2E\uFF23 A/5')).toBe(false);
     expect(SERIES_MISMATCH_DETAIL).toBe('O n.º do documento não corresponde ao tipo indicado.');
+  });
+
+  it('lets an unchanged AT pair through and still blocks a different pair', () => {
+    expect(seriesBlocks('FR', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(false);
+    expect(seriesBlocks('FR', 'FTR A/12', 'FR', 'FTR A/12')).toBe(false);
+    expect(seriesBlocks('FS', 'FT A/12', 'FS', 'FT A/12')).toBe(false);
+    expect(seriesBlocks('ND', 'NC A/3', 'ND', 'NC A/3')).toBe(false);
+    expect(seriesBlocks('NC', 'FT A/12')).toBe(true);
+    expect(seriesBlocks('NC', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(true);
+    expect(seriesBlocks('FT', 'frete 12')).toBe(false);
+    expect(seriesBlocks('unclassified', 'FT A/12', 'FR', 'FT 2026/12')).toBe(false);
   });
 });
 

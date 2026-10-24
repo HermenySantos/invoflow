@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS, SERIES_MISMATCH_DETAIL, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesAgrees } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, SERIES_MISMATCH_DETAIL, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -279,7 +279,7 @@ export default function ReceiptDetailPage() {
       ? document.document_type!
       : confirmType;
     if (!isConcreteDocumentType(chosen)) return;
-    if (!seriesAgrees(chosen, document.invoice_number)) {
+    if (seriesBlocks(chosen, document.invoice_number, document.at_document_type, document.at_invoice_number)) {
       setError(SERIES_MISMATCH_DETAIL);
       return;
     }
@@ -304,8 +304,12 @@ export default function ReceiptDetailPage() {
   const handleSaveEdit = async () => {
     if (!document || document.id !== routeId) return;
     if (
-      isConcreteDocumentType(editData.document_type) &&
-      !seriesAgrees(editData.document_type, editData.invoice_number)
+      seriesBlocks(
+        editData.document_type,
+        editData.invoice_number,
+        document.at_document_type,
+        document.at_invoice_number,
+      )
     ) {
       setError(SERIES_MISMATCH_DETAIL);
       return;
@@ -400,16 +404,24 @@ export default function ReceiptDetailPage() {
   };
 
   const editIsConcrete = isConcreteDocumentType(editData.document_type);
-  const editSeriesMismatch =
-    editIsConcrete && !seriesAgrees(editData.document_type, editData.invoice_number);
+  const editSeriesMismatch = seriesBlocks(
+    editData.document_type,
+    editData.invoice_number,
+    document?.at_document_type,
+    document?.at_invoice_number,
+  );
   const confirmChosen =
     document && isConcreteDocumentType(document.document_type)
       ? document.document_type!
       : confirmType;
   const confirmSeriesMismatch =
     !!document &&
-    isConcreteDocumentType(confirmChosen) &&
-    !seriesAgrees(confirmChosen, document.invoice_number);
+    seriesBlocks(
+      confirmChosen,
+      document.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
 
   return (
     <AppLayout>

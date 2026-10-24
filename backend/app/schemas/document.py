@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
@@ -34,31 +35,121 @@ NULL_TYPE_DETAIL = "O tipo de documento não pode ficar vazio."
 SERIES_MISMATCH_DETAIL = "O n.º do documento não corresponde ao tipo indicado."
 CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
-# Two leading letters, optionally split (N/C, N.C, N-C). "FRANGO" is not a series.
-_SERIES_PREFIX = re.compile(r"^\s*([A-Za-z])(?:[\s./\-]+)?([A-Za-z])(.*)$", re.DOTALL)
+# A series token, then a boundary. "frete", "fr001", "FS2026/12" and "FRA2026/12" are not one.
+_SERIES_TOKEN = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/.\-]|$)", re.IGNORECASE)
+# "NCA/5": the code, one extra letter, then a separator.
+_SERIES_GLUED_LETTER = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)[A-Za-z](?=[\s/.\-])",
+    re.IGNORECASE,
+)
+# "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
+_SERIES_SPLIT = re.compile(
+    r"^(?P<c1>[A-Za-z])[\s./\-]+(?P<c2>[A-Za-z])(?=[\s/.\-]|$)",
+)
+# Cyrillic and Greek letters that stand in for the Latin series codes.
+# U+041D (Н) folds to N so "НC" is the NC series.
+_CONFUSABLES = str.maketrans(
+    {
+        chr(code): latin
+        for code, latin in (
+            (0x0391, "A"), (0x03B1, "a"),  # Greek alpha
+            (0x0392, "B"), (0x03B2, "b"),
+            (0x0395, "E"), (0x03B5, "e"),
+            (0x0396, "Z"), (0x03B6, "z"),
+            (0x0397, "H"), (0x03B7, "h"),
+            (0x0399, "I"), (0x03B9, "i"),
+            (0x039A, "K"), (0x03BA, "k"),
+            (0x039C, "M"), (0x03BC, "m"),
+            (0x039D, "N"), (0x03BD, "n"),
+            (0x039F, "O"), (0x03BF, "o"),
+            (0x03A1, "P"), (0x03C1, "p"),
+            (0x03A4, "T"), (0x03C4, "t"),
+            (0x03A5, "Y"), (0x03C5, "y"),
+            (0x03A7, "X"), (0x03C7, "x"),
+            (0x0410, "A"), (0x0430, "a"),  # Cyrillic a
+            (0x0412, "B"), (0x0432, "b"),
+            (0x0415, "E"), (0x0435, "e"),
+            (0x041A, "K"), (0x043A, "k"),
+            (0x041C, "M"), (0x043C, "m"),
+            (0x041D, "N"), (0x043D, "n"),  # Н, the H-shaped letter, read here as N
+            (0x041E, "O"), (0x043E, "o"),
+            (0x0420, "P"), (0x0440, "p"),
+            (0x0421, "C"), (0x0441, "c"),
+            (0x0422, "T"), (0x0442, "t"),
+            (0x0423, "Y"), (0x0443, "y"),
+            (0x0425, "X"), (0x0445, "x"),
+            (0x0406, "I"), (0x0456, "i"),
+            (0x0407, "I"), (0x0457, "i"),
+            (0x0408, "J"), (0x0458, "j"),
+        )
+    }
+)
+
+
+def fold_series_text(value: Optional[str]) -> str:
+    """NFKC, then the small confusables fold. Empty when there is nothing to read."""
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFKC", str(value)).translate(_CONFUSABLES)
+    return text.strip()
 
 
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
-    """FT, FS, FR, NC or ND at the start of a document number. Anything else is none.
+    """FT, FS, FR, NC or ND as a token at the start of a document number.
 
-    'NC-A/5', 'NCA/5' and 'N/C' count. A remainder that is only letters does not,
-    and a number with no recognisable prefix is allowed with any type.
+    'NC-A/5', 'NCA/5', 'N/C' and 'N C A/5' count. 'frete 12', 'fr001',
+    'FS2026/12' and 'FRA2026/12' do not. A number with no recognisable
+    prefix is allowed with any type.
     """
-    if number is None:
-        return None
-    text = str(number).strip()
+    text = fold_series_text(number)
     if not text:
         return None
-    match = _SERIES_PREFIX.match(text)
-    if not match:
+    token = _SERIES_TOKEN.match(text)
+    if token:
+        return token.group("code").upper()
+    glued = _SERIES_GLUED_LETTER.match(text)
+    if glued:
+        return glued.group("code").upper()
+    split = _SERIES_SPLIT.match(text)
+    if not split:
         return None
-    code = (match.group(1) + match.group(2)).upper()
+    code = (split.group("c1") + split.group("c2")).upper()
     if code not in CONCRETE_DOCUMENT_TYPES:
         return None
-    rest = match.group(3)
-    if rest and re.fullmatch(r"[\sA-Za-zÀ-ÿ]*", rest):
-        return None
     return code
+
+
+def _norm_type(value: Optional[str]) -> str:
+    return fold_series_text(value).upper()
+
+
+def _norm_number(value: Optional[str]) -> str:
+    return fold_series_text(value).casefold()
+
+
+def series_fields_changed(
+    stored_type: Optional[str],
+    stored_number: Optional[str],
+    update: dict,
+) -> bool:
+    """True when this write changes the type or the number compared with the stored row."""
+    if "document_type" in update and _norm_type(update.get("document_type")) != _norm_type(stored_type):
+        return True
+    if "invoice_number" in update and _norm_number(update.get("invoice_number")) != _norm_number(stored_number):
+        return True
+    return False
+
+
+def keeps_at_issued_pair(
+    merged_type: Optional[str],
+    merged_number: Optional[str],
+    issued: Optional[tuple],
+) -> bool:
+    """True when the saved type and number are still the pair AT supplied."""
+    if not issued:
+        return False
+    at_type, at_number = issued
+    return _norm_type(merged_type) == _norm_type(at_type) and _norm_number(merged_number) == _norm_number(at_number)
 
 
 def _round_cents(value):
@@ -146,6 +237,7 @@ class DocumentResponse(BaseModel):
     suggested_type: Optional[str] = None
     suggested_invoice_number: Optional[str] = None
     at_document_type: Optional[str] = None
+    at_invoice_number: Optional[str] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]
