@@ -139,9 +139,10 @@ def test_ref_parenthetical_is_skipped_and_the_real_number_is_kept():
 
 
 def test_number_on_the_line_below_the_title():
+    """The number has to sit on the title line. The next line is left out."""
     fields = _reading("Fatura\nFT A/12\nTotal 12,30")
     assert fields.suggested_type == "FT"
-    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.suggested_invoice_number is None
 
 
 def test_no_title_suggests_nothing():

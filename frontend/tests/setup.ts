@@ -1,5 +1,10 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import { registerUseParamsMock } from './navigationState';
+
+const { useParamsMock } = vi.hoisted(() => ({
+  useParamsMock: vi.fn(() => ({ id: 'doc-v6' })),
+}));
 
 // Mock next/navigation
 vi.mock('next/navigation', () => ({
@@ -13,8 +18,10 @@ vi.mock('next/navigation', () => ({
   }),
   usePathname: () => '/test',
   useSearchParams: () => new URLSearchParams(),
-  useParams: () => ({ id: 'doc-v6' }),
+  useParams: () => useParamsMock(),
 }));
+
+registerUseParamsMock(useParamsMock);
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

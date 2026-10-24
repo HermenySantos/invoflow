@@ -84,14 +84,6 @@ _ND_HEAD = re.compile(
     r"^\s*(?:n[o0]ta\s*de\s*d[eé]bito|notade\s+d[eé]bito|debit\s+note)\b",
     re.IGNORECASE,
 )
-_NC_SENTENCE = re.compile(
-    r"(?:é|e)\s+uma\s+nota\s+de\s+cr[eé]dito\b",
-    re.IGNORECASE,
-)
-_ND_SENTENCE = re.compile(
-    r"(?:é|e)\s+uma\s+nota\s+de\s+d[eé]bito\b",
-    re.IGNORECASE,
-)
 # "será emitida" is a promise of a later note, not this document's title.
 _FUTURE_MENTION = re.compile(r"\bemitid", re.IGNORECASE)
 _CREDIT_DEBIT_SIGNAL = re.compile(
@@ -320,30 +312,53 @@ def _clear_title_type(line: str) -> Optional[str]:
     return None
 
 
-def _nota_kind(line: str) -> Optional[str]:
-    """NC or ND when this line is the document's own credit or debit title."""
-    if not line or _is_origin_line(line) or _FUTURE_MENTION.search(line):
-        return None
-    if _ND_HEAD.search(line) or _ND_SENTENCE.search(line):
-        return "ND"
-    if _NC_HEAD.search(line) or _NC_SENTENCE.search(line):
-        return "NC"
+def _heading_kind(line: str) -> Optional[tuple[str, str]]:
+    """(NC or ND, text after the heading) when the line opens with that heading."""
+    for kind, pattern in (("ND", _ND_HEAD), ("NC", _NC_HEAD)):
+        match = pattern.match(line)
+        if match:
+            return kind, line[match.end() :]
     return None
 
 
-def _find_nota(lines: list[str]) -> Optional[tuple[int, str]]:
-    """A credit or debit title anywhere on the page, not the first Fatura line."""
-    for index, line in enumerate(lines):
+def _remainder_is_qualifier(rest: str) -> bool:
+    """Prose after the heading, with no document id. 'só mediante devolução' is one."""
+    if re.search(r"\d", rest):
+        return False
+    return bool(re.search(r"[A-Za-zÀ-ÿ]", rest))
+
+
+def _nota_kind(line: str) -> Optional[str]:
+    """NC or ND when this line is the document's own credit or debit title.
+
+    A heading followed only by prose is a qualifier, not a title. A sentence
+    such as 'é uma nota de crédito' is a veto, not a title.
+    """
+    if not line or _is_origin_line(line) or _FUTURE_MENTION.search(line):
+        return None
+    heading = _heading_kind(line)
+    if heading is None:
+        return None
+    kind, rest = heading
+    if _remainder_is_qualifier(rest):
+        return None
+    return kind
+
+
+def _find_nota(lines: list[str]) -> Optional[tuple[str, str]]:
+    """(kind, title text). A wrapped 'Nota de' / 'crédito …' is one title."""
+    for line in lines:
         kind = _nota_kind(line)
         if kind:
-            return index, kind
+            return kind, line
     for index in range(len(lines) - 1):
         if _is_origin_line(lines[index]):
             continue
         if re.match(r"^\s*n[o0]ta\s+de\s*$", lines[index], re.IGNORECASE):
-            kind = _nota_kind(f"{lines[index]} {lines[index + 1]}")
+            combined = f"{lines[index]} {lines[index + 1]}"
+            kind = _nota_kind(combined)
             if kind:
-                return index, kind
+                return kind, combined
     return None
 
 
@@ -433,19 +448,16 @@ def _series_number(line: str, *, allow_credit: bool, allow_purchase: bool) -> Op
 def _suggestions(text: str) -> tuple[Optional[str], Optional[str]]:
     """Type and number hints. A credit signal never yields FT, FS or FR.
 
-    The number comes from the document's own title, or the line directly
-    under it when that line is not a citation. In doubt the number is blank,
-    and a credit note never keeps an FT-series number.
+    The number comes only from the same line as the title that produced the
+    type. The line under that title is not used. In doubt the number is blank,
+    and a credit note never keeps an FT-series number. A qualifier plus a
+    purchase title suggests nothing.
     """
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
     nota = _find_nota(lines)
     if nota is not None:
-        index, kind = nota
-        number = _series_number(lines[index], allow_credit=True, allow_purchase=False)
-        if number is None and index + 1 < len(lines):
-            nxt = lines[index + 1]
-            if not _is_origin_line(nxt) and not _is_purchase_line(nxt):
-                number = _series_number(nxt, allow_credit=True, allow_purchase=False)
+        kind, title = nota
+        number = _series_number(title, allow_credit=True, allow_purchase=False)
         if _purchase_series(number):
             number = None
         return kind, number
@@ -465,24 +477,19 @@ def _suggestions(text: str) -> tuple[Optional[str], Optional[str]]:
                         return None, number
         return None, None
 
-    index: Optional[int] = None
-    for position, line in enumerate(lines):
+    title: Optional[str] = None
+    for line in lines:
         if _is_origin_line(line):
             continue
         if _TITLE_HEAD.match(line) or _NUMBER_HEAD.match(line):
-            index = position
+            title = line
             break
-    if index is None:
+    if title is None:
         return None, None
-    title = lines[index]
     suggested = _clear_title_type(title)
     title_is_credit_number = bool(re.match(r"^\s*(?:NC|ND)\b", title, re.IGNORECASE))
     allow_credit = suggested in {"NC", "ND"} or title_is_credit_number
     number = _series_number(title, allow_credit=allow_credit, allow_purchase=True)
-    if number is None and index + 1 < len(lines) and not _is_origin_line(lines[index + 1]):
-        number = _series_number(
-            lines[index + 1], allow_credit=suggested in {"NC", "ND"}, allow_purchase=True
-        )
     if suggested in {"NC", "ND"} and _purchase_series(number):
         number = None
     return suggested, number

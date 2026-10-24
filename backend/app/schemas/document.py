@@ -1,3 +1,4 @@
+import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
@@ -30,8 +31,34 @@ _CENT = Decimal("0.01")
 AMOUNT_MISMATCH_DETAIL = "O valor líquido mais o IVA tem de ser igual ao total."
 TYPE_REQUIRED_DETAIL = "Indique o tipo de documento antes de o marcar como pronto."
 NULL_TYPE_DETAIL = "O tipo de documento não pode ficar vazio."
+SERIES_MISMATCH_DETAIL = "O n.º do documento não corresponde ao tipo indicado."
 CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
+# Two leading letters, optionally split (N/C, N.C, N-C). "FRANGO" is not a series.
+_SERIES_PREFIX = re.compile(r"^\s*([A-Za-z])(?:[\s./\-]+)?([A-Za-z])(.*)$", re.DOTALL)
+
+
+def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
+    """FT, FS, FR, NC or ND at the start of a document number. Anything else is none.
+
+    'NC-A/5', 'NCA/5' and 'N/C' count. A remainder that is only letters does not,
+    and a number with no recognisable prefix is allowed with any type.
+    """
+    if number is None:
+        return None
+    text = str(number).strip()
+    if not text:
+        return None
+    match = _SERIES_PREFIX.match(text)
+    if not match:
+        return None
+    code = (match.group(1) + match.group(2)).upper()
+    if code not in CONCRETE_DOCUMENT_TYPES:
+        return None
+    rest = match.group(3)
+    if rest and re.fullmatch(r"[\sA-Za-zÀ-ÿ]*", rest):
+        return None
+    return code
 
 
 def _round_cents(value):

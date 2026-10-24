@@ -30,8 +30,10 @@ from app.schemas.document import (
     AMOUNT_MISMATCH_DETAIL,
     CONCRETE_DOCUMENT_TYPES,
     NULL_TYPE_DETAIL,
+    SERIES_MISMATCH_DETAIL,
     TYPE_REQUIRED_DETAIL,
     amounts_are_consistent,
+    invoice_series_prefix,
 )
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.processing import read_receipt
@@ -482,6 +484,17 @@ async def update_document(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=TYPE_REQUIRED_DETAIL,
+            )
+        merged_number = (
+            update_data["invoice_number"]
+            if "invoice_number" in update_data
+            else document.invoice_number
+        )
+        series = invoice_series_prefix(merged_number)
+        if merged_type in CONCRETE_DOCUMENT_TYPES and series is not None and series != merged_type:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=SERIES_MISMATCH_DETAIL,
             )
         before_state = {field: getattr(document, field, None) for field in update_data}
 

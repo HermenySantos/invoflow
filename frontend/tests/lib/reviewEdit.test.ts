@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { documentTypeLabel, initialReviewEdit, saveEditPayload } from '@/lib/reviewEdit';
+import {
+  SERIES_MISMATCH_DETAIL,
+  documentTypeLabel,
+  initialReviewEdit,
+  invoiceSeriesPrefix,
+  saveEditPayload,
+  seriesAgrees,
+} from '@/lib/reviewEdit';
 
 describe('saveEditPayload', () => {
   it('sends the edited non-negative total and the net that matches it', () => {
@@ -92,6 +99,37 @@ describe('initialReviewEdit', () => {
       document_type: 'NC',
       invoice_number: 'NC A/1',
     });
+  });
+});
+
+describe('invoice series prefix', () => {
+  it('recognises a series at the start and ignores everything else', () => {
+    expect(invoiceSeriesPrefix('FT A/12')).toBe('FT');
+    expect(invoiceSeriesPrefix('NC-A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('NCA/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N/C')).toBe('NC');
+    expect(invoiceSeriesPrefix('N/C n.º 7')).toBe('NC');
+    expect(invoiceSeriesPrefix('N.C 1')).toBe('NC');
+    expect(invoiceSeriesPrefix('N-C 1')).toBe('NC');
+    expect(invoiceSeriesPrefix('  fs 1')).toBe('FS');
+    expect(invoiceSeriesPrefix('INV-100')).toBeNull();
+    expect(invoiceSeriesPrefix('CN-2026-7')).toBeNull();
+    expect(invoiceSeriesPrefix('Q2/7')).toBeNull();
+    expect(invoiceSeriesPrefix('FRANGO')).toBeNull();
+    expect(invoiceSeriesPrefix('')).toBeNull();
+    expect(invoiceSeriesPrefix(null)).toBeNull();
+  });
+
+  it('rejects only a concrete type that disagrees with the prefix', () => {
+    expect(seriesAgrees('NC', 'FT A/12')).toBe(false);
+    expect(seriesAgrees('FT', 'NCA/5')).toBe(false);
+    expect(seriesAgrees('NC', 'NC Q2/7')).toBe(true);
+    expect(seriesAgrees('NC', 'INV-100')).toBe(true);
+    expect(seriesAgrees('FT', 'FRANGO')).toBe(true);
+    expect(seriesAgrees('unclassified', 'FT A/12')).toBe(true);
+    expect(seriesAgrees('NC', '')).toBe(true);
+    expect(seriesAgrees('NC', null)).toBe(true);
+    expect(SERIES_MISMATCH_DETAIL).toBe('O n.º do documento não corresponde ao tipo indicado.');
   });
 });
 

@@ -10,9 +10,40 @@ export interface ReviewEditFields {
 
 const CONCRETE_TYPES = new Set(['FT', 'FS', 'FR', 'NC', 'ND']);
 
+/** Shown when a series prefix and the chosen type disagree. Same string as the API 422. */
+export const SERIES_MISMATCH_DETAIL = 'O n.º do documento não corresponde ao tipo indicado.';
+
+// Two leading letters, optionally split (N/C, N.C, N-C). "FRANGO" is not a series.
+const SERIES_PREFIX = /^\s*([A-Za-z])(?:[\s./-]+)?([A-Za-z])(.*)$/;
+
 /** A stored or explicitly picked AT type. A suggestion is not one. */
 export function isConcreteDocumentType(code: string | null | undefined): boolean {
   return !!code && CONCRETE_TYPES.has(code);
+}
+
+/**
+ * FT, FS, FR, NC or ND at the start of a document number.
+ * 'NC-A/5', 'NCA/5' and 'N/C' count. A number with no recognisable prefix does not.
+ */
+export function invoiceSeriesPrefix(number: string | null | undefined): string | null {
+  if (!number || !number.trim()) return null;
+  const match = SERIES_PREFIX.exec(number.trim());
+  if (!match) return null;
+  const code = (match[1] + match[2]).toUpperCase();
+  if (!CONCRETE_TYPES.has(code)) return null;
+  const rest = match[3] ?? '';
+  if (rest && /^[\sA-Za-zÀ-ÿ]*$/.test(rest)) return null;
+  return code;
+}
+
+/** A concrete type agrees with its number, or the number has no series prefix. */
+export function seriesAgrees(
+  documentType: string | null | undefined,
+  invoiceNumber: string | null | undefined,
+): boolean {
+  if (!isConcreteDocumentType(documentType)) return true;
+  const prefix = invoiceSeriesPrefix(invoiceNumber);
+  return prefix === null || prefix === documentType;
 }
 
 /** Prefill the review form. A suggestion never fills the type or the number. */

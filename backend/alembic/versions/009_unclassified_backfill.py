@@ -10,6 +10,10 @@ needs_review. Nothing is deployed, so that only affects dev data.
 Non-JSON OCR text and JSON values that are not objects are not rewritten.
 A missing raw value still round-trips through ``_type_backup``.
 
+Downgrade does not restore ``ready`` for a row whose raw value is not a JSON
+object: there is no ``_type_backup`` to read, so the row stays unclassified
+and needs_review. The raw text itself is preserved. Dev databases only.
+
 Downgrade of a 2f8c720-era 008 (never merged, dev databases only) cannot
 restore amount signs: that revision left no ``_amount_sign_backup``. This
 revision does not change 008.

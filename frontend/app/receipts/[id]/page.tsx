@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, SERIES_MISMATCH_DETAIL, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesAgrees } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -114,8 +114,10 @@ export default function ReceiptDetailPage() {
     document_type: 'unclassified',
     invoice_number: '',
   });
-  // Non-QR rows open on Por classificar. The suggestion is a chip, not the value.
+  // Non-QR rows open on Por classificar. A suggestion is read-only text, not the value.
   const [confirmType, setConfirmType] = useState('unclassified');
+  const [reloadKey, setReloadKey] = useState(0);
+  const loadSeq = useRef(0);
 
   // Category picker
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
@@ -126,35 +128,70 @@ export default function ReceiptDetailPage() {
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [showAuditTrail, setShowAuditTrail] = useState(false);
 
-  const fetchDocument = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await api.getDocument(params.id as string);
-      setDocument(data);
-      
-      // Pre-fill edit form. Suggestions stay out of the saved fields.
-      setEditData(initialReviewEdit(data));
-      setConfirmType(isConcreteDocumentType(data.document_type) ? data.document_type! : 'unclassified');
-    } catch (err) {
-      setError('Não foi possível carregar o recibo.');
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const routeId = String(params.id ?? '');
+  const [trackedId, setTrackedId] = useState(routeId);
+  if (trackedId !== routeId) {
+    setTrackedId(routeId);
+    setDocument(null);
+    setIsEditing(false);
+    setConfirmType('unclassified');
+    setIsLoading(true);
+    setError(null);
+    setAuditTrail(null);
+  }
 
+  // Ignore a response that belongs to a previous id. A failed load leaves no receipt to confirm.
   useEffect(() => {
-    fetchDocument();
-  }, [params.id]);
+    const seq = ++loadSeq.current;
+    const requestedId = routeId;
+    setDocument(null);
+    setIsEditing(false);
+    setConfirmType('unclassified');
+    setEditData({
+      vendor_name: '',
+      document_date: '',
+      gross_amount: '',
+      vat_amount: '',
+      document_type: 'unclassified',
+      invoice_number: '',
+    });
+    setAuditTrail(null);
+    setIsLoading(true);
+    setError(null);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.getDocument(requestedId);
+        if (cancelled || seq !== loadSeq.current || data.id !== requestedId) return;
+        setDocument(data);
+        setEditData(initialReviewEdit(data));
+        setConfirmType(isConcreteDocumentType(data.document_type) ? data.document_type! : 'unclassified');
+      } catch (err) {
+        if (cancelled || seq !== loadSeq.current) return;
+        setDocument(null);
+        setError('Não foi possível carregar o recibo.');
+        console.error(err);
+      } finally {
+        if (!cancelled && seq === loadSeq.current) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId, reloadKey]);
 
   // The receipt is still being read in the background: poll until it settles.
   const isProcessing = document?.status === 'processing';
   useEffect(() => {
     if (!isProcessing) return;
+    const seq = loadSeq.current;
+    const requestedId = routeId;
     const timer = setInterval(async () => {
       try {
-        const data = await api.getDocument(params.id as string);
+        const data = await api.getDocument(requestedId);
+        if (seq !== loadSeq.current || data.id !== requestedId) return;
         if (data.status === 'processing') return;
         setDocument(data);
         setEditData(initialReviewEdit(data));
@@ -164,23 +201,31 @@ export default function ReceiptDetailPage() {
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, [isProcessing, params.id]);
+  }, [isProcessing, routeId]);
 
-  // Fetch audit trail on mount
+  // Fetch audit trail for the receipt currently on screen.
   useEffect(() => {
+    const seq = loadSeq.current;
+    const requestedId = routeId;
+    let cancelled = false;
     const fetchAudit = async () => {
       try {
         setIsAuditLoading(true);
-        const data = await api.getDocumentAuditTrail(params.id as string);
+        const data = await api.getDocumentAuditTrail(requestedId);
+        if (cancelled || seq !== loadSeq.current) return;
         setAuditTrail(data);
       } catch (err) {
+        if (cancelled || seq !== loadSeq.current) return;
         console.error('Failed to load audit trail:', err);
       } finally {
-        setIsAuditLoading(false);
+        if (!cancelled && seq === loadSeq.current) setIsAuditLoading(false);
       }
     };
     fetchAudit();
-  }, [params.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId]);
 
   // Auto-detect VAT rate for display
   const getVatRateDisplay = useCallback(() => {
@@ -229,13 +274,18 @@ export default function ReceiptDetailPage() {
   }, [document]);
 
   const handleConfirm = async () => {
-    if (!document) return;
+    if (!document || document.id !== routeId) return;
+    const chosen = isConcreteDocumentType(document.document_type)
+      ? document.document_type!
+      : confirmType;
+    if (!isConcreteDocumentType(chosen)) return;
+    if (!seriesAgrees(chosen, document.invoice_number)) {
+      setError(SERIES_MISMATCH_DETAIL);
+      return;
+    }
     const payload = isConcreteDocumentType(document.document_type)
       ? { status: 'ready' as const }
-      : isConcreteDocumentType(confirmType)
-        ? { document_type: confirmType, status: 'ready' as const }
-        : null;
-    if (!payload) return;
+      : { document_type: chosen, status: 'ready' as const };
     
     try {
       setIsSaving(true);
@@ -252,7 +302,14 @@ export default function ReceiptDetailPage() {
   };
 
   const handleSaveEdit = async () => {
-    if (!document) return;
+    if (!document || document.id !== routeId) return;
+    if (
+      isConcreteDocumentType(editData.document_type) &&
+      !seriesAgrees(editData.document_type, editData.invoice_number)
+    ) {
+      setError(SERIES_MISMATCH_DETAIL);
+      return;
+    }
     
     try {
       setIsSaving(true);
@@ -342,6 +399,18 @@ export default function ReceiptDetailPage() {
     }
   };
 
+  const editIsConcrete = isConcreteDocumentType(editData.document_type);
+  const editSeriesMismatch =
+    editIsConcrete && !seriesAgrees(editData.document_type, editData.invoice_number);
+  const confirmChosen =
+    document && isConcreteDocumentType(document.document_type)
+      ? document.document_type!
+      : confirmType;
+  const confirmSeriesMismatch =
+    !!document &&
+    isConcreteDocumentType(confirmChosen) &&
+    !seriesAgrees(confirmChosen, document.invoice_number);
+
   return (
     <AppLayout>
       {/* Header */}
@@ -377,7 +446,7 @@ export default function ReceiptDetailPage() {
           <div className="card p-6 text-center">
             <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-3" />
             <p className="text-gray-600 mb-4">{error}</p>
-            <button onClick={fetchDocument} className="btn-secondary btn-md">
+            <button onClick={() => setReloadKey((key) => key + 1)} className="btn-secondary btn-md">
               Tentar de novo
             </button>
           </div>
@@ -450,13 +519,9 @@ export default function ReceiptDetailPage() {
                     ))}
                   </select>
                   {document.suggested_type && document.document_type === 'unclassified' ? (
-                    <button
-                      type="button"
-                      className="mt-1 text-sm text-primary-700 underline"
-                      onClick={() => setEditData((d) => ({ ...d, document_type: document.suggested_type! }))}
-                    >
-                      Usar sugestão: {documentTypeLabel(document.suggested_type)}
-                    </button>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Sugestão: {documentTypeLabel(document.suggested_type)}
+                    </p>
                   ) : null}
                   {document.at_document_type ? (
                     <p className="mt-1 text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
@@ -474,17 +539,10 @@ export default function ReceiptDetailPage() {
                     onChange={(e) => setEditData(d => ({ ...d, invoice_number: e.target.value }))}
                     className="input"
                   />
-                  {document.suggested_invoice_number && document.document_type === 'unclassified' && !editData.invoice_number ? (
-                    <button
-                      type="button"
-                      className="mt-1 text-sm text-primary-700 underline"
-                      onClick={() => setEditData((d) => ({
-                        ...d,
-                        invoice_number: document.suggested_invoice_number || '',
-                      }))}
-                    >
-                      Usar n.º {document.suggested_invoice_number}
-                    </button>
+                  {document.suggested_invoice_number && document.document_type === 'unclassified' ? (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Sugestão de n.º {document.suggested_invoice_number}
+                    </p>
                   ) : null}
                 </div>
 
@@ -835,9 +893,13 @@ export default function ReceiptDetailPage() {
               </dl>
             )}
             {isEditing ? (
+              <>
+              {editSeriesMismatch ? (
+                <p className="text-sm text-red-700 mb-2">{SERIES_MISMATCH_DETAIL}</p>
+              ) : null}
               <button
                 onClick={handleSaveEdit}
-                disabled={isSaving || !isConcreteDocumentType(editData.document_type)}
+                disabled={isSaving || editSeriesMismatch}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
@@ -848,10 +910,11 @@ export default function ReceiptDetailPage() {
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5" />
-                    Guardar e confirmar
+                    {editIsConcrete ? 'Guardar e confirmar' : 'Guardar'}
                   </>
                 )}
               </button>
+              </>
             ) : (
               <>
               {!isConcreteDocumentType(document.document_type) ? (
@@ -871,19 +934,18 @@ export default function ReceiptDetailPage() {
                     ))}
                   </select>
                   {document.suggested_type ? (
-                    <button
-                      type="button"
-                      className="text-sm text-primary-700 underline"
-                      onClick={() => setConfirmType(document.suggested_type!)}
-                    >
-                      Usar sugestão: {documentTypeLabel(document.suggested_type)}
-                    </button>
+                    <p className="text-sm text-gray-500">
+                      Sugestão: {documentTypeLabel(document.suggested_type)}
+                    </p>
                   ) : null}
                 </div>
               ) : null}
+              {confirmSeriesMismatch ? (
+                <p className="text-sm text-red-700 mb-2">{SERIES_MISMATCH_DETAIL}</p>
+              ) : null}
               <button
                 onClick={handleConfirm}
-                disabled={isSaving || (!isConcreteDocumentType(document.document_type) && !isConcreteDocumentType(confirmType))}
+                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || confirmSeriesMismatch}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (

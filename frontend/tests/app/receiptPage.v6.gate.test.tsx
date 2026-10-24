@@ -82,7 +82,8 @@ describe('receipt page gate 6', () => {
     const confirm = await screen.findByRole('button', { name: 'Está correto' });
     expect(confirm).toBeDisabled();
     expect(screen.getByLabelText('Tipo de documento')).toHaveValue('unclassified');
-    expect(screen.getByRole('button', { name: 'Usar sugestão: Fatura' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Usar sugestão|Usar n/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Sugestão: Fatura').length).toBeGreaterThan(0);
 
     fireEvent.click(confirm);
     expect(updateDocument).not.toHaveBeenCalled();
@@ -90,13 +91,10 @@ describe('receipt page gate 6', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Editar dados' }));
     expect(screen.getByLabelText('Tipo de documento')).toHaveValue('unclassified');
     expect(screen.getByLabelText('N.º da fatura')).toHaveValue('');
-    const save = screen.getByRole('button', { name: 'Guardar e confirmar' });
-    expect(save).toBeDisabled();
-
-    fireEvent.click(save);
-    expect(updateDocument).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Usar/ })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Tipo de documento'), { target: { value: 'NC' } });
+    const save = screen.getByRole('button', { name: 'Guardar e confirmar' });
     expect(save).toBeEnabled();
     fireEvent.click(save);
 

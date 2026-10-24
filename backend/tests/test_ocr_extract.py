@@ -60,7 +60,7 @@ def test_series_code_stays_on_the_invoice_number():
     assert credit.invoice_number is None
     assert credit.suggested_type == "NC"
     assert credit.suggested_invoice_number == "NC Q2"
-    assert extract_fields(CONTOSO).suggested_invoice_number == "INV-100"
+    assert extract_fields(CONTOSO).suggested_invoice_number is None
     assert extract_fields(CONTOSO).invoice_number is None
 
 
@@ -172,7 +172,7 @@ def test_contoso_invoice_total_not_balance_due():
     fields = extract_fields(CONTOSO)
     assert fields.vendor_name == "CONTOSO LTD."
     assert fields.invoice_number is None
-    assert fields.suggested_invoice_number == "INV-100"
+    assert fields.suggested_invoice_number is None
     assert fields.document_type == "unclassified"
     assert fields.needs_review is True
     assert fields.document_date == date(2019, 11, 15)

@@ -229,13 +229,9 @@ export function ReviewForm({
               ))}
             </select>
             {document.suggested_type && !isConcreteDocumentType(document.document_type) ? (
-              <button
-                type="button"
-                className="mt-1 text-sm text-primary-700 underline"
-                onClick={() => handleChange('document_type', document.suggested_type!)}
-              >
-                Usar sugestão: {documentTypeLabel(document.suggested_type)}
-              </button>
+              <p className="mt-1 text-sm text-gray-500">
+                Sugestão: {documentTypeLabel(document.suggested_type)}
+              </p>
             ) : null}
           </div>
 
