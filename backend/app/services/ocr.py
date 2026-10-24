@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+# Only these AT QR codes set a type and may skip review. Anything else waits.
+_CONCRETE_QR_TYPES = frozenset({"FT", "FS", "FR", "NC", "ND"})
+
 AZURE_SUPPORTED_FORMATS = {
     "image/jpeg",
     "image/png",
@@ -72,6 +75,11 @@ class OCRResult:
     needs_review: bool = False
     error: Optional[str] = None
     backend: str = "mock"
+    # Prefill only. Netting and confirmation ignore both.
+    suggested_type: Optional[str] = None
+    suggested_invoice_number: Optional[str] = None
+    # Raw AT code (PF, OR, …) when it is not one of the types we confirm.
+    at_document_type: Optional[str] = None
 
 
 def tesseract_available() -> bool:
@@ -256,20 +264,22 @@ class OCRService:
             elif backend == "tesseract":
                 result = await self._process_with_tesseract(file_content, mime_type)
             else:
-                return OCRResult(
+                return finalize_non_qr(OCRResult(
                     error=f"Unknown OCR backend {backend}",
                     confidence=0,
                     needs_review=True,
+                    document_type="unclassified",
                     backend=backend,
-                )
+                ))
             qr = await asyncio.to_thread(_invoice_qr, file_content, mime_type)
         except PdfRasterLimited:
             if result is None:
                 result = OCRResult(confidence=0, needs_review=True, backend=backend)
-            result.needs_review = True
             result.error = None
-            return result
-        return _apply_invoice_qr(result, qr) if qr else result
+            return finalize_non_qr(result)
+        if qr is None:
+            return finalize_non_qr(result)
+        return _apply_invoice_qr(result, qr)
 
     def _generate_mock_result(self, mime_type: str) -> OCRResult:
         vendors = [
@@ -731,27 +741,62 @@ def _qr_net_agrees(net: Optional[Decimal], vat: Optional[Decimal], gross: Option
     return vat <= gross and abs((net + vat) - gross) <= Decimal("0.01")
 
 
+def _absolute_amounts(result: OCRResult) -> bool:
+    """Store every amount as a non-negative number. Return whether any was negative."""
+    printed_negative = False
+    for field in ("net_amount", "vat_amount", "gross_amount"):
+        value = getattr(result, field)
+        if value is None:
+            continue
+        amount = Decimal(value)
+        if amount < 0:
+            printed_negative = True
+            setattr(result, field, abs(amount))
+    return printed_negative
+
+
+def finalize_non_qr(result: OCRResult) -> OCRResult:
+    """No AT QR: unclassified, always review, amounts non-negative.
+
+    A number the reader found is only a suggestion. It is not the invoice number.
+    """
+    _absolute_amounts(result)
+    # A confirmed number comes only from an AT QR. Text suggestions are already set.
+    result.invoice_number = None
+    result.document_type = "unclassified"
+    result.needs_review = True
+    return result
+
+
 def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
-    """The AT QR's NIF, date, number and amounts replace what OCR read; OCR keeps the vendor name."""
+    """The AT QR's NIF, date, number and amounts replace what OCR read; OCR keeps the vendor name.
+
+    FT, FS, FR, NC and ND may be confirmed. Any other AT code stays unclassified,
+    keeps the raw code, and waits for a person.
+    """
     result.vendor_nif = qr.vendor_nif
     result.document_date = qr.document_date or result.document_date
-    result.invoice_number = qr.invoice_number or result.invoice_number
-    if qr.document_type:
-        result.document_type = qr.document_type
+    result.invoice_number = qr.invoice_number or None
+    raw_type = (qr.document_type or "").strip().upper() or None
+    result.at_document_type = raw_type
+    concrete = raw_type in _CONCRETE_QR_TYPES
+    result.document_type = raw_type if concrete else "unclassified"
     qr_has_base = qr.net_amount is not None
     ocr_net = result.net_amount
     result.net_amount = qr.net_amount if qr_has_base else ocr_net
     result.vat_amount = qr.vat_amount if qr.vat_amount is not None else result.vat_amount
     result.gross_amount = qr.gross_amount
     result.vat_rate = qr.vat_rate
+    printed_negative = _absolute_amounts(result)
     result.error = None
     result.confidence = max(result.confidence, 95.0)
     # Everything but the vendor name came from the issuer, so only a missing
     # name still needs a person. A QR with no base leaves the OCR net in
     # place, and that net has to agree with the QR total.
-    result.needs_review = not result.vendor_name
+    result.needs_review = not result.vendor_name or not concrete or printed_negative
     if not qr_has_base and not _qr_net_agrees(result.net_amount, result.vat_amount, result.gross_amount):
         result.needs_review = True
+    # Mock invents the vendor name, so a QR on that path still waits for a person.
     if result.backend == "mock":
         result.needs_review = True
 
@@ -779,7 +824,9 @@ def _fields_to_result(fields: ExtractedFields, text: str, backend: str) -> OCRRe
         vendor_name=fields.vendor_name,
         vendor_nif=fields.vendor_nif,
         invoice_number=fields.invoice_number,
-        document_type=fields.document_type,
+        document_type=fields.document_type or "unclassified",
+        suggested_type=fields.suggested_type,
+        suggested_invoice_number=fields.suggested_invoice_number,
         document_date=fields.document_date,
         net_amount=fields.net_amount,
         vat_amount=fields.vat_amount,
@@ -835,8 +882,15 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
     ):
         value = getattr(overlay, field) or getattr(base, field)
         setattr(merged, field, value)
-    # Azure does not classify the document. The text rules, then the QR, do.
-    merged.document_type = base.document_type or "unclassified"
+    for field in ("net_amount", "vat_amount", "gross_amount"):
+        value = getattr(merged, field)
+        if value is not None and value < 0:
+            setattr(merged, field, abs(value))
+    # No QR on this merge. Suggestions stay suggestions.
+    merged.document_type = "unclassified"
+    merged.invoice_number = None
+    merged.suggested_type = base.suggested_type
+    merged.suggested_invoice_number = base.suggested_invoice_number
     filled = sum(
         1
         for value in (
@@ -849,25 +903,7 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
         if value is not None
     )
     merged.confidence = min(95.0, max(base.confidence, 20.0 * filled))
-    amounts_conflict = (
-        merged.net_amount is not None
-        and merged.vat_amount is not None
-        and merged.gross_amount is not None
-        and abs(merged.net_amount + merged.vat_amount - merged.gross_amount) > Decimal("0.01")
-    )
-    # A complete reading that already needed a person (NC, a conflicting
-    # signal, or a broken sum) stays a suggestion after an overlay fills gaps.
-    base_was_complete = bool(
-        base.confidence >= 85 and base.vendor_name and base.gross_amount and base.document_date
-    )
-    merged.needs_review = (
-        merged.confidence < 85
-        or not merged.vendor_name
-        or not merged.gross_amount
-        or (base.needs_review and base_was_complete)
-        or merged.document_type == "unclassified"
-        or amounts_conflict
-    )
+    merged.needs_review = True
     return merged
 
 

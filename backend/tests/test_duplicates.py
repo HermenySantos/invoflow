@@ -32,6 +32,7 @@ def receipt(user: User, **fields) -> Document:
         document_date=date(2026, 9, 15),
         gross_amount=Decimal("35.20"),
         vat_amount=Decimal("5.20"),
+        document_type="FT",
     )
     defaults.update(fields)
     return Document(**defaults)

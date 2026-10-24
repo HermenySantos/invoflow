@@ -46,9 +46,14 @@ def _code(value) -> Optional[str]:
     return text.upper()
 
 
+# Rows under this heading are listed in exports and the projection, and left out of totals.
+EXCLUDED_HEADING = "Documentos por rever (não incluídos nos totais)"
+
+
 def fiscal_mark(document) -> FiscalMark:
-    # The column is the reviewer's choice and wins over the raw reading.
-    column_type = _code(getattr(document, "document_type", None))
+    # The column is the reviewer's choice. A missing type is unclassified.
+    # The raw QR JSON does not fill the type in: netting only sees the column.
+    column_type = _code(getattr(document, "document_type", None)) or "unclassified"
     raw = getattr(document, "ocr_raw_response", None)
     if not raw:
         return FiscalMark(column_type, None, None)
@@ -62,9 +67,8 @@ def fiscal_mark(document) -> FiscalMark:
     if not isinstance(qr, dict):
         qr = {}
     digest = payload.get("file_sha256")
-    hinted = _code(qr.get("document_type")) or _code(payload.get("document_type"))
     return FiscalMark(
-        document_type=column_type or hinted,
+        document_type=column_type,
         fiscal_status=_code(qr.get("fiscal_status")),
         file_sha256=digest if isinstance(digest, str) and digest else None,
     )
@@ -136,6 +140,12 @@ def _signed(document, mark: FiscalMark) -> Counted:
     if mark.document_type == "NC":
         net, vat, gross = -net, -vat, -gross
     return Counted(document=document, net=net, vat=vat, gross=gross)
+
+
+def left_out(documents, library=None) -> list:
+    """Documents in this set that contributions() does not count."""
+    counted = {id(row.document) for row in contributions(documents, library)}
+    return [document for document in documents if id(document) not in counted]
 
 
 def exclusion_reason(document) -> Optional[str]:

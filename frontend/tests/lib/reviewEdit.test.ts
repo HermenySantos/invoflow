@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { documentTypeLabel, saveEditPayload } from '@/lib/reviewEdit';
+import { documentTypeLabel, initialReviewEdit, saveEditPayload } from '@/lib/reviewEdit';
 
 describe('saveEditPayload', () => {
   it('sends the edited non-negative total and the net that matches it', () => {
@@ -63,6 +63,35 @@ describe('documentTypeLabel', () => {
     expect(documentTypeLabel('ND')).toBe('Nota de débito');
     expect(documentTypeLabel(null)).toBe('Por classificar');
     expect(documentTypeLabel('unclassified')).toBe('Por classificar');
+  });
+});
+
+describe('initialReviewEdit', () => {
+  it('prefills a suggestion and does not treat it as confirmed', () => {
+    expect(initialReviewEdit({
+      document_type: 'unclassified',
+      suggested_type: 'FR',
+      suggested_invoice_number: 'FR A/5',
+      vendor_name: 'Ana',
+      document_date: '2026-03-31',
+      gross_amount: '12.30',
+      vat_amount: '2.30',
+    })).toMatchObject({
+      document_type: 'FR',
+      invoice_number: 'FR A/5',
+    });
+  });
+
+  it('keeps a confirmed type and number ahead of a suggestion', () => {
+    expect(initialReviewEdit({
+      document_type: 'NC',
+      suggested_type: 'FT',
+      invoice_number: 'NC A/1',
+      suggested_invoice_number: 'FT A/12',
+    })).toMatchObject({
+      document_type: 'NC',
+      invoice_number: 'NC A/1',
+    });
   });
 });
 

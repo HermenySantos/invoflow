@@ -6,6 +6,9 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.schemas.summary import ExcludedDocument
+from app.services.iva_adjust import EXCLUDED_HEADING
+
 
 class ProjectionResponse(BaseModel):
     period: str
@@ -22,3 +25,5 @@ class ProjectionResponse(BaseModel):
     projected_iva_payable: Optional[Decimal]
     sales_basis: str
     warnings: list[str] = []
+    excluded_heading: str = EXCLUDED_HEADING
+    excluded_documents: list[ExcludedDocument] = []

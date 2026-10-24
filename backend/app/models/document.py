@@ -30,9 +30,16 @@ class Document(Base):
     vendor_name = Column(String(255), nullable=True)
     vendor_nif = Column(String(20), nullable=True)  # Portuguese tax ID
     invoice_number = Column(String(100), nullable=True)
-    # FT, NC, and the other AT series codes. The reviewer can change it.
-    # Amounts stay non-negative; NC is what makes the VAT total negative.
-    document_type = Column(String(20), nullable=True)
+    # FT, FS, FR, NC, ND, or unclassified. Amounts stay non-negative; NC is the minus.
+    # A missing type is unclassified, which is left out of the IVA totals.
+    document_type = Column(
+        String(20), nullable=False, default="unclassified", server_default="unclassified"
+    )
+    # Prefill for the review screen. Never used for netting or confirmation.
+    suggested_type = Column(String(20), nullable=True)
+    suggested_invoice_number = Column(String(100), nullable=True)
+    # Raw AT code when the QR or e-Fatura type is not one we confirm (PF, OR, RG, GT, …).
+    at_document_type = Column(String(16), nullable=True)
     document_date = Column(Date, nullable=True)
     
     # Amounts (in EUR)

@@ -61,28 +61,21 @@ _DUE_LABEL = re.compile(
 _LETTERHEAD = re.compile(
     r"^[A-ZÀ-Ý][\wÀ-ÿ.'’\- ]{1,40},\s*\d{1,2}\s+de\s+",
 )
-# The first heading that names the document. A body line is not a second title.
-_TITLE_LINE = re.compile(
-    r"^\s*(?:fatura(?:\s+simplificada|[\s-]*recibo)?|factura|nota\s+de|FT|FR|FS|NC|ND)\b",
+# A heading. Citation and origin lines are not the document's own title.
+_TITLE_HEAD = re.compile(
+    r"^\s*(?:fatura|factura|nota\s+de|notade|n0ta|credit\s+note|invoice|recibo)\b",
     re.IGNORECASE,
 )
-_FATURA_SIMPLIFICADA = re.compile(r"^\s*fatura\s+simplificada\b", re.IGNORECASE)
-_FATURA_RECIBO = re.compile(r"^\s*fatura[\s-]*recibo\b", re.IGNORECASE)
-_FATURA = re.compile(r"^\s*fatura\b", re.IGNORECASE)
-# Credit or debit anywhere, including a title split over two lines and "cred1to".
-# An exact "NC A/5" counts. A bare "nc" token does not.
-_CREDIT_DEBIT_SIGNAL = re.compile(
-    r"nota\s+de\s+cr[eé]d[i1]to"
-    r"|nota\s+de\s+d[eé]b[i1]to"
-    r"|cr[eé]d1to"
-    r"|d[eé]b1to"
-    r"|(?<![A-Za-z0-9])(?:NC|ND)\s+[A-Z0-9][A-Z0-9.\-]*\/[A-Z0-9]",
+_NUMBER_HEAD = re.compile(r"^\s*(?:FT|FR|FS|NC|ND)\b", re.IGNORECASE)
+_ORIGIN_LINE = re.compile(
+    r"^\s*(?:fatura\s+de\s+origem|ref\.|referente\b|doc\.?\s*origem)",
     re.IGNORECASE,
 )
 _NOTA_TITLE = re.compile(
-    r"nota\s+de\s+(?:cr[eé]d[i1]to|d[eé]b[i1]to)",
+    r"^\s*nota\s+de\s+(?:cr[eé]dito|d[eé]bito)\b",
     re.IGNORECASE,
 )
+_REF_PAREN = re.compile(r"\([^)]*\bref\.?[^)]*\)", re.IGNORECASE)
 DISCOUNT = re.compile(r"\b(?:desconto|discount|abatimento)\b", re.IGNORECASE)
 # Series codes stay on the number ("FT A/12"). Words such as Invoice do not.
 _SERIES_CODES = {"FT", "FR", "FS", "NC", "ND"}
@@ -94,8 +87,9 @@ INVOICE_NO = re.compile(
 # A hyphen glued to a label ("Total-12,30", "IVA 23%-2,30") is not a minus.
 # A minus is a sign when whitespace (or the start of the line) precedes it.
 MONEY = re.compile(
-    r"(?<![\d.,])(?P<prefix>[-−])?"
-    r"(?P<amount>\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})(?!\d)"
+    r"(?<![\d.,])(?P<open>\()?(?P<prefix>[-−])?"
+    r"(?P<amount>\d{1,3}(?:[.\s]\d{3})*(?:,\s*\d{2})|\d+,\s*\d{2}|\d+\.\d{2})"
+    r"(?P<suffix>[-−])?(?P<close>\))?(?!\d)"
 )
 _PT_MONTHS = {
     "janeiro": 1, "jan": 1,
@@ -153,8 +147,11 @@ class ExtractedFields:
     vat_amount: Optional[Decimal] = None
     gross_amount: Optional[Decimal] = None
     vat_rate: Optional[Decimal] = None
-    # QR and OCR share this: amounts stay non-negative and NC carries the sign.
+    # Confirmed type. OCR never sets this; only an AT QR of FT/FS/FR/NC/ND does.
     document_type: Optional[str] = None
+    # Prefill only. Netting and confirmation ignore both.
+    suggested_type: Optional[str] = None
+    suggested_invoice_number: Optional[str] = None
     # One entry per VAT rate when the receipt has more than one; rate is then None.
     vat_breakdown: Optional[list[dict]] = None
     confidence: float = 0.0
@@ -171,13 +168,20 @@ class ExtractedFields:
 
 
 def parse_pt_amount(raw: str) -> Optional[Decimal]:
-    """Parse a PT/EU money string (1.234,56 or 12,50 or 12.50 or -10,00)."""
+    """Parse a PT/EU money string, including a trailing minus and parentheses."""
     if not raw:
         return None
     cleaned = raw.strip().replace(" ", "").replace("€", "").replace("EUR", "")
     sign = 1
-    if cleaned[:1] in "+-":
-        sign = -1 if cleaned[0] == "-" else 1
+    if cleaned.startswith("(") and cleaned.endswith(")"):
+        sign = -1
+        cleaned = cleaned[1:-1]
+    if cleaned.endswith("-") or cleaned.endswith("−"):
+        sign = -1
+        cleaned = cleaned[:-1]
+    if cleaned[:1] in "+-−":
+        if cleaned[0] in "-−":
+            sign = -1
         cleaned = cleaned[1:]
     cleaned = _normalise_separators(cleaned)
     try:
@@ -244,67 +248,72 @@ def _looks_like_nif(nif: str) -> bool:
     return (0 if check >= 10 else check) == int(nif[8])
 
 
-def _first_title_line(lines: list[str]) -> str:
-    """The top title or number line. Later lines cannot replace it."""
-    for line in lines:
-        if _TITLE_LINE.match(line) or INVOICE_NO.search(line):
-            return line
-    return ""
+def _is_origin_line(line: str) -> bool:
+    return bool(_ORIGIN_LINE.match(line or ""))
 
 
-def _title_series(line: str) -> Optional[str]:
-    """FT, FR or FS when the title itself says so. Never NC or ND."""
-    if _FATURA_SIMPLIFICADA.match(line):
+def _clear_title_type(line: str) -> Optional[str]:
+    """A suggestion, and only when the heading itself is unambiguous."""
+    if re.match(r"^\s*fatura\s+simplificada\b", line, re.IGNORECASE):
         return "FS"
-    if _FATURA_RECIBO.match(line):
+    if re.match(r"^\s*fatura\s*/\s*recibo\b|^\s*fatura[\s-]+recibo\b", line, re.IGNORECASE):
         return "FR"
-    if _FATURA.match(line):
+    if _NOTA_TITLE.match(line) and re.search(r"cr[eé]dito", line, re.IGNORECASE):
+        return "NC"
+    if _NOTA_TITLE.match(line) and re.search(r"d[eé]bito", line, re.IGNORECASE):
+        return "ND"
+    if re.match(r"^\s*fatura\b", line, re.IGNORECASE) and not re.search(
+        r"retificativa|anula|origem",
+        line,
+        re.IGNORECASE,
+    ):
         return "FT"
     return None
 
 
-def _invoice_from_title(line: str) -> Optional[str]:
-    """Number on the title line only. A bare nc/nd token is not a number."""
-    if not line:
+def _series_number(line: str, *, allow_credit: bool) -> Optional[str]:
+    """A series number on this line. A ref parenthetical and an origin line do not count."""
+    if not line or _is_origin_line(line):
         return None
+    cleaned = _REF_PAREN.sub(" ", line)
     nota = bool(_NOTA_TITLE.search(line))
     kept: list[re.Match[str]] = []
-    for match in INVOICE_NO.finditer(line):
+    for match in INVOICE_NO.finditer(cleaned):
         series = match.group("series").upper()
         number = match.group("number")
+        if series in {"NC", "ND"} and not allow_credit:
+            continue
         if series in {"NC", "ND"} and "/" not in number and not nota:
             continue
         kept.append(match)
     if not kept:
         return None
-
     return _invoice_number_from_match(min(kept, key=lambda match: match.start()))
 
 
-def _credit_or_debit_signal(text: str) -> bool:
-    return bool(_CREDIT_DEBIT_SIGNAL.search(text or ""))
-
-
-@dataclass(frozen=True)
-class _DocumentIdentity:
-    """OCR never decides NC or ND. Only a clear fatura title may set FT/FR/FS."""
-
-    invoice_number: Optional[str]
-    document_type: str
-    signal: bool
-
-
-def _classify_document(text: str) -> _DocumentIdentity:
+def _suggestions(text: str) -> tuple[Optional[str], Optional[str]]:
+    """Type and number hints from the title line, or the line directly under it."""
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    title = _first_title_line(lines)
-    signal = _credit_or_debit_signal(text or "")
-    hinted = _title_series(title)
-    document_type = hinted if hinted and not signal else "unclassified"
-    return _DocumentIdentity(
-        invoice_number=_invoice_from_title(title),
-        document_type=document_type,
-        signal=signal,
+    index: Optional[int] = None
+    for position, line in enumerate(lines):
+        if _is_origin_line(line):
+            continue
+        if _TITLE_HEAD.match(line) or _NUMBER_HEAD.match(line):
+            index = position
+            break
+    if index is None:
+        return None, None
+    title = lines[index]
+    suggested = _clear_title_type(title)
+    # An NC/ND series is the number only on a credit/debit title, or when that
+    # series line is itself the title. Under a Fatura title it is ignored.
+    title_is_credit_number = bool(re.match(r"^\s*(?:NC|ND)\b", title, re.IGNORECASE))
+    number = _series_number(
+        title, allow_credit=suggested in {"NC", "ND"} or title_is_credit_number
     )
+    if number is None and index + 1 < len(lines):
+        number = _series_number(lines[index + 1], allow_credit=suggested in {"NC", "ND"})
+    return suggested, number
 
 
 def _amount_from_match(line: str, match: re.Match[str], *, credit: bool = False) -> Optional[Decimal]:
@@ -317,6 +326,11 @@ def _amount_from_match(line: str, match: re.Match[str], *, credit: bool = False)
     value = parse_pt_amount(match.group("amount"))
     if value is None:
         return None
+    value = abs(value)
+    if match.group("open") and match.group("close"):
+        return -value
+    if match.group("suffix"):
+        return -value
     prefix = match.group("prefix") or ""
     if not prefix:
         return value
@@ -560,14 +574,16 @@ def extract_fields(text: str) -> ExtractedFields:
         return result
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    identity = _classify_document(text)
     credit = False
     result.vendor_name = _guess_vendor(lines)
     result.vendor_nif = extract_portuguese_nif(text)
     result.document_date, ambiguous_date = _choose_date(text)
 
-    result.invoice_number = identity.invoice_number
-    result.document_type = identity.document_type
+    suggested_type, suggested_number = _suggestions(text)
+    result.invoice_number = None
+    result.document_type = "unclassified"
+    result.suggested_type = suggested_type
+    result.suggested_invoice_number = suggested_number
 
     vat_rate, vat_amount, vat_net, breakdown = _extract_vat(lines, credit=credit)
     result.vat_rate = vat_rate
@@ -589,9 +605,12 @@ def extract_fields(text: str) -> ExtractedFields:
         if labeled_net is not None:
             result.net_amount = labeled_net
 
-    # Amounts are stored non-negative. A printed minus without an NC header is
-    # an uncertain sign, not a stored negative and not a guessed credit note.
-    printed_minus = result.gross_amount is not None and result.gross_amount < 0
+    # Amounts are stored non-negative. A printed minus, a trailing minus, or
+    # parentheses are an uncertain sign. They never set the document type.
+    printed_minus = any(
+        value is not None and value < 0
+        for value in (result.gross_amount, result.net_amount, result.vat_amount)
+    )
     for field in ("gross_amount", "net_amount", "vat_amount"):
         value = getattr(result, field)
         if value is not None:
@@ -633,17 +652,9 @@ def extract_fields(text: str) -> ExtractedFields:
         if value is not None
     )
     result.confidence = min(95.0, 20.0 * filled)
-    result.needs_review = (
-        ambiguous_date
-        or result.confidence < 85
-        or not result.vendor_name
-        or not result.gross_amount
-        or not result.document_date
-        or identity.signal
-        or identity.document_type == "unclassified"
-        or printed_minus
-        or amounts_conflict
-    )
+    # No AT QR on this path, so the row always waits for a person.
+    result.needs_review = True
+    del ambiguous_date, printed_minus, amounts_conflict, filled
     return result
 
 

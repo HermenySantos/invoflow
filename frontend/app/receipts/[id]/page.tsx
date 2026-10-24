@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, saveEditPayload } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, initialReviewEdit, saveEditPayload } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -112,6 +112,7 @@ export default function ReceiptDetailPage() {
     gross_amount: '',
     vat_amount: '',
     document_type: 'unclassified',
+    invoice_number: '',
   });
 
   // Category picker
@@ -131,13 +132,7 @@ export default function ReceiptDetailPage() {
       setDocument(data);
       
       // Pre-fill edit form
-      setEditData({
-        vendor_name: data.vendor_name || '',
-        document_date: data.document_date || '',
-        gross_amount: data.gross_amount || '',
-        vat_amount: data.vat_amount || '',
-        document_type: data.document_type || 'unclassified',
-      });
+      setEditData(initialReviewEdit(data));
     } catch (err) {
       setError('Não foi possível carregar o recibo.');
       console.error(err);
@@ -159,13 +154,7 @@ export default function ReceiptDetailPage() {
         const data = await api.getDocument(params.id as string);
         if (data.status === 'processing') return;
         setDocument(data);
-        setEditData({
-          vendor_name: data.vendor_name || '',
-          document_date: data.document_date || '',
-          gross_amount: data.gross_amount || '',
-          vat_amount: data.vat_amount || '',
-          document_type: data.document_type || 'unclassified',
-        });
+        setEditData(initialReviewEdit(data));
       } catch {
         // Next tick retries.
       }
@@ -450,6 +439,25 @@ export default function ReceiptDetailPage() {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
+                  {document.suggested_type && document.document_type === 'unclassified' ? (
+                    <p className="mt-1 text-sm text-gray-500">Sugestão: {documentTypeLabel(document.suggested_type)}</p>
+                  ) : null}
+                  {document.at_document_type ? (
+                    <p className="mt-1 text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label htmlFor="edit-invoice-number" className="block text-sm font-medium text-gray-700 mb-1">
+                    N.º da fatura
+                  </label>
+                  <input
+                    id="edit-invoice-number"
+                    type="text"
+                    value={editData.invoice_number}
+                    onChange={(e) => setEditData(d => ({ ...d, invoice_number: e.target.value }))}
+                    className="input"
+                  />
                 </div>
 
                 <div>
@@ -537,6 +545,19 @@ export default function ReceiptDetailPage() {
                       <p className="font-semibold text-gray-900">
                         {documentTypeLabel(document.document_type)}
                       </p>
+                      {document.document_type === 'unclassified' && document.suggested_type ? (
+                        <p className="text-sm text-gray-500">Sugestão: {documentTypeLabel(document.suggested_type)}</p>
+                      ) : null}
+                      {document.at_document_type ? (
+                        <p className="text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
+                      ) : null}
+                      {(document.invoice_number || document.suggested_invoice_number) ? (
+                        <p className="text-sm text-gray-500">
+                          {document.invoice_number
+                            ? `N.º ${document.invoice_number}`
+                            : `Sugestão de n.º ${document.suggested_invoice_number}`}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 

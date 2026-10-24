@@ -24,13 +24,15 @@ from app.models.efatura import EfaturaLink, EfaturaSubject
 from app.services.audit import log_auto_categorize, log_event
 from app.services.categorization import categorize_document
 
-DocumentType = Literal["FT", "FS", "FR", "NC", "ND"]
+DocumentType = Literal["FT", "FS", "FR", "NC", "ND", "PF", "OR", "RG", "GT"]
 FiscalStatus = Literal["normal", "cancelled", "invoiced"]
 PartyRole = Literal["acquirer", "issuer", "not_party"]
 
-_DOCUMENT_TYPES = ("FT", "FS", "FR", "NC", "ND")
+_DOCUMENT_TYPES = ("FT", "FS", "FR", "NC", "ND", "PF", "OR", "RG", "GT")
 _FISCAL_STATUSES = ("normal", "cancelled", "invoiced")
 _STORABLE_TYPES = ("FT", "FS", "FR", "ND")
+_REVIEW_TYPES = ("PF", "OR", "RG", "GT")
+_CONCRETE_AT_TYPES = frozenset({"FT", "FS", "FR", "NC", "ND"})
 _STORABLE_FISCAL = ("normal", "invoiced")
 _NIF = re.compile(r"^\d{9}$")
 _CENT = Decimal("0.01")
@@ -391,6 +393,12 @@ def _new_purchase(
         vendor_nif=invoice.issuer_nif,
         vendor_name=invoice.issuer_name,
         invoice_number=invoice.invoice_number,
+        document_type=(
+            invoice.document_type
+            if invoice.document_type in _CONCRETE_AT_TYPES
+            else "unclassified"
+        ),
+        at_document_type=invoice.document_type,
         document_date=invoice.issue_date,
         net_amount=_non_negative(invoice.net_total),
         gross_amount=_non_negative(invoice.gross_total),
@@ -509,7 +517,8 @@ def _skip_reason(invoice: EFaturaInvoice, role: PartyRole) -> Optional[str]:
         return "negative_iva"
     if _amounts_missing(invoice):
         return "incomplete"
-    if invoice.document_type not in _STORABLE_TYPES or invoice.fiscal_status not in _STORABLE_FISCAL:
+    storable = invoice.document_type in _STORABLE_TYPES or invoice.document_type in _REVIEW_TYPES
+    if not storable or invoice.fiscal_status not in _STORABLE_FISCAL:
         return "not_storable"
     return None
 

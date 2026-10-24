@@ -24,6 +24,7 @@ def add_receipt(db: Session, user: User, status: str, vat: str) -> None:
         vat_amount=Decimal(vat),
         gross_amount=Decimal(vat) * 5,
         expense_category="office",  # 100% deductible
+        document_type="FT",
     ))
 
 

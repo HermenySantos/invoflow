@@ -45,8 +45,11 @@ export function ReviewForm({
   const [formData, setFormData] = useState<ReviewFormData>({
     vendor_name: document.vendor_name || '',
     vendor_nif: document.vendor_nif || '',
-    invoice_number: document.invoice_number || '',
-    document_type: document.document_type || 'unclassified',
+    invoice_number: document.invoice_number || document.suggested_invoice_number || '',
+    document_type:
+      document.document_type && document.document_type !== 'unclassified'
+        ? document.document_type
+        : (document.suggested_type || 'unclassified'),
     document_date: document.document_date || '',
     net_amount: document.net_amount || '',
     vat_amount: document.vat_amount || '',

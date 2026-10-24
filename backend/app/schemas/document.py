@@ -115,6 +115,9 @@ class DocumentResponse(BaseModel):
     vendor_nif: Optional[str]
     invoice_number: Optional[str]
     document_type: Optional[str] = None
+    suggested_type: Optional[str] = None
+    suggested_invoice_number: Optional[str] = None
+    at_document_type: Optional[str] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]

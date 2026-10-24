@@ -76,6 +76,8 @@ jobs:
           alembic check
       - name: Migration 008 round-trips amounts on Postgres
         run: python scripts/check_migration_008.py
+      - name: Migration 009 backfills unclassified on Postgres 16
+        run: python scripts/check_migration_009.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base

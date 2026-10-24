@@ -78,7 +78,12 @@ def test_issue_date_wins_over_text_due_date_end_to_end(monkeypatch):
     )
     result = _process(pdf, monkeypatch)
     assert result.backend == "tesseract"
-    assert (result.document_date, result.needs_review) == (date(2026, 3, 31), False)
+    assert result.document_date == date(2026, 3, 31)
+    assert result.document_type == "unclassified"
+    assert result.suggested_type == "FT"
+    assert result.suggested_invoice_number == "FT A/12"
+    assert result.invoice_number is None
+    assert result.needs_review is True
 
 
 def test_letterhead_text_date_beats_invoice_date():
@@ -110,8 +115,11 @@ def test_same_issue_date_twice_is_not_ambiguous():
         "Total 12,30"
     )
     assert fields.document_date == date(2026, 6, 15)
-    assert fields.document_type == "FT"
-    assert fields.needs_review is False
+    assert fields.document_type == "unclassified"
+    assert fields.suggested_type == "FT"
+    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.invoice_number is None
+    assert fields.needs_review is True
 
 
 def test_due_date_alone_is_not_the_issue_date():
@@ -168,7 +176,7 @@ def test_positive_printed_ocr_credit_note_is_nc_and_needs_review():
         "Total 10,00"
     )
     assert fields.document_type == "unclassified"
-    assert fields.invoice_number == "NC Q2"
+    assert fields.suggested_invoice_number == "NC Q2"
     assert (fields.gross_amount, fields.vat_amount, fields.net_amount) == (
         Decimal("10.00"),
         Decimal("1.87"),
@@ -180,7 +188,7 @@ def test_positive_printed_ocr_credit_note_is_nc_and_needs_review():
 def test_printed_minus_credit_note_stores_absolute_amounts():
     fields = extract_fields("Nota de credito NC Q2\nData 2026-04-15\nIVA 23% 1,87\nTotal -10,00")
     assert fields.document_type == "unclassified"
-    assert fields.invoice_number == "NC Q2"
+    assert fields.suggested_invoice_number == "NC Q2"
     assert fields.gross_amount == Decimal("10.00")
     assert fields.vat_amount == Decimal("1.87")
     assert fields.net_amount == Decimal("8.13")
@@ -205,7 +213,7 @@ def test_footer_mention_does_not_make_a_credit_note():
         "emitimos nota de credito em 30 dias"
     )
     assert fields.document_type == "unclassified"
-    assert fields.invoice_number == "FT A/12"
+    assert fields.suggested_invoice_number == "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
     assert fields.needs_review is True
 
@@ -219,14 +227,17 @@ def test_plano_nc_does_not_change_parsing():
         "IVA 23% 2,30\n"
         "Total 12,30"
     )
-    assert fields.document_type == "FT"
-    assert fields.invoice_number == "FT A/12"
+    assert fields.document_type == "unclassified"
+    assert fields.suggested_type == "FT"
+    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.invoice_number is None
+    assert fields.needs_review is True
     assert fields.gross_amount == Decimal("12.30")
 
 
 def test_ft_that_cites_an_nc_keeps_the_ft_number():
     fields = extract_fields("Fatura FT A/12\nReferente a nota de credito NC Q2/7\nTotal 12,30")
-    assert fields.invoice_number == "FT A/12"
+    assert fields.suggested_invoice_number == "FT A/12"
     assert fields.document_type == "unclassified"
     assert fields.needs_review is True
 
@@ -239,7 +250,7 @@ def test_ocr_credit_note_nets_by_type_and_warns_without_an_invoice():
         net_amount=fields.net_amount,
         vat_amount=fields.vat_amount,
         gross_amount=fields.gross_amount,
-        invoice_number=fields.invoice_number,
+        invoice_number=fields.suggested_invoice_number,
         ocr_raw_response=json.dumps({"backend": "tesseract", "document_type": fields.document_type}),
         expense_category="utilities",
         deductible_pct_override=None,
@@ -273,6 +284,7 @@ def test_negative_fields_do_not_cancel_an_nc_type():
         created_at=None,
         document_date=date(2026, 4, 15),
         vendor_nif=SYNTHETIC_NIF,
+        document_type="NC",
     )
     # The type still applies the minus after abs. The triple does not add up
     # (8.13 + 1.87 != -10), so the counted totals leave the row out.
@@ -291,6 +303,7 @@ def test_ft_with_all_negative_amounts_counts_positive():
         vat_amount=Decimal("-1.87"),
         gross_amount=Decimal("-10.00"),
         ocr_raw_response='{"qr":{"document_type":"FT"}}',
+        document_type="FT",
         created_at=None,
         document_date=date(2026, 3, 31),
         vendor_nif=SYNTHETIC_NIF,
@@ -349,6 +362,7 @@ def test_review_patch_rejects_a_negative_credit_note(client: TestClient, db: Ses
     stored.vat_amount = Decimal("1.87")
     stored.gross_amount = Decimal("10.00")
     stored.expense_category = "utilities"
+    stored.document_type = "NC"
     stored.ocr_raw_response = json.dumps({"qr": {"document_type": "NC", "fiscal_status": "N"}})
     db.commit()
 
@@ -378,12 +392,14 @@ def test_review_patch_rejects_a_negative_credit_note(client: TestClient, db: Ses
 
 
 def test_series_prefix_not_doubled():
-    assert extract_fields("FT FT2026/1").invoice_number == "FT2026/1"
+    assert extract_fields("FT FT2026/1").suggested_invoice_number == "FT2026/1"
+    assert extract_fields("FT FT2026/1").invoice_number is None
+    assert extract_fields("FT FT2026/1").document_type == "unclassified"
 
 
 def test_credit_note_number_not_original_invoice():
     fields = extract_fields("Nota de credito NC Q2/7\nReferente a fatura FT A/12\nTotal -10,00")
-    assert fields.invoice_number == "NC Q2/7"
+    assert fields.suggested_invoice_number == "NC Q2/7"
     assert fields.document_type == "unclassified"
 
 
@@ -508,7 +524,7 @@ def _complete_ft(*extra: str) -> str:
 def test_citation_and_field_lines_do_not_type_the_document(line: str):
     fields = extract_fields(_complete_ft(line))
     assert fields.document_type == "unclassified"
-    assert fields.invoice_number == "FT A/12"
+    assert fields.suggested_invoice_number == "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
     assert fields.needs_review is True
 
@@ -524,7 +540,7 @@ def test_title_that_cites_an_invoice_keeps_its_own_number():
         "Total 10,00"
     )
     assert fields.document_type == "unclassified"
-    assert fields.invoice_number == "NC Q2/7"
+    assert fields.suggested_invoice_number == "NC Q2/7"
     assert fields.gross_amount == Decimal("10.00")
     assert fields.needs_review is True
 
@@ -541,7 +557,7 @@ def test_credit_title_below_the_letterhead_is_still_nc():
         "Total 10,00"
     )
     assert fields.document_type == "unclassified"
-    assert fields.invoice_number == "NC Q2/7"
+    assert fields.suggested_invoice_number == "NC Q2/7"
     assert fields.needs_review is True
 
 

@@ -15,10 +15,7 @@ from app.models.document import Document
 from app.models.user import User
 from app.schemas.document import AMOUNT_MISMATCH_DETAIL, TYPE_REQUIRED_DETAIL
 from app.services.iva_adjust import contributions
-from app.services.legacy_amounts import (
-    repair_legacy_negative_amounts,
-    restore_legacy_negative_amounts,
-)
+from app.services.legacy_amounts import repair_legacy_negative_amounts
 from app.services.ocr import OCRResult, _apply_invoice_qr
 from app.services.ocr_extract import extract_fields
 from app.services.pt_qr import InvoiceQR
@@ -52,7 +49,9 @@ def test_nd_number_is_not_retyped_as_a_credit_note():
         "IVA 23% 2,30\n"
         "Total 12,30"
     )
-    assert fields.invoice_number == "ND A/3"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "ND A/3"
+    assert fields.suggested_type is None
     assert fields.document_type == "unclassified"
     assert fields.needs_review is True
 
@@ -90,9 +89,11 @@ def test_loose_nc_tokens_do_not_change_the_fatura():
         "Saldo apos NC",
     ):
         fields = extract_fields(_fatura(line))
-        assert fields.invoice_number == "FT A/12", line
-        assert fields.document_type == "FT", line
-        assert fields.needs_review is False, line
+        assert fields.invoice_number is None, line
+        assert fields.suggested_invoice_number == "FT A/12", line
+        assert fields.suggested_type == "FT", line
+        assert fields.document_type == "unclassified", line
+        assert fields.needs_review is True, line
 
 
 def test_a_real_credit_or_debit_signal_stays_unclassified():
@@ -105,7 +106,8 @@ def test_a_real_credit_or_debit_signal_stays_unclassified():
     )
     for extra in samples:
         fields = extract_fields(_fatura(extra))
-        assert fields.invoice_number == "FT A/12", extra
+        assert fields.invoice_number is None, extra
+        assert fields.suggested_invoice_number == "FT A/12", extra
         assert fields.document_type == "unclassified", extra
         assert fields.document_type != "NC"
         assert fields.needs_review is True, extra
@@ -223,6 +225,7 @@ def _legacy(db: Session, user: User, **fields) -> Document:
         vendor_nif=NIF,
         expense_category="utilities",
         document_date=date(2026, 4, 15),
+        document_type=fields.pop("document_type", " "),
         **fields,
     )
     db.add(document)
@@ -283,25 +286,8 @@ def test_migration_does_not_infer_nc_from_a_minus(db: Session):
     db.refresh(negative)
     assert negative.gross_amount == Decimal("10.00")
     assert negative.document_type == "unclassified"
-
-    restore_legacy_negative_amounts(db.connection())
-    db.commit()
-    db.refresh(negative)
-    db.refresh(from_qr)
-    assert negative.gross_amount == Decimal("-10.00")
-    assert negative.net_amount == Decimal("-8.13")
-    assert negative.status == "ready"
-    assert from_qr.gross_amount == Decimal("-10.00")
-    assert json.loads(from_qr.ocr_raw_response) == {"qr": {"document_type": "NC"}}
-
-    repair_legacy_negative_amounts(db.connection())
-    db.commit()
-    db.refresh(negative)
-    db.refresh(positive)
-    assert negative.document_type == "unclassified"
-    assert negative.gross_amount == Decimal("10.00")
-    assert negative.status == "needs_review"
-    assert positive.document_type == "FT"
+    # Downgrade writes a NULL type. Head's column is NOT NULL, so that
+    # round-trip is the Postgres check in scripts/check_migration_008.py.
 
 
 def test_summary_lists_rows_excluded_from_iva(client: TestClient, db: Session):

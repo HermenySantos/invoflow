@@ -38,7 +38,10 @@ def test_extract_continente_receipt():
     fields = extract_fields(SAMPLE)
     assert fields.vendor_name and "CONTINENTE" in fields.vendor_name.upper()
     assert fields.vendor_nif == "500100144"
-    assert fields.invoice_number == "FT 2026/1842"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "FT 2026/1842"
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
     assert fields.document_date == date(2026, 3, 15)
     assert fields.gross_amount == Decimal("23.00")
     assert fields.vat_amount == Decimal("4.30")
@@ -47,9 +50,18 @@ def test_extract_continente_receipt():
 
 
 def test_series_code_stays_on_the_invoice_number():
-    assert extract_fields("Fatura FT A/12\nTotal 1,00").invoice_number == "FT A/12"
-    assert extract_fields("Nota de crédito NC Q2\nTotal 1,00").invoice_number == "NC Q2"
-    assert extract_fields(CONTOSO).invoice_number == "INV-100"
+    fatura = extract_fields("Fatura FT A/12\nTotal 1,00")
+    assert fatura.invoice_number is None
+    assert fatura.suggested_type == "FT"
+    assert fatura.suggested_invoice_number == "FT A/12"
+    assert fatura.document_type == "unclassified"
+    assert fatura.needs_review is True
+    credit = extract_fields("Nota de crédito NC Q2\nTotal 1,00")
+    assert credit.invoice_number is None
+    assert credit.suggested_type == "NC"
+    assert credit.suggested_invoice_number == "NC Q2"
+    assert extract_fields(CONTOSO).suggested_invoice_number == "INV-100"
+    assert extract_fields(CONTOSO).invoice_number is None
 
 
 def test_portuguese_month_name_dates():
@@ -76,7 +88,10 @@ def test_cafe_lisboa_fixture_text():
     fields = extract_fields(_pdf_text("fatura-cafe-lisboa.pdf"))
     assert fields.vendor_nif == "123456002"
     assert fields.document_date == date(2026, 3, 31)
-    assert fields.invoice_number == "FT A/12"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
     assert fields.gross_amount == Decimal("12.30")
     assert fields.vat_amount == Decimal("2.30")
     assert fields.net_amount == Decimal("10.00")
@@ -85,7 +100,9 @@ def test_cafe_lisboa_fixture_text():
 
 def test_credit_note_fixture_keeps_series_date_and_absolute_total():
     fields = extract_fields(_pdf_text("nota-credito.pdf"))
-    assert fields.invoice_number == "NC Q2"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "NC Q2"
+    assert fields.suggested_type == "NC"
     assert fields.document_date == date(2026, 4, 15)
     assert fields.document_type == "unclassified"
     assert fields.gross_amount == Decimal("10.00")
@@ -154,7 +171,10 @@ def test_italian_payment_beats_vat_rate():
 def test_contoso_invoice_total_not_balance_due():
     fields = extract_fields(CONTOSO)
     assert fields.vendor_name == "CONTOSO LTD."
-    assert fields.invoice_number == "INV-100"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "INV-100"
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
     assert fields.document_date == date(2019, 11, 15)
     assert fields.gross_amount == Decimal("110.00")
     assert fields.vat_amount == Decimal("10.00")

@@ -5,6 +5,29 @@ export interface ReviewEditFields {
   vat_amount: string;
   net_amount?: string;
   document_type?: string;
+  invoice_number?: string;
+}
+
+/** Prefill the review form. A suggestion never counts as the stored type or number. */
+export function initialReviewEdit(document: {
+  vendor_name?: string | null;
+  document_date?: string | null;
+  gross_amount?: string | null;
+  vat_amount?: string | null;
+  document_type?: string | null;
+  suggested_type?: string | null;
+  invoice_number?: string | null;
+  suggested_invoice_number?: string | null;
+}) {
+  const confirmed = document.document_type && document.document_type !== 'unclassified';
+  return {
+    vendor_name: document.vendor_name || '',
+    document_date: document.document_date || '',
+    gross_amount: document.gross_amount || '',
+    vat_amount: document.vat_amount || '',
+    document_type: confirmed ? document.document_type! : (document.suggested_type || 'unclassified'),
+    invoice_number: document.invoice_number || document.suggested_invoice_number || '',
+  };
 }
 
 export const DOCUMENT_TYPE_OPTIONS = [
@@ -47,6 +70,7 @@ export function saveEditPayload(editData: ReviewEditFields) {
     vat_amount: editData.vat_amount || null,
     ...(net !== null ? { net_amount: net } : {}),
     ...(chosen ? { document_type: chosen } : {}),
+    ...('invoice_number' in editData ? { invoice_number: editData.invoice_number || null } : {}),
     status: (draft ? 'needs_review' : 'ready') as 'ready' | 'needs_review',
   };
 }

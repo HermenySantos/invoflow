@@ -12,7 +12,7 @@ Counted cells: 11. The café invoice has 7. The credit note contributes NIF, dat
 
 Net 10.00 and rate 23.00 on the café invoice are implied from the printed total and IVA. They are expected values, not empty cells.
 
-The credit-note total is printed as `Total: -10,00`. The stored amount is the absolute value and the document type is NC, which is how a credit note changes the VAT. A hyphen glued to a label, such as `Total-12,30`, is not a minus.
+The credit-note total is printed as `Total: -10,00`. The stored amount is the absolute value. Without an AT QR the document stays unclassified and needs manual review. The invoice-number cell in this table is a suggestion used to prefill the review screen, not a confirmed number. A hyphen glued to a label, such as `Total-12,30`, is not a minus.
 
 ## Before the extractor changes
 

@@ -28,7 +28,14 @@ from app.services.categorization import (
     effective_deductible_pct,
 )
 from app.services.deadlines import deadline_line
-from app.services.iva_adjust import contributions, credit_note_warnings, duplicate_warnings
+from app.services.iva_adjust import (
+    EXCLUDED_HEADING,
+    contributions,
+    credit_note_warnings,
+    duplicate_warnings,
+    exclusion_reason,
+    left_out,
+)
 
 
 # A cell starting with one of these runs as a formula in Excel/LibreOffice.
@@ -109,6 +116,10 @@ class ExportService:
             # Generate and add summary CSV
             csv_content = self._generate_csv(documents, warnings, library)
             zf.writestr("summary.csv", csv_content)
+            zf.writestr(
+                "documentos_por_rever.csv",
+                self._generate_excluded_csv(documents, library),
+            )
             
             # Generate and add summary PDF
             pdf_content = self._generate_pdf(documents, period, warnings, library)
@@ -226,6 +237,30 @@ class ExportService:
             writer.writerow(["Avisos", warning])
         
         return output.getvalue()
+
+    def _generate_excluded_csv(
+        self,
+        documents: list[Document],
+        library: Optional[list[Document]] = None,
+    ) -> str:
+        """Rows left out of summary.csv, under their own heading. summary.csv headers stay put."""
+        output = io.StringIO()
+        output.write("\ufeff")
+        output.write(EXCLUDED_HEADING + "\r\n")
+        writer = csv.writer(output, delimiter=";")
+        writer.writerow(["ID", "Data", "Fornecedor", "N.º da fatura", "Tipo", "Tipo AT", "Estado", "Motivo"])
+        for doc in left_out(documents, library):
+            writer.writerow([
+                str(doc.id),
+                doc.document_date.isoformat() if doc.document_date else "",
+                _csv_text(doc.vendor_name),
+                _csv_text(doc.invoice_number),
+                doc.document_type or "unclassified",
+                _csv_text(getattr(doc, "at_document_type", None)),
+                doc.status,
+                exclusion_reason(doc) or "por rever",
+            ])
+        return output.getvalue()
     
     def _generate_pdf(
         self,
@@ -331,6 +366,32 @@ class ExportService:
             for warning in warnings:
                 safe = warning.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 elements.append(Paragraph(safe, styles["Normal"]))
+
+        excluded = left_out(documents, library)
+        elements.append(Spacer(1, 16))
+        elements.append(Paragraph(EXCLUDED_HEADING, styles["Heading2"]))
+        if not excluded:
+            elements.append(Paragraph("Nenhum.", styles["Normal"]))
+        else:
+            excluded_data = [["Data", "Fornecedor", "N.º", "Estado", "Motivo"]]
+            for d in excluded[:50]:
+                reason = exclusion_reason(d) or "por rever"
+                excluded_data.append([
+                    d.document_date.strftime("%d/%m/%Y") if d.document_date else "-",
+                    (d.vendor_name or "Desconhecido")[:25],
+                    (d.invoice_number or "-")[:16],
+                    STATUS_LABELS.get(d.status, d.status),
+                    reason,
+                ])
+            excluded_table = Table(excluded_data, colWidths=[2.2 * cm, 5 * cm, 3 * cm, 2.5 * cm, 3.5 * cm])
+            excluded_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]))
+            elements.append(excluded_table)
         
         # Build PDF
         doc.build(elements)

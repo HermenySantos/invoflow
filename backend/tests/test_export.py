@@ -27,6 +27,7 @@ def receipt(**fields) -> Document:
         vat_amount=Decimal("5.20"),
         gross_amount=Decimal("35.20"),
         expense_category="office",
+        document_type="FT",
     )
     defaults.update(fields)
     return Document(**defaults)
