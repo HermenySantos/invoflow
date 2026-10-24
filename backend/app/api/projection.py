@@ -20,8 +20,7 @@ from app.services.iva_adjust import (
     EXCLUDED_HEADING,
     credit_note_warnings,
     duplicate_warnings,
-    exclusion_reason,
-    left_out,
+    projection_excluded,
 )
 from app.services.iva_projection import QuarterProjectionInput, project_quarter_to_date
 
@@ -130,8 +129,8 @@ async def get_projection(
                 invoice_number=document.invoice_number,
                 document_type=document.document_type or "unclassified",
                 status=document.status,
-                reason=exclusion_reason(document) or "por rever",
+                reason=reason,
             )
-            for document in left_out(clipped, library)
+            for document, reason in projection_excluded(clipped, library)
         ],
     )

@@ -213,7 +213,8 @@ def test_footer_mention_does_not_make_a_credit_note():
         "emitimos nota de credito em 30 dias"
     )
     assert fields.document_type == "unclassified"
-    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.suggested_type not in {"FT", "FS", "FR"}
+    assert fields.suggested_invoice_number != "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
     assert fields.needs_review is True
 
@@ -235,9 +236,10 @@ def test_plano_nc_does_not_change_parsing():
     assert fields.gross_amount == Decimal("12.30")
 
 
-def test_ft_that_cites_an_nc_keeps_the_ft_number():
+def test_ft_that_cites_an_nc_does_not_suggest_the_purchase():
     fields = extract_fields("Fatura FT A/12\nReferente a nota de credito NC Q2/7\nTotal 12,30")
-    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.suggested_type not in {"FT", "FS", "FR"}
+    assert fields.suggested_invoice_number != "FT A/12"
     assert fields.document_type == "unclassified"
     assert fields.needs_review is True
 
@@ -518,14 +520,22 @@ def _complete_ft(*extra: str) -> str:
     [
         "Regulariza NC Q2/7",
         "Anula a NC Q2/7",
-        "Nota de credito: NC Q2/7",
     ],
 )
 def test_citation_and_field_lines_do_not_type_the_document(line: str):
     fields = extract_fields(_complete_ft(line))
     assert fields.document_type == "unclassified"
-    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.suggested_type not in {"FT", "FS", "FR"}
+    assert fields.suggested_invoice_number != "FT A/12"
     assert fields.gross_amount == Decimal("12.30")
+    assert fields.needs_review is True
+
+
+def test_a_credit_title_on_a_fatura_page_suggests_the_credit_note():
+    fields = extract_fields(_complete_ft("Nota de credito: NC Q2/7"))
+    assert fields.document_type == "unclassified"
+    assert fields.suggested_type == "NC"
+    assert fields.suggested_invoice_number == "NC Q2/7"
     assert fields.needs_review is True
 
 

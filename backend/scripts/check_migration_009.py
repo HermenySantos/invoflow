@@ -162,7 +162,10 @@ def _child() -> None:
 
     if mode == "from008":
         command.upgrade(cfg, "008_document_type")
-        ids = {name: str(uuid.uuid4()) for name in ("ft_ready", "qr_nc", "qr_pf", "already")}
+        ids = {
+            name: str(uuid.uuid4())
+            for name in ("ft_ready", "qr_nc", "qr_pf", "already", "raw_text", "raw_list")
+        }
         with engine.begin() as conn:
             _insert_user(conn, user_id, now)
             common = dict(
@@ -208,6 +211,22 @@ def _child() -> None:
                 ocr_raw_response=None,
                 **common,
             )
+            _insert_document(
+                conn,
+                id=ids["raw_text"],
+                status="ready",
+                document_type="FT",
+                ocr_raw_response="Processing error",
+                **common,
+            )
+            _insert_document(
+                conn,
+                id=ids["raw_list"],
+                status="needs_review",
+                document_type="FT",
+                ocr_raw_response="[1, 2]",
+                **common,
+            )
         command.upgrade(cfg, "009_unclassified_backfill")
         with engine.connect() as conn:
             assert _width(conn) >= 20
@@ -221,6 +240,11 @@ def _child() -> None:
         assert got[ids["qr_pf"]]["at_document_type"] == "PF"
         assert got[ids["already"]]["document_type"] == "unclassified"
         assert got[ids["already"]]["status"] == "needs_review"
+        assert got[ids["raw_text"]]["ocr_raw_response"] == "Processing error"
+        assert got[ids["raw_text"]]["document_type"] == "unclassified"
+        assert got[ids["raw_text"]]["status"] == "needs_review"
+        assert got[ids["raw_list"]]["ocr_raw_response"] == "[1, 2]"
+        assert got[ids["raw_list"]]["document_type"] == "unclassified"
         command.downgrade(cfg, "008_document_type")
         with engine.connect() as conn:
             restored = _rows(conn, user_id, with_at=False)
@@ -230,6 +254,10 @@ def _child() -> None:
         assert json.loads(restored[ids["qr_nc"]]["ocr_raw_response"]) == {"qr": {"document_type": "NC"}}
         assert restored[ids["qr_pf"]]["document_type"] == "PF"
         assert restored[ids["already"]]["document_type"] == "unclassified"
+        assert restored[ids["raw_text"]]["ocr_raw_response"] == "Processing error"
+        assert restored[ids["raw_list"]]["ocr_raw_response"] == "[1, 2]"
+        # Non-object raw text has nowhere to store _type_backup without rewriting it.
+        assert restored[ids["raw_text"]]["document_type"] == "unclassified"
         command.upgrade(cfg, "009_unclassified_backfill")
         with engine.connect() as conn:
             again = _rows(conn, user_id, with_at=True)
@@ -237,10 +265,16 @@ def _child() -> None:
             assert again[row_id]["document_type"] == got[row_id]["document_type"]
             assert again[row_id]["status"] == got[row_id]["status"]
             assert again[row_id]["at_document_type"] == got[row_id]["at_document_type"]
-        print("008 varchar(20) up/down/up is lossless")
+            assert again[row_id]["ocr_raw_response"] == got[row_id]["ocr_raw_response"]
+        assert again[ids["raw_text"]]["ocr_raw_response"] == "Processing error"
+        assert again[ids["raw_list"]]["ocr_raw_response"] == "[1, 2]"
+        print("008 varchar(20) up/down/up keeps json rows; non-json text is unchanged")
         return
 
     if mode == "varchar8":
+        # 2f8c720's 008 (never merged) stored no _amount_sign_backup. Downgrading
+        # that lineage through 008 to 007 cannot restore original minuses. Dev
+        # databases only. This check does not edit 008; it only widens varchar(8).
         command.upgrade(cfg, "007_efatura_links")
         ids = {name: str(uuid.uuid4()) for name in ("nc_ready", "ft_ready", "qr_nc", "qr_ft", "qr_gt")}
         with engine.begin() as conn:

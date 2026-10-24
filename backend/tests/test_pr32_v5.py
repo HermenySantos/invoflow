@@ -62,15 +62,19 @@ def test_azure_confident_negative_total_stays_unclassified_and_in_review():
     assert result.needs_review is True
 
 
-def test_garbled_credit_titles_do_not_suggest_a_type_or_an_origin_number():
-    samples = (
+def test_garbled_credit_titles_do_not_suggest_a_purchase_or_an_origin_number():
+    for text in (
         "N0TA DE CRÉDITO\nFatura de origem FT A/12\nTotal 10,00",
         "Credit Note\nFatura de origem FT A/12\nTotal 10,00",
         "Notade crédito\nTotal 10,00",
+    ):
+        fields = _reading(text)
+        assert fields.suggested_type == "NC", text
+        assert fields.suggested_invoice_number is None, text
+    for text in (
         "Fatura retificativa\nTotal 10,00",
         "Fatura de anulação\nTotal 10,00",
-    )
-    for text in samples:
+    ):
         fields = _reading(text)
         assert fields.suggested_type is None, text
         assert fields.suggested_invoice_number is None, text
@@ -85,10 +89,10 @@ def test_trailing_minus_and_parentheses_are_absolute_and_unclassified():
 
 def test_nc_series_under_a_fatura_title_is_not_the_number():
     fields = _reading("Fatura\nNC A/12\nTotal 12,30")
-    assert fields.suggested_type == "FT"
+    assert fields.suggested_type is None
     assert fields.suggested_invoice_number is None
     same_line = _reading("Fatura NC A/9\nTotal 12,30")
-    assert same_line.suggested_type == "FT"
+    assert same_line.suggested_type is None
     assert same_line.suggested_invoice_number is None
 
 

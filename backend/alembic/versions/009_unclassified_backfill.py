@@ -4,6 +4,16 @@ Revision ID: 009_unclassified_backfill
 Revises: 008_document_type
 Create Date: 2026-10-24
 
+A ready or accountant_review row that is not a concrete AT QR goes back to
+needs_review. Nothing is deployed, so that only affects dev data.
+
+Non-JSON OCR text and JSON values that are not objects are not rewritten.
+A missing raw value still round-trips through ``_type_backup``.
+
+Downgrade of a 2f8c720-era 008 (never merged, dev databases only) cannot
+restore amount signs: that revision left no ``_amount_sign_backup``. This
+revision does not change 008.
+
 """
 from alembic import op
 import sqlalchemy as sa

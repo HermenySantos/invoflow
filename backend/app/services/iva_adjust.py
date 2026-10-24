@@ -157,6 +157,61 @@ def exclusion_reason(document) -> Optional[str]:
     return None
 
 
+def duplicate_loser_ids(documents, library=None) -> set:
+    """File-hash losers. The winner is the copy contributions() keeps."""
+    pool = _pool(documents, library)
+    chosen, _loose = _select(pool)
+    losers: set = set()
+    for document in pool:
+        if not _bucket(document):
+            continue
+        mark = fiscal_mark(document)
+        if mark.fiscal_status == "A" or not mark.file_sha256:
+            continue
+        winner = chosen.get(mark.file_sha256)
+        if winner is not None and winner[0] is not document:
+            losers.add(id(document))
+    return losers
+
+
+def listing_reason(document, *, loser_ids: Optional[set] = None) -> Optional[str]:
+    """Shared label for the summary and the exports.
+
+    A cancelled QR is 'anulado' and a hash loser is 'duplicado'. Those used
+    to fall through to 'por rever' on one surface and disappear on the other.
+    A typed row still in review returns None here: it stays in the pending
+    deductible figure. The projection lists it separately.
+    """
+    mark = fiscal_mark(document)
+    if mark.fiscal_status == "A":
+        return "anulado"
+    if loser_ids and id(document) in loser_ids:
+        return "duplicado"
+    if mark.document_type == "unclassified":
+        return "por classificar"
+    if not _amounts_count(document):
+        return "valores inconsistentes"
+    return None
+
+
+def projection_excluded(documents, library=None) -> list[tuple]:
+    """Rows the projection shows under the excluded heading.
+
+    Typed needs_review rows are counted in the pending deductible and used
+    to be omitted here. They are listed with 'por rever' so the quarter
+    view does not drop them.
+    """
+    losers = duplicate_loser_ids(documents, library)
+    counted = {id(row.document) for row in contributions(documents, library)}
+    listed: list[tuple] = []
+    for document in documents:
+        if id(document) not in counted:
+            listed.append((document, listing_reason(document, loser_ids=losers) or "por rever"))
+        elif getattr(document, "status", None) == "needs_review":
+            listed.append((document, "por rever"))
+    return listed
+
+
 def _amounts_count(document) -> bool:
     """A complete triple that does not add up is left out of both IVA totals."""
     net = getattr(document, "net_amount", None)

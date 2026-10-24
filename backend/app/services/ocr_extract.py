@@ -75,7 +75,56 @@ _NOTA_TITLE = re.compile(
     r"^\s*nota\s+de\s+(?:cr[eé]dito|d[eé]bito)\b",
     re.IGNORECASE,
 )
+# A credit or debit heading, including the OCR slips the gate listed.
+_NC_HEAD = re.compile(
+    r"^\s*(?:n[o0]ta\s*de\s*cr[eé]d(?:ito|lto|1to)|notade\s+cr[eé]dito|credit\s+note)\b",
+    re.IGNORECASE,
+)
+_ND_HEAD = re.compile(
+    r"^\s*(?:n[o0]ta\s*de\s*d[eé]bito|notade\s+d[eé]bito|debit\s+note)\b",
+    re.IGNORECASE,
+)
+_NC_SENTENCE = re.compile(
+    r"(?:é|e)\s+uma\s+nota\s+de\s+cr[eé]dito\b",
+    re.IGNORECASE,
+)
+_ND_SENTENCE = re.compile(
+    r"(?:é|e)\s+uma\s+nota\s+de\s+d[eé]bito\b",
+    re.IGNORECASE,
+)
+# "será emitida" is a promise of a later note, not this document's title.
+_FUTURE_MENTION = re.compile(r"\bemitid", re.IGNORECASE)
+_CREDIT_DEBIT_SIGNAL = re.compile(
+    r"n[o0]ta\s*de\s*cr[eé]d(?:ito|lto|1to)|"
+    r"n[o0]ta\s*de\s*d[eé]bito|"
+    r"notade\s+cr[eé]dito|"
+    r"notade\s+d[eé]bito|"
+    r"credit\s+note|"
+    r"debit\s+note|"
+    r"\bcr[eé]dlto\b|"
+    r"a\s+creditar|"
+    r"a\s+debitar|"
+    r"retificativa|"
+    r"rectificativa|"
+    r"anula",
+    re.IGNORECASE,
+)
+# "NC/A/5", "NC A/5", "NC 2026A5", "Nº: NC 5". A quantity such as "NC 3m" is not one.
+_NC_SERIES = re.compile(
+    r"(?<![A-Za-z])(?P<series>NC|ND)\s*[/: ]\s*(?P<number>[A-Z0-9][A-Z0-9/.\-]{0,30})",
+    re.IGNORECASE,
+)
 _REF_PAREN = re.compile(r"\([^)]*\bref\.?[^)]*\)", re.IGNORECASE)
+# "ref FT B/99" without parentheses. Stops before "n.º FT A/12".
+_INLINE_REF = re.compile(
+    r"\bref\.?\s+(?:FT|FR|FS|NC|ND)\b(?:\s*/?\s*[A-Z0-9][A-Z0-9/.\-]{0,30})?",
+    re.IGNORECASE,
+)
+_PURCHASE_LINE = re.compile(
+    r"^\s*(?:fatura|factura|invoice|recibo)\b",
+    re.IGNORECASE,
+)
+_NUMBER_INTRO = re.compile(r"n[º°.]|n[úu]mero\s*$", re.IGNORECASE)
 DISCOUNT = re.compile(r"\b(?:desconto|discount|abatimento)\b", re.IGNORECASE)
 # Series codes stay on the number ("FT A/12"). Words such as Invoice do not.
 _SERIES_CODES = {"FT", "FR", "FS", "NC", "ND"}
@@ -263,7 +312,7 @@ def _clear_title_type(line: str) -> Optional[str]:
     if _NOTA_TITLE.match(line) and re.search(r"d[eé]bito", line, re.IGNORECASE):
         return "ND"
     if re.match(r"^\s*fatura\b", line, re.IGNORECASE) and not re.search(
-        r"retificativa|anula|origem",
+        r"retificativa|rectificativa|anula|origem",
         line,
         re.IGNORECASE,
     ):
@@ -271,12 +320,83 @@ def _clear_title_type(line: str) -> Optional[str]:
     return None
 
 
-def _series_number(line: str, *, allow_credit: bool) -> Optional[str]:
-    """A series number on this line. A ref parenthetical and an origin line do not count."""
+def _nota_kind(line: str) -> Optional[str]:
+    """NC or ND when this line is the document's own credit or debit title."""
+    if not line or _is_origin_line(line) or _FUTURE_MENTION.search(line):
+        return None
+    if _ND_HEAD.search(line) or _ND_SENTENCE.search(line):
+        return "ND"
+    if _NC_HEAD.search(line) or _NC_SENTENCE.search(line):
+        return "NC"
+    return None
+
+
+def _find_nota(lines: list[str]) -> Optional[tuple[int, str]]:
+    """A credit or debit title anywhere on the page, not the first Fatura line."""
+    for index, line in enumerate(lines):
+        kind = _nota_kind(line)
+        if kind:
+            return index, kind
+    for index in range(len(lines) - 1):
+        if _is_origin_line(lines[index]):
+            continue
+        if re.match(r"^\s*n[o0]ta\s+de\s*$", lines[index], re.IGNORECASE):
+            kind = _nota_kind(f"{lines[index]} {lines[index + 1]}")
+            if kind:
+                return index, kind
+    return None
+
+
+def _line_has_credit_series(line: str) -> bool:
+    """An NC/ND document id. 'Cabo NC 3m' and 'Plano nc 2026' are not one."""
+    for match in _NC_SERIES.finditer(line or ""):
+        number = match.group("number")
+        if re.fullmatch(r"\d{1,3}[A-Za-z]{1,3}", number):
+            continue
+        if re.fullmatch(r"20\d{2}", number):
+            continue
+        if "/" in number or "/" in match.group(0) or re.search(r"\d", number):
+            return True
+    return False
+
+
+def _printed_negative_total(lines: list[str]) -> bool:
+    """A trailing minus or parentheses on the total. A glued hyphen is not one."""
+    for line in lines:
+        if DISCOUNT.search(line) and not STRONG_TOTAL.search(line):
+            continue
+        if not STRONG_TOTAL.search(line) and not PAYMENT_TOTAL.search(line):
+            continue
+        usable = _amount_line(line, STRONG_TOTAL if STRONG_TOTAL.search(line) else PAYMENT_TOTAL)
+        for match in MONEY.finditer(usable):
+            amount = _amount_from_match(usable, match)
+            if amount is not None and amount < 0:
+                return True
+    return False
+
+
+def _page_vetoes_purchase(text: str, lines: list[str]) -> bool:
+    if _CREDIT_DEBIT_SIGNAL.search(text or ""):
+        return True
+    if _printed_negative_total(lines):
+        return True
+    return any(_line_has_credit_series(line) for line in lines)
+
+
+def _is_purchase_line(line: str) -> bool:
+    return bool(_PURCHASE_LINE.match(line or ""))
+
+
+def _purchase_series(number: Optional[str]) -> bool:
+    return bool(number and re.match(r"^(?:FT|FR|FS)\b", number.strip(), re.IGNORECASE))
+
+
+def _series_number(line: str, *, allow_credit: bool, allow_purchase: bool) -> Optional[str]:
+    """A series number on this line. A citation, a ref, and an origin line do not count."""
     if not line or _is_origin_line(line):
         return None
-    cleaned = _REF_PAREN.sub(" ", line)
-    nota = bool(_NOTA_TITLE.search(line))
+    cleaned = _INLINE_REF.sub(" ", _REF_PAREN.sub(" ", line))
+    nota = _nota_kind(line) is not None
     kept: list[re.Match[str]] = []
     for match in INVOICE_NO.finditer(cleaned):
         series = match.group("series").upper()
@@ -285,15 +405,66 @@ def _series_number(line: str, *, allow_credit: bool) -> Optional[str]:
             continue
         if series in {"NC", "ND"} and "/" not in number and not nota:
             continue
+        formatted = _invoice_number_from_match(match)
+        if not allow_credit and re.match(r"^(?:NC|ND)\b", formatted, re.IGNORECASE):
+            continue
+        if not allow_purchase and _purchase_series(formatted):
+            continue
+        if series in {"FT", "FR", "FS"} and not allow_purchase:
+            continue
+        del number
         kept.append(match)
     if not kept:
         return None
-    return _invoice_number_from_match(min(kept, key=lambda match: match.start()))
+    introduced = [
+        match
+        for match in kept
+        if _NUMBER_INTRO.search(cleaned[max(0, match.start() - 20) : match.start()])
+    ]
+    chosen = introduced[-1] if introduced else min(kept, key=lambda match: match.start())
+    formatted = _invoice_number_from_match(chosen)
+    if not allow_purchase and _purchase_series(formatted):
+        return None
+    if not allow_credit and re.match(r"^(?:NC|ND)\b", formatted, re.IGNORECASE):
+        return None
+    return formatted
 
 
 def _suggestions(text: str) -> tuple[Optional[str], Optional[str]]:
-    """Type and number hints from the title line, or the line directly under it."""
+    """Type and number hints. A credit signal never yields FT, FS or FR.
+
+    The number comes from the document's own title, or the line directly
+    under it when that line is not a citation. In doubt the number is blank,
+    and a credit note never keeps an FT-series number.
+    """
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    nota = _find_nota(lines)
+    if nota is not None:
+        index, kind = nota
+        number = _series_number(lines[index], allow_credit=True, allow_purchase=False)
+        if number is None and index + 1 < len(lines):
+            nxt = lines[index + 1]
+            if not _is_origin_line(nxt) and not _is_purchase_line(nxt):
+                number = _series_number(nxt, allow_credit=True, allow_purchase=False)
+        if _purchase_series(number):
+            number = None
+        return kind, number
+
+    if _page_vetoes_purchase(text, lines):
+        has_purchase = any(
+            _is_purchase_line(line) and not _is_origin_line(line) and _clear_title_type(line)
+            for line in lines
+        )
+        if not has_purchase:
+            for line in lines:
+                if _is_origin_line(line) or _is_purchase_line(line):
+                    continue
+                if re.match(r"^\s*(?:NC|ND)\b", line, re.IGNORECASE):
+                    number = _series_number(line, allow_credit=True, allow_purchase=False)
+                    if number and not _purchase_series(number):
+                        return None, number
+        return None, None
+
     index: Optional[int] = None
     for position, line in enumerate(lines):
         if _is_origin_line(line):
@@ -305,14 +476,15 @@ def _suggestions(text: str) -> tuple[Optional[str], Optional[str]]:
         return None, None
     title = lines[index]
     suggested = _clear_title_type(title)
-    # An NC/ND series is the number only on a credit/debit title, or when that
-    # series line is itself the title. Under a Fatura title it is ignored.
     title_is_credit_number = bool(re.match(r"^\s*(?:NC|ND)\b", title, re.IGNORECASE))
-    number = _series_number(
-        title, allow_credit=suggested in {"NC", "ND"} or title_is_credit_number
-    )
-    if number is None and index + 1 < len(lines):
-        number = _series_number(lines[index + 1], allow_credit=suggested in {"NC", "ND"})
+    allow_credit = suggested in {"NC", "ND"} or title_is_credit_number
+    number = _series_number(title, allow_credit=allow_credit, allow_purchase=True)
+    if number is None and index + 1 < len(lines) and not _is_origin_line(lines[index + 1]):
+        number = _series_number(
+            lines[index + 1], allow_credit=suggested in {"NC", "ND"}, allow_purchase=True
+        )
+    if suggested in {"NC", "ND"} and _purchase_series(number):
+        number = None
     return suggested, number
 
 

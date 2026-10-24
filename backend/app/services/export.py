@@ -33,8 +33,9 @@ from app.services.iva_adjust import (
     contributions,
     credit_note_warnings,
     duplicate_warnings,
-    exclusion_reason,
+    duplicate_loser_ids,
     left_out,
+    listing_reason,
 )
 
 
@@ -249,6 +250,7 @@ class ExportService:
         output.write(EXCLUDED_HEADING + "\r\n")
         writer = csv.writer(output, delimiter=";")
         writer.writerow(["ID", "Data", "Fornecedor", "N.º da fatura", "Tipo", "Tipo AT", "Estado", "Motivo"])
+        losers = duplicate_loser_ids(documents, library)
         for doc in left_out(documents, library):
             writer.writerow([
                 str(doc.id),
@@ -258,7 +260,7 @@ class ExportService:
                 doc.document_type or "unclassified",
                 _csv_text(getattr(doc, "at_document_type", None)),
                 doc.status,
-                exclusion_reason(doc) or "por rever",
+                listing_reason(doc, loser_ids=losers) or "por rever",
             ])
         return output.getvalue()
     
@@ -368,6 +370,7 @@ class ExportService:
                 elements.append(Paragraph(safe, styles["Normal"]))
 
         excluded = left_out(documents, library)
+        losers = duplicate_loser_ids(documents, library)
         elements.append(Spacer(1, 16))
         elements.append(Paragraph(EXCLUDED_HEADING, styles["Heading2"]))
         if not excluded:
@@ -375,7 +378,7 @@ class ExportService:
         else:
             excluded_data = [["Data", "Fornecedor", "N.º", "Estado", "Motivo"]]
             for d in excluded[:50]:
-                reason = exclusion_reason(d) or "por rever"
+                reason = listing_reason(d, loser_ids=losers) or "por rever"
                 excluded_data.append([
                     d.document_date.strftime("%d/%m/%Y") if d.document_date else "-",
                     (d.vendor_name or "Desconhecido")[:25],
@@ -392,6 +395,8 @@ class ExportService:
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ]))
             elements.append(excluded_table)
+            if len(excluded) > 50:
+                elements.append(Paragraph(f"e mais {len(excluded) - 50}, ver CSV", styles["Normal"]))
         
         # Build PDF
         doc.build(elements)

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Document } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, isConcreteDocumentType } from '@/lib/reviewEdit';
 import { ConfidenceIndicator } from './ConfidenceBadge';
 import { AlertCircle, Calculator, Building2, FileText, Euro } from 'lucide-react';
 
@@ -45,11 +45,10 @@ export function ReviewForm({
   const [formData, setFormData] = useState<ReviewFormData>({
     vendor_name: document.vendor_name || '',
     vendor_nif: document.vendor_nif || '',
-    invoice_number: document.invoice_number || document.suggested_invoice_number || '',
-    document_type:
-      document.document_type && document.document_type !== 'unclassified'
-        ? document.document_type
-        : (document.suggested_type || 'unclassified'),
+    invoice_number: document.invoice_number || '',
+    document_type: isConcreteDocumentType(document.document_type)
+      ? document.document_type!
+      : 'unclassified',
     document_date: document.document_date || '',
     net_amount: document.net_amount || '',
     vat_amount: document.vat_amount || '',
@@ -229,6 +228,15 @@ export function ReviewForm({
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
+            {document.suggested_type && !isConcreteDocumentType(document.document_type) ? (
+              <button
+                type="button"
+                className="mt-1 text-sm text-primary-700 underline"
+                onClick={() => handleChange('document_type', document.suggested_type!)}
+              >
+                Usar sugestão: {documentTypeLabel(document.suggested_type)}
+              </button>
+            ) : null}
           </div>
 
           <div>

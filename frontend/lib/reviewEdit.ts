@@ -8,7 +8,14 @@ export interface ReviewEditFields {
   invoice_number?: string;
 }
 
-/** Prefill the review form. A suggestion never counts as the stored type or number. */
+const CONCRETE_TYPES = new Set(['FT', 'FS', 'FR', 'NC', 'ND']);
+
+/** A stored or explicitly picked AT type. A suggestion is not one. */
+export function isConcreteDocumentType(code: string | null | undefined): boolean {
+  return !!code && CONCRETE_TYPES.has(code);
+}
+
+/** Prefill the review form. A suggestion never fills the type or the number. */
 export function initialReviewEdit(document: {
   vendor_name?: string | null;
   document_date?: string | null;
@@ -19,14 +26,14 @@ export function initialReviewEdit(document: {
   invoice_number?: string | null;
   suggested_invoice_number?: string | null;
 }) {
-  const confirmed = document.document_type && document.document_type !== 'unclassified';
+  const confirmed = isConcreteDocumentType(document.document_type);
   return {
     vendor_name: document.vendor_name || '',
     document_date: document.document_date || '',
     gross_amount: document.gross_amount || '',
     vat_amount: document.vat_amount || '',
-    document_type: confirmed ? document.document_type! : (document.suggested_type || 'unclassified'),
-    invoice_number: document.invoice_number || document.suggested_invoice_number || '',
+    document_type: confirmed ? document.document_type! : 'unclassified',
+    invoice_number: document.invoice_number || '',
   };
 }
 

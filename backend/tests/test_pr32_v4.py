@@ -84,7 +84,6 @@ def test_loose_nc_tokens_do_not_change_the_fatura():
         "Plano nc 2026",
         "Ref NC",
         "Retifica",
-        "Anulação da",
         "Doc. origem:",
         "Saldo apos NC",
     ):
@@ -94,6 +93,10 @@ def test_loose_nc_tokens_do_not_change_the_fatura():
         assert fields.suggested_type == "FT", line
         assert fields.document_type == "unclassified", line
         assert fields.needs_review is True, line
+    cancelled = extract_fields(_fatura("Anulação da"))
+    assert cancelled.suggested_type is None
+    assert cancelled.suggested_invoice_number is None
+    assert cancelled.document_type == "unclassified"
 
 
 def test_a_real_credit_or_debit_signal_stays_unclassified():
@@ -107,9 +110,9 @@ def test_a_real_credit_or_debit_signal_stays_unclassified():
     for extra in samples:
         fields = extract_fields(_fatura(extra))
         assert fields.invoice_number is None, extra
-        assert fields.suggested_invoice_number == "FT A/12", extra
+        assert fields.suggested_type not in {"FT", "FS", "FR"}, extra
+        assert fields.suggested_invoice_number != "FT A/12", extra
         assert fields.document_type == "unclassified", extra
-        assert fields.document_type != "NC"
         assert fields.needs_review is True, extra
 
 

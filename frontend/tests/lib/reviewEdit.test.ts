@@ -67,7 +67,7 @@ describe('documentTypeLabel', () => {
 });
 
 describe('initialReviewEdit', () => {
-  it('prefills a suggestion and does not treat it as confirmed', () => {
+  it('does not preselect a suggestion on an unclassified row', () => {
     expect(initialReviewEdit({
       document_type: 'unclassified',
       suggested_type: 'FR',
@@ -77,8 +77,8 @@ describe('initialReviewEdit', () => {
       gross_amount: '12.30',
       vat_amount: '2.30',
     })).toMatchObject({
-      document_type: 'FR',
-      invoice_number: 'FR A/5',
+      document_type: 'unclassified',
+      invoice_number: '',
     });
   });
 

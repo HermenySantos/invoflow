@@ -31,8 +31,9 @@ from app.services.categorization import (
 from app.services.iva_adjust import (
     contributions,
     credit_note_warnings,
+    duplicate_loser_ids,
     duplicate_warnings,
-    exclusion_reason,
+    listing_reason,
 )
 from app.services.validation import validate_period_documents
 
@@ -129,11 +130,18 @@ async def get_summary(
     
     # ── Counts ──
     total_documents = len(documents)
+    valid_docs = [d for d in documents if d.status in ("ready", "needs_review", "accountant_review")]
+    library = (
+        db.query(Document)
+        .filter(Document.deleted_at.is_(None))
+        .filter(Document.user_id == user.id)
+        .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
+        .all()
+    )
+    loser_ids = duplicate_loser_ids(valid_docs, library)
     excluded = []
-    for document in documents:
-        if document.status not in ("ready", "needs_review", "accountant_review"):
-            continue
-        reason = exclusion_reason(document)
+    for document in valid_docs:
+        reason = listing_reason(document, loser_ids=loser_ids)
         if reason is None:
             continue
         excluded.append(
@@ -147,22 +155,13 @@ async def get_summary(
             )
         )
     ready_count = sum(
-        1 for d in documents if d.status == "ready" and exclusion_reason(d) is None
+        1 for d in documents if d.status == "ready" and listing_reason(d, loser_ids=loser_ids) is None
     )
     needs_review_count = sum(1 for d in documents if d.status == "needs_review")
     processing_count = sum(1 for d in documents if d.status == "processing")
     failed_count = sum(1 for d in documents if d.status == "failed")
     
     # ── Totals (only ready + needs_review) ──
-    valid_docs = [d for d in documents if d.status in ("ready", "needs_review", "accountant_review")]
-    library = (
-        db.query(Document)
-        .filter(Document.deleted_at.is_(None))
-        .filter(Document.user_id == user.id)
-        .filter(Document.status.in_(("ready", "needs_review", "accountant_review")))
-        .all()
-    )
-
     counted = contributions(valid_docs, library)
     total_gross = sum((row.gross for row in counted), Decimal(0))
     total_net = sum((row.net for row in counted), Decimal(0))

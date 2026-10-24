@@ -13,6 +13,7 @@ vi.mock('next/navigation', () => ({
   }),
   usePathname: () => '/test',
   useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({ id: 'doc-v6' }),
 }));
 
 // Mock window.matchMedia

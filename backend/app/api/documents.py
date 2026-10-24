@@ -29,6 +29,7 @@ from app.schemas.document import (
     FieldConfidence,
     AMOUNT_MISMATCH_DETAIL,
     CONCRETE_DOCUMENT_TYPES,
+    NULL_TYPE_DETAIL,
     TYPE_REQUIRED_DETAIL,
     amounts_are_consistent,
 )
@@ -440,6 +441,11 @@ async def update_document(
     try:
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
+        if "document_type" in update_data and update_data["document_type"] is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=NULL_TYPE_DETAIL,
+            )
         confirmed = {"ready", "accountant_review"}
         amount_fields = ("net_amount", "vat_amount", "gross_amount")
         was_confirmed = document.status in confirmed
@@ -495,6 +501,9 @@ async def update_document(
 
         db.commit()
         db.refresh(document)
+    except HTTPException:
+        db.rollback()
+        raise
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating document: {e}")

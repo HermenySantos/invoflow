@@ -29,6 +29,7 @@ _AMOUNT_TOLERANCE = Decimal("0.01")
 _CENT = Decimal("0.01")
 AMOUNT_MISMATCH_DETAIL = "O valor líquido mais o IVA tem de ser igual ao total."
 TYPE_REQUIRED_DETAIL = "Indique o tipo de documento antes de o marcar como pronto."
+NULL_TYPE_DETAIL = "O tipo de documento não pode ficar vazio."
 CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
 
