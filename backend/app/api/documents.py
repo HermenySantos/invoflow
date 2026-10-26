@@ -32,10 +32,11 @@ from app.schemas.document import (
     CONCRETE_DOCUMENT_TYPES,
     NULL_TYPE_DETAIL,
     SERIES_MISMATCH_DETAIL,
+    SERIES_OVERRIDE_WARNING,
     TYPE_REQUIRED_DETAIL,
     amounts_are_consistent,
-    invoice_series_prefix,
     keeps_at_issued_pair,
+    series_disagrees,
     series_fields_changed,
 )
 from app.services.pt_qr import parse_invoice_qr
@@ -201,6 +202,19 @@ def build_document_response(
     warnings = validate_document(document)
     if db is not None:
         warnings += detect_duplicates(db, document.user_id, document)
+    # A stored pair that is not the one AT issued stays visible as a warning.
+    # The write is allowed only when the user sends the confirmation flag.
+    if series_disagrees(document.document_type, document.invoice_number) and not keeps_at_issued_pair(
+        document.document_type, document.invoice_number, issued
+    ):
+        warnings.append(
+            {
+                "code": "series_mismatch",
+                "message": SERIES_OVERRIDE_WARNING,
+                "severity": "warning",
+                "field": "invoice_number",
+            }
+        )
 
     return DocumentResponse(
         id=document.id,
@@ -555,18 +569,16 @@ async def update_document(
             if "invoice_number" in update_data
             else document.invoice_number
         )
-        # Category, deductible, notes and a status-only confirm do not re-check
-        # the series. An AT pair that is still the one AT issued is legal even
-        # when the internal code and field D differ.
-        if series_fields_changed(document.document_type, document.invoice_number, update_data):
+        # Not a column. A category, deductible or notes edit does not send it.
+        accept_series_mismatch = bool(update_data.pop("accept_series_mismatch", False))
+        confirming = update_data.get("status") in confirmed
+        # A status-only confirm is checked too. An unchanged AT pair is exempt.
+        # Without a readable QR the user can still record a printed AT pair,
+        # but only with the explicit confirmation flag.
+        if series_fields_changed(document.document_type, document.invoice_number, update_data) or confirming:
             issued = _at_issued(document, db)
             if not keeps_at_issued_pair(merged_type, merged_number, issued):
-                series = invoice_series_prefix(merged_number)
-                if (
-                    merged_type in CONCRETE_DOCUMENT_TYPES
-                    and series is not None
-                    and series != merged_type
-                ):
+                if series_disagrees(merged_type, merged_number) and not accept_series_mismatch:
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         detail=SERIES_MISMATCH_DETAIL,

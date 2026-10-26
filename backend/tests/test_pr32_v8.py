@@ -187,7 +187,6 @@ def test_legacy_mismatch_allows_unrelated_edits(client, db, mock_user_headers):
         {"expense_category": "food"},
         {"deductible_pct_override": 25},
         {"review_notes": "nota antiga"},
-        {"status": "ready"},
     ):
         response = client.patch(
             f"/api/documents/{stored.id}",
@@ -197,6 +196,15 @@ def test_legacy_mismatch_allows_unrelated_edits(client, db, mock_user_headers):
         assert response.status_code == 200, payload
         assert response.json()["document_type"] == "NC"
         assert response.json()["invoice_number"] == "FT A/12"
+
+    # A status-only confirm is checked again. The printed-pair flag is what allows it.
+    rejected = client.patch(
+        f"/api/documents/{stored.id}",
+        headers=mock_user_headers,
+        json={"status": "ready"},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"] == SERIES_MISMATCH_DETAIL
 
     rejected = client.patch(
         f"/api/documents/{stored.id}",

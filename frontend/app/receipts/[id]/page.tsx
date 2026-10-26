@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS, SERIES_MISMATCH_DETAIL, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -116,6 +116,7 @@ export default function ReceiptDetailPage() {
   });
   // Non-QR rows open on Por classificar. A suggestion is read-only text, not the value.
   const [confirmType, setConfirmType] = useState('unclassified');
+  const [acceptSeriesMismatch, setAcceptSeriesMismatch] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const loadSeq = useRef(0);
 
@@ -135,6 +136,7 @@ export default function ReceiptDetailPage() {
     setDocument(null);
     setIsEditing(false);
     setConfirmType('unclassified');
+    setAcceptSeriesMismatch(false);
     setIsLoading(true);
     setError(null);
     setAuditTrail(null);
@@ -147,6 +149,7 @@ export default function ReceiptDetailPage() {
     setDocument(null);
     setIsEditing(false);
     setConfirmType('unclassified');
+    setAcceptSeriesMismatch(false);
     setEditData({
       vendor_name: '',
       document_date: '',
@@ -163,7 +166,12 @@ export default function ReceiptDetailPage() {
     (async () => {
       try {
         const data = await api.getDocument(requestedId);
-        if (cancelled || seq !== loadSeq.current || data.id !== requestedId) return;
+        if (cancelled || seq !== loadSeq.current) return;
+        if (data.id !== requestedId) {
+          setDocument(null);
+          setError('Não foi possível carregar o recibo.');
+          return;
+        }
         setDocument(data);
         setEditData(initialReviewEdit(data));
         setConfirmType(isConcreteDocumentType(data.document_type) ? data.document_type! : 'unclassified');
@@ -181,6 +189,10 @@ export default function ReceiptDetailPage() {
       cancelled = true;
     };
   }, [routeId, reloadKey]);
+
+  useEffect(() => {
+    setAcceptSeriesMismatch(false);
+  }, [editData.document_type, editData.invoice_number, confirmType, document?.invoice_number, document?.document_type]);
 
   // The receipt is still being read in the background: poll until it settles.
   const isProcessing = document?.status === 'processing';
@@ -279,19 +291,26 @@ export default function ReceiptDetailPage() {
       ? document.document_type!
       : confirmType;
     if (!isConcreteDocumentType(chosen)) return;
-    if (seriesBlocks(chosen, document.invoice_number, document.at_document_type, document.at_invoice_number)) {
+    const mismatch = seriesBlocks(
+      chosen,
+      document.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
+    if (mismatch && !acceptSeriesMismatch) {
       setError(SERIES_MISMATCH_DETAIL);
       return;
     }
     const payload = isConcreteDocumentType(document.document_type)
       ? { status: 'ready' as const }
       : { document_type: chosen, status: 'ready' as const };
+    const confirmed = mismatch ? { ...payload, accept_series_mismatch: true } : payload;
     
     try {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, payload);
+      await api.updateDocument(document.id, confirmed);
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to confirm:', err);
@@ -303,14 +322,13 @@ export default function ReceiptDetailPage() {
 
   const handleSaveEdit = async () => {
     if (!document || document.id !== routeId) return;
-    if (
-      seriesBlocks(
-        editData.document_type,
-        editData.invoice_number,
-        document.at_document_type,
-        document.at_invoice_number,
-      )
-    ) {
+    const mismatch = seriesBlocks(
+      editData.document_type,
+      editData.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
+    if (mismatch && !acceptSeriesMismatch) {
       setError(SERIES_MISMATCH_DETAIL);
       return;
     }
@@ -319,7 +337,7 @@ export default function ReceiptDetailPage() {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, saveEditPayload(editData));
+      await api.updateDocument(document.id, saveEditPayload(editData, mismatch));
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
@@ -884,7 +902,15 @@ export default function ReceiptDetailPage() {
               </div>
             )}
           </>
-        ) : null}
+        ) : (
+          <div className="card p-6 text-center">
+            <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-3" />
+            <p className="text-gray-600 mb-4">{error || 'Não foi possível carregar o recibo.'}</p>
+            <button onClick={() => setReloadKey((key) => key + 1)} className="btn-secondary btn-md">
+              Tentar de novo
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Fixed bottom action */}
@@ -907,11 +933,23 @@ export default function ReceiptDetailPage() {
             {isEditing ? (
               <>
               {editSeriesMismatch ? (
-                <p className="text-sm text-red-700 mb-2">{SERIES_MISMATCH_DETAIL}</p>
+                <div className="mb-3 space-y-2">
+                  <p className="text-sm text-red-700">{SERIES_MISMATCH_DETAIL}</p>
+                  <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
+                  <label className="flex items-start gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={acceptSeriesMismatch}
+                      onChange={(event) => setAcceptSeriesMismatch(event.target.checked)}
+                    />
+                    <span>{PRINTED_PAIR_LABEL}</span>
+                  </label>
+                </div>
               ) : null}
               <button
                 onClick={handleSaveEdit}
-                disabled={isSaving || editSeriesMismatch}
+                disabled={isSaving || (editSeriesMismatch && !acceptSeriesMismatch)}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
@@ -953,11 +991,23 @@ export default function ReceiptDetailPage() {
                 </div>
               ) : null}
               {confirmSeriesMismatch ? (
-                <p className="text-sm text-red-700 mb-2">{SERIES_MISMATCH_DETAIL}</p>
+                <div className="mb-3 space-y-2">
+                  <p className="text-sm text-red-700">{SERIES_MISMATCH_DETAIL}</p>
+                  <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
+                  <label className="flex items-start gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={acceptSeriesMismatch}
+                      onChange={(event) => setAcceptSeriesMismatch(event.target.checked)}
+                    />
+                    <span>{PRINTED_PAIR_LABEL}</span>
+                  </label>
+                </div>
               ) : null}
               <button
                 onClick={handleConfirm}
-                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || confirmSeriesMismatch}
+                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && !acceptSeriesMismatch)}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (

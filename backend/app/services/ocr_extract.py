@@ -104,7 +104,9 @@ _CREDIT_DEBIT_SIGNAL = re.compile(
     r"\bestorno\b|"
     r"\bdevolu[cç][aã]o\b|"
     r"\brefund\b|"
-    r"(?<![A-Za-z0-9])n\s*/\s*c(?![A-Za-z0-9])|"
+    r"documento\s+de\s+cr[eé]dito|"
+    r"cr[eé]dito\s+a\s+favor|"
+    r"(?<![A-Za-z0-9])n\s*/\s*[^\w\s]{0,2}\s*c(?![A-Za-z0-9])|"
     r"(?<![A-Za-z0-9])nc-[A-Za-z0-9]|"
     r"(?<![A-Za-z0-9])nca/|"
     r"anula",

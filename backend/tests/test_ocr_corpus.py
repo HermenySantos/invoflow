@@ -25,6 +25,7 @@ from app.services.ocr import (
     tesseract_gap,
 )
 from app.services.ocr_extract import extract_fields
+from tests.corpus_layouts import IMAGE_LAYOUTS, TEXT_LAYOUTS, render_png, text_pdf
 from tests.test_invoice_qr import MAINLAND, _png_bytes, _thermal_pdf, fatura_photo
 
 pytestmark = pytest.mark.ocr_corpus
@@ -203,7 +204,27 @@ def _before_summary() -> tuple[dict[str, tuple[int, int]], int, int]:
     return summary, hits, cells
 
 
-def _write_report(production: list[dict], raster: list[dict]) -> None:
+def _suggestion_cell(expected, actual) -> str:
+    if actual == expected:
+        return "hit blank" if expected is None else f"hit {actual}"
+    shown = "blank" if actual is None else str(actual)
+    return f"miss {shown}"
+
+
+def _suggestion_rows(cases: list[dict]) -> tuple[list[list[str]], int, int]:
+    rows = []
+    hits = cells = 0
+    for case in cases:
+        type_cell = _suggestion_cell(case["expected_type"], case["actual_type"])
+        number_cell = _suggestion_cell(case["expected_number"], case["actual_number"])
+        hits += type_cell.startswith("hit")
+        hits += number_cell.startswith("hit")
+        cells += 2
+        rows.append([case["name"], case["read"], type_cell, number_cell])
+    return rows, hits, cells
+
+
+def _write_report(production: list[dict], raster: list[dict], suggestions: list[dict]) -> None:
     summary, empty, hits, cells = _honest(production)
     before, before_hits, before_cells = _before_summary()
     raster_hits, raster_cells = _raster_matches(production, raster)
@@ -276,6 +297,26 @@ def _write_report(production: list[dict], raster: list[dict]) -> None:
     )
     if hits != sum(got for got, _total in summary.values()) or cells != 11 or before_cells != 11:
         raise AssertionError(f"counted cells drifted: {hits}/{cells}, before {before_hits}/{before_cells}")
+    suggestion_rows, suggestion_hits, suggestion_cells = _suggestion_rows(suggestions)
+    suggestion_text = "\n".join(
+        [
+            "## Suggestions",
+            "",
+            "Type and number suggestions are scored on their own. A blank suggestion is a counted cell when the layout must not suggest a type or a number. These cells are not confirmed document types or numbers.",
+            "",
+            "The two original PDFs stay in the field table above. The extra layouts are synthetic: fictional shop names, and NIF `123456002` printed as a placeholder. Text-layer rows are what the PDF text produces. Rendered rows are Tesseract `por+eng` on a DejaVu drawing of the same kind of wording, including the credit-note wordings from the QA gates.",
+            "",
+            _markdown_table(
+                ["layout", "read", "type suggestion", "number suggestion"],
+                suggestion_rows,
+            ),
+            "",
+            f"Suggestion cells: {suggestion_hits} of {suggestion_cells} ({_pct(suggestion_hits, suggestion_cells)}).",
+            "",
+        ]
+    )
+    # Insert before the final newline so the field score above is unchanged.
+    text = text.rstrip("\n") + "\n\n" + suggestion_text
     REPORT.write_text(text, encoding="utf-8")
 
 
@@ -316,7 +357,15 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
         assert produced.error is None, (name, produced.error)
         actual = _readout(produced)
         production.append(
-            {"name": name, "path": "pipeline", "expected": expected, "actual": actual, "hits": _hits(expected, actual)}
+            {
+                "name": name,
+                "path": "pipeline",
+                "expected": expected,
+                "actual": actual,
+                "hits": _hits(expected, actual),
+                "suggested_type": produced.suggested_type,
+                "suggested_invoice_number": produced.suggested_invoice_number,
+            }
         )
 
         if mime == "application/pdf":
@@ -367,7 +416,64 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
     assert _raster_matches(production, raster) == (cells, cells)
     assert sum(1 for _name, _label in SCORED) * len(QR_ONLY) == 14
 
-    _write_report(production, raster)
+    by_suggestion = {case["name"]: case for case in production}
+    suggestions = [
+        {
+            "name": "fatura-cafe-lisboa.pdf",
+            "read": "text layer",
+            "expected_type": "FT",
+            "expected_number": "FT A/12",
+            "actual_type": by_suggestion["fatura-cafe-lisboa.pdf"]["suggested_type"],
+            "actual_number": by_suggestion["fatura-cafe-lisboa.pdf"]["suggested_invoice_number"],
+        },
+        {
+            "name": "nota-credito.pdf",
+            "read": "text layer",
+            "expected_type": "NC",
+            "expected_number": "NC Q2",
+            "actual_type": by_suggestion["nota-credito.pdf"]["suggested_type"],
+            "actual_number": by_suggestion["nota-credito.pdf"]["suggested_invoice_number"],
+        },
+    ]
+    for name, lines, expected_type, expected_number in TEXT_LAYOUTS:
+        raw = text_pdf(lines, width=226 if name.startswith("thermal") else 595)
+        produced = asyncio.run(service.process_document(raw, "application/pdf"))
+        assert produced.backend == "tesseract", name
+        assert produced.error is None, (name, produced.error)
+        assert produced.document_type == "unclassified", name
+        assert produced.invoice_number is None, name
+        suggestions.append(
+            {
+                "name": name,
+                "read": "text layer",
+                "expected_type": expected_type,
+                "expected_number": expected_number,
+                "actual_type": produced.suggested_type,
+                "actual_number": produced.suggested_invoice_number,
+            }
+        )
+    for name, lines, expected_type, expected_number in IMAGE_LAYOUTS:
+        produced = asyncio.run(service.process_document(render_png(lines), "image/png"))
+        assert produced.backend == "tesseract", name
+        assert produced.error is None, (name, produced.error)
+        assert produced.document_type == "unclassified", name
+        suggestions.append(
+            {
+                "name": name,
+                "read": "tesseract",
+                "expected_type": expected_type,
+                "expected_number": expected_number,
+                "actual_type": produced.suggested_type,
+                "actual_number": produced.suggested_invoice_number,
+            }
+        )
+    for case in suggestions:
+        assert (case["actual_type"], case["actual_number"]) == (
+            case["expected_type"],
+            case["expected_number"],
+        ), case
+
+    _write_report(production, raster, suggestions)
     written = REPORT.read_text(encoding="utf-8")
     assert "10 of 11" in written
     assert "11 of 11" not in written
@@ -376,3 +482,11 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
     assert "503504564" not in written
     _before, before_hits, before_cells = _before_summary()
     assert f"Before, on these fixtures: {before_hits} of {before_cells}" in written
+    suggestion_hits = sum(
+        (case["actual_type"] == case["expected_type"]) + (case["actual_number"] == case["expected_number"])
+        for case in suggestions
+    )
+    suggestion_cells = len(suggestions) * 2
+    assert f"Suggestion cells: {suggestion_hits} of {suggestion_cells}" in written
+    assert suggestion_hits == suggestion_cells
+    assert "placeholder" in written

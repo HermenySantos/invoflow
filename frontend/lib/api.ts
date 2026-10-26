@@ -149,7 +149,10 @@ class ApiClient {
     return this.request<Document>(`/documents/${id}`);
   }
 
-  async updateDocument(id: string, data: Partial<Document>) {
+  async updateDocument(
+    id: string,
+    data: Partial<Document> & { accept_series_mismatch?: boolean },
+  ) {
     return this.request<Document>(`/documents/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
