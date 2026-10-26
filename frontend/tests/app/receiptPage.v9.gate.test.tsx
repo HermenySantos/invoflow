@@ -100,24 +100,16 @@ describe('receipt page gate 9', () => {
     },
   );
 
-  it('asks before confirming a glued NC number on an FT', async () => {
+  it('does not offer the printed-pair checkbox for a glued NC number on an FT', async () => {
     vi.mocked(api.getDocument).mockResolvedValue(receipt({ invoice_number: 'NC2026/5' }));
     renderPage();
     const confirm = await screen.findByRole('button', { name: 'Está correto' });
     expect(screen.getByText(SERIES_MISMATCH_DETAIL)).toBeInTheDocument();
-    expect(screen.getByText(SERIES_OVERRIDE_WARNING)).toBeInTheDocument();
+    expect(screen.queryByText(SERIES_OVERRIDE_WARNING)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(PRINTED_PAIR_LABEL)).not.toBeInTheDocument();
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(updateDocument).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByLabelText(PRINTED_PAIR_LABEL));
-    expect(confirm).toBeEnabled();
-    fireEvent.click(confirm);
-    await waitFor(() => expect(updateDocument).toHaveBeenCalledTimes(1));
-    expect(updateDocument).toHaveBeenCalledWith('doc-v9', {
-      status: 'ready',
-      accept_series_mismatch: true,
-    });
   });
 
   it.each(['N\u200bC A/5', '\u0143\u0106 A/5', '\u0274\u1d04 A/5', '\ua4e0\ua4da A/5'])(

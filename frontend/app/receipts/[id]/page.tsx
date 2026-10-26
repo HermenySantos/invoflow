@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -297,14 +297,20 @@ export default function ReceiptDetailPage() {
       document.at_document_type,
       document.at_invoice_number,
     );
-    if (mismatch && !acceptSeriesMismatch) {
+    const canOverride = seriesOverrideAllowed(
+      chosen,
+      document.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
+    if (mismatch && (!canOverride || !acceptSeriesMismatch)) {
       setError(SERIES_MISMATCH_DETAIL);
       return;
     }
     const payload = isConcreteDocumentType(document.document_type)
       ? { status: 'ready' as const }
       : { document_type: chosen, status: 'ready' as const };
-    const confirmed = mismatch ? { ...payload, accept_series_mismatch: true } : payload;
+    const confirmed = mismatch && canOverride ? { ...payload, accept_series_mismatch: true } : payload;
     
     try {
       setIsSaving(true);
@@ -328,7 +334,13 @@ export default function ReceiptDetailPage() {
       document.at_document_type,
       document.at_invoice_number,
     );
-    if (mismatch && !acceptSeriesMismatch) {
+    const canOverride = seriesOverrideAllowed(
+      editData.document_type,
+      editData.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
+    if (mismatch && (!canOverride || !acceptSeriesMismatch)) {
       setError(SERIES_MISMATCH_DETAIL);
       return;
     }
@@ -337,7 +349,7 @@ export default function ReceiptDetailPage() {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, saveEditPayload(editData, mismatch));
+      await api.updateDocument(document.id, saveEditPayload(editData, mismatch && canOverride));
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
@@ -428,6 +440,12 @@ export default function ReceiptDetailPage() {
     document?.at_document_type,
     document?.at_invoice_number,
   );
+  const editCanOverride = seriesOverrideAllowed(
+    editData.document_type,
+    editData.invoice_number,
+    document?.at_document_type,
+    document?.at_invoice_number,
+  );
   const confirmChosen =
     document && isConcreteDocumentType(document.document_type)
       ? document.document_type!
@@ -435,6 +453,14 @@ export default function ReceiptDetailPage() {
   const confirmSeriesMismatch =
     !!document &&
     seriesBlocks(
+      confirmChosen,
+      document.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
+  const confirmCanOverride =
+    !!document &&
+    seriesOverrideAllowed(
       confirmChosen,
       document.invoice_number,
       document.at_document_type,
@@ -935,21 +961,25 @@ export default function ReceiptDetailPage() {
               {editSeriesMismatch ? (
                 <div className="mb-3 space-y-2">
                   <p className="text-sm text-red-700">{SERIES_MISMATCH_DETAIL}</p>
-                  <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
-                  <label className="flex items-start gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={acceptSeriesMismatch}
-                      onChange={(event) => setAcceptSeriesMismatch(event.target.checked)}
-                    />
-                    <span>{PRINTED_PAIR_LABEL}</span>
-                  </label>
+                  {editCanOverride ? (
+                    <>
+                      <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
+                      <label className="flex items-start gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={acceptSeriesMismatch}
+                          onChange={(event) => setAcceptSeriesMismatch(event.target.checked)}
+                        />
+                        <span>{PRINTED_PAIR_LABEL}</span>
+                      </label>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
               <button
                 onClick={handleSaveEdit}
-                disabled={isSaving || (editSeriesMismatch && !acceptSeriesMismatch)}
+                disabled={isSaving || (editSeriesMismatch && (!editCanOverride || !acceptSeriesMismatch))}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
@@ -993,21 +1023,25 @@ export default function ReceiptDetailPage() {
               {confirmSeriesMismatch ? (
                 <div className="mb-3 space-y-2">
                   <p className="text-sm text-red-700">{SERIES_MISMATCH_DETAIL}</p>
-                  <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
-                  <label className="flex items-start gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={acceptSeriesMismatch}
-                      onChange={(event) => setAcceptSeriesMismatch(event.target.checked)}
-                    />
-                    <span>{PRINTED_PAIR_LABEL}</span>
-                  </label>
+                  {confirmCanOverride ? (
+                    <>
+                      <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
+                      <label className="flex items-start gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={acceptSeriesMismatch}
+                          onChange={(event) => setAcceptSeriesMismatch(event.target.checked)}
+                        />
+                        <span>{PRINTED_PAIR_LABEL}</span>
+                      </label>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
               <button
                 onClick={handleConfirm}
-                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && !acceptSeriesMismatch)}
+                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && (!confirmCanOverride || !acceptSeriesMismatch))}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (

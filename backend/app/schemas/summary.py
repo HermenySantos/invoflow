@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from decimal import Decimal
 from typing import Optional
 
+from app.services.iva_adjust import ACCEPTED_MISMATCH_HEADING
+
 
 class CategoryBreakdown(BaseModel):
     """Expense totals for a single category."""
@@ -15,6 +17,15 @@ class CategoryBreakdown(BaseModel):
     vat_total: Optional[Decimal] = None
     deductible_vat: Optional[Decimal] = None
     deductible_pct: Optional[int] = None   # 0-100
+
+
+class AcceptedSeriesMismatch(BaseModel):
+    """A counted row whose type and number were accepted as a printed pair."""
+    id: str
+    vendor_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    document_type: Optional[str] = None
+    status: str
 
 
 class ExcludedDocument(BaseModel):
@@ -41,6 +52,8 @@ class SummaryResponse(BaseModel):
     ready_count: int
     excluded_count: int = 0
     excluded_documents: list[ExcludedDocument] = []
+    series_mismatch_heading: str = ACCEPTED_MISMATCH_HEADING
+    series_mismatch_documents: list[AcceptedSeriesMismatch] = []
     needs_review_count: int
     processing_count: int
     failed_count: int

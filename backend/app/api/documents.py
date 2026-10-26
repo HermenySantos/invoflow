@@ -38,6 +38,7 @@ from app.schemas.document import (
     keeps_at_issued_pair,
     series_disagrees,
     series_fields_changed,
+    series_override_allowed,
 )
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
@@ -47,6 +48,7 @@ from app.services.audit import (
     log_document_create,
     log_document_update,
     log_document_delete,
+    log_series_mismatch_accepted,
 )
 from app.services.validation import validate_document, detect_duplicates
 from app.services.iva_adjust import reading_is_fictional
@@ -203,14 +205,17 @@ def build_document_response(
     if db is not None:
         warnings += detect_duplicates(db, document.user_id, document)
     # A stored pair that is not the one AT issued stays visible as a warning.
-    # The write is allowed only when the user sends the confirmation flag.
+    # The confirmation wording is only for a mismatch the flag can still accept.
     if series_disagrees(document.document_type, document.invoice_number) and not keeps_at_issued_pair(
         document.document_type, document.invoice_number, issued
     ):
+        overridable = series_override_allowed(
+            document.document_type, document.invoice_number, issued
+        )
         warnings.append(
             {
                 "code": "series_mismatch",
-                "message": SERIES_OVERRIDE_WARNING,
+                "message": SERIES_OVERRIDE_WARNING if overridable else SERIES_MISMATCH_DETAIL,
                 "severity": "warning",
                 "field": "invoice_number",
             }
@@ -244,6 +249,7 @@ def build_document_response(
         irs_sector=getattr(document, 'irs_sector', None),
         deductible_pct=effective_deductible_pct(document),
         deductible_pct_override=document.deductible_pct_override,
+        series_mismatch_accepted=bool(getattr(document, "series_mismatch_accepted", False)),
         validation_warnings=warnings,
         fictional=reading_is_fictional(document.ocr_raw_response),
         period_tag=document.period_tag,
@@ -573,16 +579,29 @@ async def update_document(
         accept_series_mismatch = bool(update_data.pop("accept_series_mismatch", False))
         confirming = update_data.get("status") in confirmed
         # A status-only confirm is checked too. An unchanged AT pair is exempt.
-        # Without a readable QR the user can still record a printed AT pair,
-        # but only with the explicit confirmation flag.
+        # The flag is honoured only when the row has no QR pair and no e-Fatura
+        # pair, and only for a mismatch inside {FT, FS, FR}.
+        override_applied = False
+        before_type = document.document_type
+        before_number = document.invoice_number
+        before_accepted = bool(document.series_mismatch_accepted)
         if series_fields_changed(document.document_type, document.invoice_number, update_data) or confirming:
             issued = _at_issued(document, db)
-            if not keeps_at_issued_pair(merged_type, merged_number, issued):
-                if series_disagrees(merged_type, merged_number) and not accept_series_mismatch:
+            still_at = keeps_at_issued_pair(merged_type, merged_number, issued)
+            disagrees = series_disagrees(merged_type, merged_number) and not still_at
+            if disagrees:
+                allowed = accept_series_mismatch and series_override_allowed(
+                    merged_type, merged_number, issued
+                )
+                if not allowed:
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         detail=SERIES_MISMATCH_DETAIL,
                     )
+                update_data["series_mismatch_accepted"] = True
+                override_applied = True
+            elif before_accepted:
+                update_data["series_mismatch_accepted"] = False
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields
@@ -598,6 +617,17 @@ async def update_document(
             before=before_state,
             after=after_state,
         )
+        if override_applied:
+            log_series_mismatch_accepted(
+                db,
+                document_id=document.id,
+                user_id=user.id,
+                document_type=document.document_type,
+                invoice_number=document.invoice_number,
+                previous_accepted=before_accepted,
+                previous_type=before_type,
+                previous_number=before_number,
+            )
 
         db.commit()
         db.refresh(document)

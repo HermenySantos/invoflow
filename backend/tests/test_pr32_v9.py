@@ -113,15 +113,17 @@ def test_status_only_confirm_rechecks_a_legacy_mismatch(client, db, mock_user_he
     )
     assert notes.status_code == 200
 
+    # The flag cannot turn a credit note numbered as an invoice into a ready row.
     allowed = client.patch(
         f"/api/documents/{stored.id}",
         headers=mock_user_headers,
         json={"status": "ready", "accept_series_mismatch": True},
     )
-    assert allowed.status_code == 200, allowed.json()
-    assert allowed.json()["status"] == "ready"
-    assert any(item["code"] == "series_mismatch" for item in allowed.json()["validation_warnings"])
-    assert any(item["message"] == SERIES_OVERRIDE_WARNING for item in allowed.json()["validation_warnings"])
+    assert allowed.status_code == 422
+    assert allowed.json()["detail"] == SERIES_MISMATCH_DETAIL
+    db.refresh(stored)
+    assert stored.status == "needs_review"
+    assert stored.series_mismatch_accepted is False
 
 
 def test_unreadable_qr_allows_a_printed_at_pair_only_with_the_flag(client, db, mock_user_headers):

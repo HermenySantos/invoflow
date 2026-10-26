@@ -197,7 +197,7 @@ def test_legacy_mismatch_allows_unrelated_edits(client, db, mock_user_headers):
         assert response.json()["document_type"] == "NC"
         assert response.json()["invoice_number"] == "FT A/12"
 
-    # A status-only confirm is checked again. The printed-pair flag is what allows it.
+    # A status-only confirm is checked again. A credit note numbered as an invoice stays blocked.
     rejected = client.patch(
         f"/api/documents/{stored.id}",
         headers=mock_user_headers,

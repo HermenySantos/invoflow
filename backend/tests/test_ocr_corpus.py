@@ -25,7 +25,7 @@ from app.services.ocr import (
     tesseract_gap,
 )
 from app.services.ocr_extract import extract_fields
-from tests.corpus_layouts import IMAGE_LAYOUTS, TEXT_LAYOUTS, render_png, text_pdf
+from tests.corpus_layouts import IMAGE_LAYOUTS, REWORDED_VARIANTS, TEXT_LAYOUTS, render_png, text_pdf
 from tests.test_invoice_qr import MAINLAND, _png_bytes, _thermal_pdf, fatura_photo
 
 pytestmark = pytest.mark.ocr_corpus
@@ -224,7 +224,12 @@ def _suggestion_rows(cases: list[dict]) -> tuple[list[list[str]], int, int]:
     return rows, hits, cells
 
 
-def _write_report(production: list[dict], raster: list[dict], suggestions: list[dict]) -> None:
+def _write_report(
+    production: list[dict],
+    raster: list[dict],
+    suggestions: list[dict],
+    variants: list[dict],
+) -> None:
     summary, empty, hits, cells = _honest(production)
     before, before_hits, before_cells = _before_summary()
     raster_hits, raster_cells = _raster_matches(production, raster)
@@ -302,9 +307,11 @@ def _write_report(production: list[dict], raster: list[dict], suggestions: list[
         [
             "## Suggestions",
             "",
-            "Type and number suggestions are scored on their own. A blank suggestion is a counted cell when the layout must not suggest a type or a number. These cells are not confirmed document types or numbers.",
+            "This table is a regression set taken from the QA attack strings, not an accuracy measure. The layouts repeat those known strings, including the credit-note wordings and rendered images of the same strings. A hit means the suggester still returns the pair that string was given. It does not measure unseen receipts.",
             "",
-            "The two original PDFs stay in the field table above. The extra layouts are synthetic: fictional shop names, and NIF `123456002` printed as a placeholder. Text-layer rows are what the PDF text produces. Rendered rows are Tesseract `por+eng` on a DejaVu drawing of the same kind of wording, including the credit-note wordings from the QA gates.",
+            "A blank suggestion is a counted cell when the layout must not suggest a type or a number. These cells are not confirmed document types or numbers.",
+            "",
+            "The two original PDFs stay in the field table above. The extra layouts are synthetic: fictional shop names, and NIF `123456002` printed as a placeholder. Text-layer rows are what the PDF text produces. Rendered rows are Tesseract `por+eng` on a DejaVu drawing of the same kind of wording.",
             "",
             _markdown_table(
                 ["layout", "read", "type suggestion", "number suggestion"],
@@ -312,6 +319,22 @@ def _write_report(production: list[dict], raster: list[dict], suggestions: list[
             ),
             "",
             f"Suggestion cells: {suggestion_hits} of {suggestion_cells} ({_pct(suggestion_hits, suggestion_cells)}).",
+            "",
+        ]
+    )
+    variant_rows, variant_hits, variant_cells = _suggestion_rows(variants)
+    suggestion_text += "\n" + "\n".join(
+        [
+            "## Reworded variants",
+            "",
+            "These are the QA rewordings of the same credit-note ideas, read from the text layer. Expected values are the behaviour the gates asked for, written by hand. A miss is the suggester's real answer and stays a miss. This grid is not an accuracy measure for unseen receipts.",
+            "",
+            _markdown_table(
+                ["layout", "read", "type suggestion", "number suggestion"],
+                variant_rows,
+            ),
+            "",
+            f"Reworded variant cells: {variant_hits} of {variant_cells} ({_pct(variant_hits, variant_cells)}).",
             "",
         ]
     )
@@ -473,7 +496,25 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
             case["expected_number"],
         ), case
 
-    _write_report(production, raster, suggestions)
+    variants = []
+    for name, lines, expected_type, expected_number in REWORDED_VARIANTS:
+        raw = text_pdf(lines)
+        produced = asyncio.run(service.process_document(raw, "application/pdf"))
+        assert produced.backend == "tesseract", name
+        assert produced.error is None, (name, produced.error)
+        assert produced.document_type == "unclassified", name
+        variants.append(
+            {
+                "name": name,
+                "read": "text layer",
+                "expected_type": expected_type,
+                "expected_number": expected_number,
+                "actual_type": produced.suggested_type,
+                "actual_number": produced.suggested_invoice_number,
+            }
+        )
+
+    _write_report(production, raster, suggestions, variants)
     written = REPORT.read_text(encoding="utf-8")
     assert "10 of 11" in written
     assert "11 of 11" not in written
@@ -489,4 +530,13 @@ def test_real_ocr_corpus_writes_accuracy(monkeypatch):
     suggestion_cells = len(suggestions) * 2
     assert f"Suggestion cells: {suggestion_hits} of {suggestion_cells}" in written
     assert suggestion_hits == suggestion_cells
+    assert "not an accuracy measure" in written
+    assert "regression set" in written
+    variant_hits = sum(
+        (case["actual_type"] == case["expected_type"]) + (case["actual_number"] == case["expected_number"])
+        for case in variants
+    )
+    variant_cells = len(variants) * 2
+    assert variant_cells == len(REWORDED_VARIANTS) * 2
+    assert f"Reworded variant cells: {variant_hits} of {variant_cells}" in written
     assert "placeholder" in written

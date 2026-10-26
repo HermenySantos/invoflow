@@ -48,6 +48,8 @@ def _code(value) -> Optional[str]:
 
 # Rows under this heading are listed in exports and the projection, and left out of totals.
 EXCLUDED_HEADING = "Documentos por rever (não incluídos nos totais)"
+# Accepted printed pairs stay in the totals. They are listed so the mismatch is not silent.
+ACCEPTED_MISMATCH_HEADING = "Pares aceites com n.º diferente do tipo"
 
 
 def fiscal_mark(document) -> FiscalMark:
@@ -140,6 +142,19 @@ def _signed(document, mark: FiscalMark) -> Counted:
     if mark.document_type == "NC":
         net, vat, gross = -net, -vat, -gross
     return Counted(document=document, net=net, vat=vat, gross=gross)
+
+
+def accepted_series_mismatches(documents) -> list:
+    """Rows whose printed invoice-family pair was accepted despite the series.
+
+    They stay in the totals. Exports and the projection list them separately.
+    """
+    return [
+        document
+        for document in documents
+        if bool(getattr(document, "series_mismatch_accepted", False))
+        and getattr(document, "deleted_at", None) is None
+    ]
 
 
 def left_out(documents, library=None) -> list:

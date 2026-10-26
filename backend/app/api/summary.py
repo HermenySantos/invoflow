@@ -19,7 +19,7 @@ from app.core.security import get_current_user, CurrentUser
 from app.models.user import User
 from app.models.document import Document
 from app.models.vat_sales import VatSalesEntry
-from app.schemas.summary import SummaryResponse, CategoryBreakdown, ExcludedDocument
+from app.schemas.summary import AcceptedSeriesMismatch, SummaryResponse, CategoryBreakdown, ExcludedDocument
 from app.api.documents import get_or_create_user
 from app.services.categorization import (
     get_expense_category_label,
@@ -29,6 +29,8 @@ from app.services.categorization import (
     effective_deductible_pct,
 )
 from app.services.iva_adjust import (
+    ACCEPTED_MISMATCH_HEADING,
+    accepted_series_mismatches,
     contributions,
     credit_note_warnings,
     duplicate_loser_ids,
@@ -270,6 +272,17 @@ async def get_summary(
         ready_count=ready_count,
         excluded_count=len(excluded),
         excluded_documents=excluded,
+        series_mismatch_heading=ACCEPTED_MISMATCH_HEADING,
+        series_mismatch_documents=[
+            AcceptedSeriesMismatch(
+                id=str(document.id),
+                vendor_name=document.vendor_name,
+                invoice_number=document.invoice_number,
+                document_type=document.document_type,
+                status=document.status,
+            )
+            for document in accepted_series_mismatches(valid_docs)
+        ],
         needs_review_count=needs_review_count,
         processing_count=processing_count,
         failed_count=failed_count,

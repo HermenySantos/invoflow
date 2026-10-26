@@ -80,9 +80,11 @@ Tesseract `por+eng` on the first page of each unique PDF, with the QR payload no
 
 ## Suggestions
 
-Type and number suggestions are scored on their own. A blank suggestion is a counted cell when the layout must not suggest a type or a number. These cells are not confirmed document types or numbers.
+This table is a regression set taken from the QA attack strings, not an accuracy measure. The layouts repeat those known strings, including the credit-note wordings and rendered images of the same strings. A hit means the suggester still returns the pair that string was given. It does not measure unseen receipts.
 
-The two original PDFs stay in the field table above. The extra layouts are synthetic: fictional shop names, and NIF `123456002` printed as a placeholder. Text-layer rows are what the PDF text produces. Rendered rows are Tesseract `por+eng` on a DejaVu drawing of the same kind of wording, including the credit-note wordings from the QA gates.
+A blank suggestion is a counted cell when the layout must not suggest a type or a number. These cells are not confirmed document types or numbers.
+
+The two original PDFs stay in the field table above. The extra layouts are synthetic: fictional shop names, and NIF `123456002` printed as a placeholder. Text-layer rows are what the PDF text produces. Rendered rows are Tesseract `por+eng` on a DejaVu drawing of the same kind of wording.
 
 | layout | read | type suggestion | number suggestion |
 | --- | --- | --- | --- |
@@ -107,3 +109,32 @@ The two original PDFs stay in the field table above. The extra layouts are synth
 | render-nota-debito.png | tesseract | hit ND | hit ND D/2 |
 
 Suggestion cells: 38 of 38 (100.0%).
+
+## Reworded variants
+
+These are the QA rewordings of the same credit-note ideas, read from the text layer. Expected values are the behaviour the gates asked for, written by hand. A miss is the suggester's real answer and stays a miss. This grid is not an accuracy measure for unseen receipts.
+
+| layout | read | type suggestion | number suggestion |
+| --- | --- | --- | --- |
+| variant-n-dot-c-num.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-dot-c.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-space-dot-c.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-space-c.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-pipe-c.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-backslash-c.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-slash-credito.pdf | text layer | miss FT | miss FT A/12 |
+| variant-n-slash-cred.pdf | text layer | miss FT | miss FT A/12 |
+| variant-nota-cred.pdf | text layer | miss FT | miss FT A/12 |
+| variant-nota-de-cred.pdf | text layer | miss FT | miss FT A/12 |
+| variant-nota-hifen.pdf | text layer | miss FT | miss FT A/12 |
+| variant-doc-de-credito.pdf | text layer | miss FT | miss FT A/12 |
+| variant-documento-credito.pdf | text layer | miss FT | miss FT A/12 |
+| variant-credito-seu-favor.pdf | text layer | miss FT | miss FT A/12 |
+| variant-credito-v-favor.pdf | text layer | miss FT | miss FT A/12 |
+| variant-credito-seu-v-favor.pdf | text layer | miss FT | miss FT A/12 |
+| variant-credito-ao-cliente.pdf | text layer | miss FT | miss FT A/12 |
+| variant-credito-num.pdf | text layer | miss FT | miss FT A/12 |
+| variant-regularizacao.pdf | text layer | miss FT | miss FT A/12 |
+| variant-iva-nc.pdf | text layer | miss blank | miss blank |
+
+Reworded variant cells: 0 of 40 (0.0%).

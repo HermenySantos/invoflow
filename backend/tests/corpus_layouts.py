@@ -209,6 +209,49 @@ IMAGE_LAYOUTS: list[tuple[str, list[str], str | None, str | None]] = [
 ]
 
 
+def _reworded(name: str, signal: str, expected_type: str | None, expected_number: str | None):
+    """A Fatura line plus one QA rewording. Expected values are the asked behaviour."""
+    return (
+        name,
+        [
+            "Mercearia do Largo",
+            "NIF placeholder 123456002",
+            "Fatura n.º FT A/12 de 31-03-2026",
+            signal,
+            "Total: 12,30 EUR",
+        ],
+        expected_type,
+        expected_number,
+    )
+
+
+# QA rewordings of the credit-note attacks. Expected blank means the page should
+# not suggest Fatura. "IVA N/C" on a plain invoice should still suggest FT.
+# The score is whatever the suggester returns. Misses stay misses.
+REWORDED_VARIANTS: list[tuple[str, list[str], str | None, str | None]] = [
+    _reworded("variant-n-dot-c-num.pdf", "N.C. n.º 7", None, None),
+    _reworded("variant-n-dot-c.pdf", "N.C.", None, None),
+    _reworded("variant-n-space-dot-c.pdf", "N. C.", None, None),
+    _reworded("variant-n-space-c.pdf", "N C", None, None),
+    _reworded("variant-n-pipe-c.pdf", "N|C", None, None),
+    _reworded("variant-n-backslash-c.pdf", "N\\C", None, None),
+    _reworded("variant-n-slash-credito.pdf", "N/Crédito", None, None),
+    _reworded("variant-n-slash-cred.pdf", "N/Créd.", None, None),
+    _reworded("variant-nota-cred.pdf", "Nota Créd.", None, None),
+    _reworded("variant-nota-de-cred.pdf", "Nota de Cred.", None, None),
+    _reworded("variant-nota-hifen.pdf", "Nota-crédito", None, None),
+    _reworded("variant-doc-de-credito.pdf", "Doc. de crédito", None, None),
+    _reworded("variant-documento-credito.pdf", "Documento crédito", None, None),
+    _reworded("variant-credito-seu-favor.pdf", "Crédito a seu favor", None, None),
+    _reworded("variant-credito-v-favor.pdf", "Crédito a v/ favor", None, None),
+    _reworded("variant-credito-seu-v-favor.pdf", "Crédito a seu/v/ favor", None, None),
+    _reworded("variant-credito-ao-cliente.pdf", "Crédito ao cliente", None, None),
+    _reworded("variant-credito-num.pdf", "Crédito n.º 7", None, None),
+    _reworded("variant-regularizacao.pdf", "Regularização a favor do cliente", None, None),
+    _reworded("variant-iva-nc.pdf", "IVA N/C", "FT", "FT A/12"),
+]
+
+
 def _pdf_literal(text: str) -> bytes:
     raw = text.encode("cp1252", errors="replace")
     out = bytearray(b"(")

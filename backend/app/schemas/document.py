@@ -38,10 +38,12 @@ SERIES_OVERRIDE_WARNING = (
 )
 CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
-# A series token, then a boundary. A dot counts only when a letter or digit
-# follows it ("NC.A/5"). "Fr. 12" is an abbreviation, not a series.
+# The printed-pair flag may only cross codes inside this family.
+INVOICE_FAMILY = frozenset({"FT", "FS", "FR"})
+# A series token, then a boundary. A dot counts only when a letter follows
+# ("NC.A/5", "fr.a"). A dot then a digit is an abbreviation ("Fr.12", "Nc.12").
 _SERIES_TOKEN = re.compile(
-    r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z0-9]))",
+    r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))",
     re.IGNORECASE,
 )
 # "NCA/5": the code, one extra letter, then / . or -. Whitespace does not count,
@@ -50,9 +52,9 @@ _SERIES_GLUED_LETTER = re.compile(
     r"^(?P<code>FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])",
     re.IGNORECASE,
 )
-# "NC2026/5". A credit or debit code glued to a digit is a series.
-# "FS2026/12" and "FT2026/1" stay vendor numbering.
-_SERIES_GLUED_DIGIT = re.compile(r"^(?P<code>NC|ND)(?=\d)", re.IGNORECASE)
+# "NC2026/5". Glued digits are a series only when / . or - follows them.
+# "NC1" has no separator, so it stays vendor numbering.
+_SERIES_GLUED_DIGIT = re.compile(r"^(?P<code>NC|ND)\d+(?=[/.\-])", re.IGNORECASE)
 # "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
 _SERIES_SPLIT = re.compile(
     r"^(?P<c1>[A-Za-z])[\s./\-]+(?P<c2>[A-Za-z])(?=[\s/.\-]|$)",
@@ -146,7 +148,10 @@ def fold_series_text(value: Optional[str]) -> str:
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     """FT, FS, FR, NC or ND as a token at the start of a document number.
 
-    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'NC2026/5'.
+    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a', 'NC2026/5'.
+    A dot then a letter is a series. A dot then a digit is not ('Fr.12',
+    'Fs.12', 'Nc.12', 'nd.2026'). Glued NC/ND digits count only when a
+    separator follows ('NC2026/5'), so 'NC1' does not.
     Does not count: 'frete 12', 'fr001', 'FS2026/12', 'FT2026/1',
     'FRA2026/12', 'Fr. 12', 'FRA 2026/12'. A number with no recognisable
     prefix is allowed with any type.
@@ -201,6 +206,24 @@ def series_fields_changed(
     return False
 
 
+def series_override_allowed(
+    document_type: Optional[str],
+    invoice_number: Optional[str],
+    issued: Optional[tuple],
+) -> bool:
+    """The printed-pair flag applies only with no AT pair, and only inside {FT, FS, FR}.
+
+    A QR pair or an e-Fatura pair makes ``issued`` set, and the flag is ignored.
+    NC or ND on either side crosses the credit/debit boundary and is refused.
+    """
+    if issued is not None:
+        return False
+    if document_type not in INVOICE_FAMILY:
+        return False
+    prefix = invoice_series_prefix(invoice_number)
+    return prefix in INVOICE_FAMILY and prefix != document_type
+
+
 def keeps_at_issued_pair(
     merged_type: Optional[str],
     merged_number: Optional[str],
@@ -253,7 +276,9 @@ class DocumentUpdate(BaseModel):
     irs_sector: Optional[str] = Field(None, max_length=50)
     # 0-100; send null to go back to the category rule.
     deductible_pct_override: Optional[int] = Field(None, ge=0, le=100)
-    # Not stored. Lets a user keep a printed AT pair when the QR could not be read.
+    # Not a column. Honoured only when the row has no QR pair and no e-Fatura
+    # pair, and only for a mismatch inside {FT, FS, FR}. The stored flag is
+    # series_mismatch_accepted.
     accept_series_mismatch: bool = False
 
     @field_validator("net_amount", "vat_amount", "gross_amount", mode="before")
@@ -319,6 +344,7 @@ class DocumentResponse(BaseModel):
     irs_sector: Optional[str] = None
     deductible_pct: int = 0                         # what the estimate uses
     deductible_pct_override: Optional[int] = None   # user-set, if any
+    series_mismatch_accepted: bool = False
     
     # Validation warnings (populated per-request)
     validation_warnings: list[dict] = []

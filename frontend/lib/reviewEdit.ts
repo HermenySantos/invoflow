@@ -9,6 +9,7 @@ export interface ReviewEditFields {
 }
 
 const CONCRETE_TYPES = new Set(['FT', 'FS', 'FR', 'NC', 'ND']);
+const INVOICE_FAMILY = new Set(['FT', 'FS', 'FR']);
 
 /** Shown when a series prefix and the chosen type disagree. Same string as the API 422. */
 export const SERIES_MISMATCH_DETAIL = 'O n.º do documento não corresponde ao tipo indicado.';
@@ -19,10 +20,10 @@ export const SERIES_OVERRIDE_WARNING =
 
 export const PRINTED_PAIR_LABEL = 'Confirmo que este é o par impresso no documento.';
 
-// A dot counts only when a letter or digit follows ("NC.A/5"). "Fr. 12" does not.
-const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z0-9]))/i;
-// "NC2026/5". Purchase codes glued to digits are vendor numbering.
-const SERIES_GLUED_DIGIT = /^(NC|ND)(?=\d)/i;
+// A dot counts only when a letter follows ("NC.A/5", "fr.a"). "Fr.12" does not.
+const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))/i;
+// "NC2026/5". Glued digits count only when / . or - follows. "NC1" does not.
+const SERIES_GLUED_DIGIT = /^(NC|ND)\d+(?=[/.\-])/i;
 // "NCA/5": one extra letter, then / . or -. Whitespace does not count ("FRA 2026/12").
 const SERIES_GLUED_LETTER = /^(FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])/i;
 // "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
@@ -98,8 +99,9 @@ export function isConcreteDocumentType(code: string | null | undefined): boolean
 
 /**
  * FT, FS, FR, NC or ND as a token at the start of a document number.
- * 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5' and 'NC2026/5' count.
- * 'frete 12', 'fr001', 'FS2026/12', 'Fr. 12' and 'FRA 2026/12' do not.
+ * 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a' and 'NC2026/5' count.
+ * A dot then a digit does not ('Fr.12', 'Fs.12', 'Nc.12', 'nd.2026').
+ * 'NC1' does not. 'frete 12', 'fr001', 'FS2026/12', 'Fr. 12' and 'FRA 2026/12' do not.
  */
 export function invoiceSeriesPrefix(number: string | null | undefined): string | null {
   const text = foldSeriesText(number);
@@ -140,6 +142,30 @@ export function isAtIssuedPair(
 ): boolean {
   if (!atType || atNumber == null || atNumber === '') return false;
   return sameSeriesText(documentType, atType) && sameSeriesText(invoiceNumber, atNumber);
+}
+
+/** True when the row already has a QR pair or an e-Fatura pair. */
+export function hasAtPair(
+  atType: string | null | undefined,
+  atNumber: string | null | undefined,
+): boolean {
+  return Boolean(atType) || Boolean(atNumber);
+}
+
+/**
+ * The printed-pair checkbox. Only a row with no AT pair, and only when both
+ * the type and the number's series are inside {FT, FS, FR}.
+ */
+export function seriesOverrideAllowed(
+  documentType: string | null | undefined,
+  invoiceNumber: string | null | undefined,
+  atType?: string | null,
+  atNumber?: string | null,
+): boolean {
+  if (hasAtPair(atType, atNumber)) return false;
+  if (!documentType || !INVOICE_FAMILY.has(documentType)) return false;
+  const prefix = invoiceSeriesPrefix(invoiceNumber);
+  return prefix !== null && INVOICE_FAMILY.has(prefix) && prefix !== documentType;
 }
 
 /**
