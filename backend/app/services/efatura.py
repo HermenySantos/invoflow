@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
+from app.schemas.document import drop_accepted_series_mismatch
 from app.services.audit import log_auto_categorize, log_event
 from app.services.categorization import categorize_document
 
@@ -294,6 +295,7 @@ def _import_one(
         existing.fiscal_status = invoice.fiscal_status
         existing.payload_json = payload
         existing.updated_at = datetime.utcnow()
+        _retire_printed_pair(db, existing.document_id, invoice.document_type)
         return _Outcome("unchanged", source_key, existing.outcome, existing.document_id, warning)
 
     role = _role(invoice, taxpayer_nif)
@@ -357,6 +359,7 @@ def _import_one(
                 "fields_copied": {"old": None, "new": False},
             },
         )
+        drop_accepted_series_mismatch(document, invoice.document_type)
         return _Outcome("linked", source_key, outcome, document.id, warning)
 
     document = _new_purchase(db, user_id=user_id, source_key=source_key, invoice=invoice)
@@ -457,6 +460,16 @@ def _add_link(
     )
     db.add(link)
     return link
+
+
+def _retire_printed_pair(db: Session, document_id: Optional[str], arriving_type: Optional[str]) -> None:
+    """A refreshed e-Fatura snapshot is still an AT pair, so the printed flag ends."""
+    if not document_id:
+        return
+    document = db.get(Document, document_id)
+    if document is None:
+        return
+    drop_accepted_series_mismatch(document, arriving_type)
 
 
 def _source_key(invoice: EFaturaInvoice) -> str:

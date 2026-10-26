@@ -20,10 +20,14 @@ export const SERIES_OVERRIDE_WARNING =
 
 export const PRINTED_PAIR_LABEL = 'Confirmo que este é o par impresso no documento.';
 
-// A dot counts only when a letter follows ("NC.A/5", "fr.a"). "Fr.12" does not.
+// A dot counts when a letter follows ("NC.A/5", "fr.a"), in any case.
 const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))/i;
-// "NC2026/5". Glued digits count only when / . or - follows. "NC1" does not.
-const SERIES_GLUED_DIGIT = /^(NC|ND)\d+(?=[/.\-])/i;
+// A dot then a digit counts only when both code letters are uppercase
+// ("NC.2026/5", "FT.12"). "Fr.12", "Fs.12", "Nc.12" and "nd.2026" do not.
+const SERIES_DOT_DIGIT = /^(FT|FS|FR|NC|ND)\.(?=\d)/;
+// "NC2026/5" and "NC1/5" (separator). "NC2026" and "NC001" (two or more digits).
+// "NC1 2026" (one digit, then a space). A bare "NC1" does not.
+const SERIES_GLUED_DIGIT = /^(NC|ND)(?:\d+(?=[/.\-])|\d{2,}|\d(?=\s))/i;
 // "NCA/5": one extra letter, then / . or -. Whitespace does not count ("FRA 2026/12").
 const SERIES_GLUED_LETTER = /^(FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])/i;
 // "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
@@ -99,15 +103,19 @@ export function isConcreteDocumentType(code: string | null | undefined): boolean
 
 /**
  * FT, FS, FR, NC or ND as a token at the start of a document number.
- * 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a' and 'NC2026/5' count.
- * A dot then a digit does not ('Fr.12', 'Fs.12', 'Nc.12', 'nd.2026').
- * 'NC1' does not. 'frete 12', 'fr001', 'FS2026/12', 'Fr. 12' and 'FRA 2026/12' do not.
+ * 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a', 'NC2026/5',
+ * 'NC.2026/5', 'NC.1', 'FT.12', 'NC2026' and 'NC001' count.
+ * A dot then a digit counts only when both code letters are uppercase, so
+ * 'Fr.12', 'Fs.12', 'Nc.12' and 'nd.2026' do not. A bare 'NC1' does not.
+ * 'frete 12', 'fr001', 'FS2026/12', 'Fr. 12' and 'FRA 2026/12' do not.
  */
 export function invoiceSeriesPrefix(number: string | null | undefined): string | null {
   const text = foldSeriesText(number);
   if (!text) return null;
   const token = SERIES_TOKEN.exec(text);
   if (token) return token[1].toUpperCase();
+  const dotDigit = SERIES_DOT_DIGIT.exec(text);
+  if (dotDigit) return dotDigit[1].toUpperCase();
   const gluedDigit = SERIES_GLUED_DIGIT.exec(text);
   if (gluedDigit) return gluedDigit[1].toUpperCase();
   const glued = SERIES_GLUED_LETTER.exec(text);
@@ -144,12 +152,28 @@ export function isAtIssuedPair(
   return sameSeriesText(documentType, atType) && sameSeriesText(invoiceNumber, atNumber);
 }
 
-/** True when the row already has a QR pair or an e-Fatura pair. */
+/** True when the row already has a QR pair, an e-Fatura pair, or a stored AT type. */
 export function hasAtPair(
   atType: string | null | undefined,
   atNumber: string | null | undefined,
 ): boolean {
   return Boolean(atType) || Boolean(atNumber);
+}
+
+/**
+ * An AT type and the chosen type sit on opposite sides of the credit/invoice
+ * boundary (or NC differs from ND). FT, FS and FR may differ from each other.
+ */
+export function crossesCreditBoundary(
+  atType: string | null | undefined,
+  documentType: string | null | undefined,
+): boolean {
+  const left = (atType || '').trim().toUpperCase();
+  const right = (documentType || '').trim().toUpperCase();
+  if (!CONCRETE_TYPES.has(left) || !CONCRETE_TYPES.has(right)) return false;
+  if (left === right) return false;
+  if (INVOICE_FAMILY.has(left) && INVOICE_FAMILY.has(right)) return false;
+  return true;
 }
 
 /**
@@ -179,6 +203,9 @@ export function seriesBlocks(
   atNumber?: string | null,
 ): boolean {
   if (isAtIssuedPair(atType, atNumber, documentType, invoiceNumber)) return false;
+  // A linked scan or other AT pair cannot be retyped across credit/invoice,
+  // even when the new number has no series token.
+  if (crossesCreditBoundary(atType, documentType)) return true;
   return !seriesAgrees(documentType, invoiceNumber);
 }
 

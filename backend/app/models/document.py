@@ -62,7 +62,9 @@ class Document(Base):
     # (CIVA art. 21(1)(a)). None means use the category rule.
     deductible_pct_override = Column(Integer, nullable=True)
     # The user kept a printed FT/FS/FR pair whose series does not match the type.
-    # Only when the row has no QR pair and no e-Fatura pair. Listed in exports.
+    # Only when the row has no QR pair, no e-Fatura link and no stored AT type.
+    # Cleared when a QR or e-Fatura pair arrives. Downgrading migration 010
+    # drops this column; the audit log keeps the acceptance. Listed in exports.
     series_mismatch_accepted = Column(
         Boolean, nullable=False, default=False, server_default=sql_false()
     )

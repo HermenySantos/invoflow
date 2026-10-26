@@ -35,6 +35,7 @@ from app.schemas.document import (
     SERIES_OVERRIDE_WARNING,
     TYPE_REQUIRED_DETAIL,
     amounts_are_consistent,
+    crosses_credit_boundary,
     keeps_at_issued_pair,
     series_disagrees,
     series_fields_changed,
@@ -139,12 +140,6 @@ def _json_object(raw: Optional[str]) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def _row_is_efatura(document: Document, raw: Optional[dict]) -> bool:
-    if raw and raw.get("source") == "efatura":
-        return True
-    return "efatura" in (document.mime_type or "")
-
-
 def _efatura_issued(document: Document, db: Optional[Session]) -> Optional[tuple]:
     """Type and number from the e-Fatura snapshot linked to this row."""
     if db is None:
@@ -167,10 +162,21 @@ def _efatura_issued(document: Document, db: Optional[Session]) -> Optional[tuple
     return at_type, at_number
 
 
+def _column_at_type(document: Document) -> Optional[str]:
+    """Stored AT code, including a legacy row whose QR payload is gone."""
+    raw = getattr(document, "at_document_type", None)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
 def _at_issued(document: Document, db: Optional[Session]) -> Optional[tuple]:
     """(type, number) AT supplied, from a QR payload or an e-Fatura link.
 
-    A row with no payload has no issued pair, so a later edit is checked normally.
+    A scanned row linked to an e-Fatura record has a pair even though the
+    file itself is not an e-Fatura upload. A legacy column with no payload
+    and no link is not a pair; the column still blocks the printed-pair flag.
     """
     raw = _json_object(document.ocr_raw_response)
     qr = raw.get("qr") if raw else None
@@ -183,9 +189,7 @@ def _at_issued(document: Document, db: Optional[Session]) -> Optional[tuple]:
             at_type = (parsed.document_type or "").strip().upper() or None
             at_number = (parsed.invoice_number or "").strip() or None
             return at_type, at_number
-    if _row_is_efatura(document, raw):
-        return _efatura_issued(document, db)
-    return None
+    return _efatura_issued(document, db)
 
 
 def build_document_response(
@@ -199,6 +203,9 @@ def build_document_response(
         float(document.ocr_confidence) if document.ocr_confidence else None
     )
     issued = _at_issued(document, db)
+    at_typed = _column_at_type(document) is not None
+    issued_type = issued[0] if issued else None
+    issued_number = issued[1] if issued else None
 
     # Run validation
     warnings = validate_document(document)
@@ -210,7 +217,7 @@ def build_document_response(
         document.document_type, document.invoice_number, issued
     ):
         overridable = series_override_allowed(
-            document.document_type, document.invoice_number, issued
+            document.document_type, document.invoice_number, issued, at_typed=at_typed
         )
         warnings.append(
             {
@@ -235,8 +242,8 @@ def build_document_response(
         document_type=document.document_type or "unclassified",
         suggested_type=getattr(document, "suggested_type", None),
         suggested_invoice_number=getattr(document, "suggested_invoice_number", None),
-        at_document_type=getattr(document, "at_document_type", None),
-        at_invoice_number=issued[1] if issued else None,
+        at_document_type=issued_type or getattr(document, "at_document_type", None),
+        at_invoice_number=issued_number,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -579,19 +586,29 @@ async def update_document(
         accept_series_mismatch = bool(update_data.pop("accept_series_mismatch", False))
         confirming = update_data.get("status") in confirmed
         # A status-only confirm is checked too. An unchanged AT pair is exempt.
-        # The flag is honoured only when the row has no QR pair and no e-Fatura
-        # pair, and only for a mismatch inside {FT, FS, FR}.
+        # The flag is honoured only when the row has no QR pair, no e-Fatura
+        # pair and no stored AT type, and only inside {FT, FS, FR}.
         override_applied = False
         before_type = document.document_type
         before_number = document.invoice_number
         before_accepted = bool(document.series_mismatch_accepted)
         if series_fields_changed(document.document_type, document.invoice_number, update_data) or confirming:
             issued = _at_issued(document, db)
+            at_typed = _column_at_type(document) is not None
+            known_at = (issued[0] if issued and issued[0] else None) or _column_at_type(document)
+            # An AT pair, including a scanned row linked to e-Fatura, cannot
+            # be retyped across the credit/invoice boundary. An unprefixed
+            # number does not make that retype legal.
+            if known_at and crosses_credit_boundary(known_at, merged_type):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=SERIES_MISMATCH_DETAIL,
+                )
             still_at = keeps_at_issued_pair(merged_type, merged_number, issued)
             disagrees = series_disagrees(merged_type, merged_number) and not still_at
             if disagrees:
                 allowed = accept_series_mismatch and series_override_allowed(
-                    merged_type, merged_number, issued
+                    merged_type, merged_number, issued, at_typed=at_typed
                 )
                 if not allowed:
                     raise HTTPException(
