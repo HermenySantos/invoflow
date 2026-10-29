@@ -409,6 +409,13 @@ def test_identity_keeps_series_digits_and_inner_spaces():
     )
     assert "ft a01/5" in at_invoice_identity(nif, "FT", "FT A01/5")
     assert at_invoice_identity(nif, "FT", "FT 1 23/4").endswith("|ft 1 23/4")
+    assert at_invoice_identity("123456002", "FT", "FT2026/12") == at_invoice_identity(
+        "123 456 002", "FT", "FT 2026 / 12"
+    )
+    assert at_invoice_identity("123456002", "FT", "FT2026/12").endswith("|ft 2026/12")
+    assert at_invoice_identity("PTX1", "FT", "FT A01/5") != at_invoice_identity(
+        "X1", "FT", "FT A1/5"
+    )
 
 
 def _purchase(number: str, *, nif: str = "296123456", vat: str = "2.30") -> EFaturaInvoice:
@@ -482,6 +489,87 @@ def test_a_different_invoice_is_not_linked_to_a_scan_of_its_neighbour(db: Sessio
     links = {link.source_key: link.document_id for link in db.query(EfaturaLink)}
     assert links["doc:296123456:FT:ft a01/5"] == created.id
     assert links["doc:296123456:FT:ft a1/5"] == scan.id
+
+
+def test_glued_type_spaced_slash_and_spaced_nif_link_to_the_scan(db: Session):
+    user, _headers = _user(db)
+    scan = _scan(db, user)
+    scan.vendor_nif = "123 456 002"
+    scan.invoice_number = "FT2026/12"
+    db.commit()
+    result = import_purchases(
+        db,
+        user_id=user.id,
+        taxpayer_nif=TAXPAYER,
+        invoices=[_purchase("FT 2026 / 12", nif="123456002")],
+    )
+    db.commit()
+    assert result.linked_existing == (scan.id,)
+    assert result.created == ()
+
+
+def test_deleted_at_row_is_not_recreated_when_the_invoice_gains_an_atcud(
+    client: TestClient, db: Session
+):
+    """v16 R16 / the undelete repro. A new source key must not resurrect the row."""
+    user, headers = _user(db)
+    scan = _scan(db, user)
+    scan.invoice_number = "FT OTHER/1"
+    scan.vendor_nif = "500829993"
+    scan.net_amount = Decimal("8.13")
+    scan.vat_amount = Decimal("1.87")
+    scan.gross_amount = Decimal("10.00")
+    db.commit()
+    invoice = _purchase("FT UD/1", nif="500100144", vat="2.30")
+    created = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice])
+    db.commit()
+    at_id = created.created[0]
+    assert client.delete(f"/api/documents/{at_id}", headers=headers).status_code == 204
+    db.expire_all()
+    assert _counted_vat(db, user) == [Decimal("1.87")]
+    audits = db.query(AuditLog).count()
+
+    with_atcud = replace(invoice, atcud="UD-1")
+    for _cycle in range(3):
+        again = import_purchases(
+            db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[with_atcud]
+        )
+        db.commit()
+        db.expire_all()
+        assert again.created == ()
+        assert again.linked_existing == ()
+        assert again.unchanged == ("atcud:UD-1",)
+        assert db.get(Document, at_id).deleted_at is not None
+        assert [row.id for row in _visible(db, user)] == [scan.id]
+        assert _counted_vat(db, user) == [Decimal("1.87")]
+        assert db.query(EfaturaLink).filter(EfaturaLink.source_key == "atcud:UD-1").count() == 0
+        assert db.query(AuditLog).count() == audits
+
+
+def test_deleted_at_row_stays_deleted_for_both_source_keys(client: TestClient, db: Session):
+    """v14 S1 and X1. Four cycles of both keys stay unchanged, with nothing live and no new link."""
+    user, headers = _user(db)
+    invoice = _purchase("FT S1/1", nif="500100144", vat="2.30")
+    created = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice])
+    db.commit()
+    at_id = created.created[0]
+    assert client.delete(f"/api/documents/{at_id}", headers=headers).status_code == 204
+
+    doc_key = invoice
+    atcud_key = replace(invoice, atcud="S1")
+    for _cycle in range(4):
+        for item in (doc_key, atcud_key):
+            again = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[item])
+            db.commit()
+            db.expire_all()
+            assert again.created == ()
+            assert again.linked_existing == ()
+            assert again.unchanged
+            assert _visible(db, user) == []
+            assert _counted_vat(db, user) == []
+    assert db.get(Document, at_id).deleted_at is not None
+    assert db.query(Document).filter(Document.user_id == user.id).count() == 1
+    assert db.query(EfaturaLink).filter(EfaturaLink.source_key == "atcud:S1").count() == 0
 
 
 def test_sequence_leading_zeros_and_a_pt_nif_are_the_same_invoice(db: Session):

@@ -91,11 +91,20 @@ def _nif(value) -> str:
     text = _prepare(value)
     if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
         text = text[2:].lstrip()
+    return text.replace(" ", "")
+
+
+def _separate_type_token(text: str) -> str:
+    for token in ("ft", "fs", "fr", "nc", "nd"):
+        if len(text) > len(token) and text.startswith(token) and text[len(token)] not in " /":
+            return f"{token} {text[len(token):]}"
     return text
 
 
 def _number(value) -> str:
     text = _prepare(value)
+    text = re.sub(r"\s*/\s*", "/", text)
+    text = _separate_type_token(text)
     if "/" not in text:
         return text
     head, seq = text.rsplit("/", 1)

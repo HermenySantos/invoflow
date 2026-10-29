@@ -19,8 +19,9 @@ The table shapes below are frozen. This file does not import the live models.
 Downgrade does not remove restored rows. Running upgrade again changes nothing.
 
 The identity string matches at_invoice_identity(): NFKC, one space for each
-inner run, a leading PT stripped from the NIF only, and leading zeros stripped
-only from the sequence after the last slash.
+inner run, spaces next to a slash removed, a glued FT/FS/FR/NC/ND split from
+the series, all spaces removed from the NIF, a leading PT stripped from the
+NIF only, and leading zeros stripped only from the sequence after the last slash.
 
 """
 from __future__ import annotations
@@ -113,11 +114,20 @@ def _nif(value) -> str:
     text = _prepare(value)
     if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
         text = text[2:].lstrip()
+    return text.replace(" ", "")
+
+
+def _separate_type_token(text: str) -> str:
+    for token in ("ft", "fs", "fr", "nc", "nd"):
+        if len(text) > len(token) and text.startswith(token) and text[len(token)] not in " /":
+            return f"{token} {text[len(token):]}"
     return text
 
 
 def _number(value) -> str:
     text = _prepare(value)
+    text = re.sub(r"\s*/\s*", "/", text)
+    text = _separate_type_token(text)
     if "/" not in text:
         return text
     head, seq = text.rsplit("/", 1)

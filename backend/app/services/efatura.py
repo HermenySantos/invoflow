@@ -410,6 +410,14 @@ def _import_one(
         drop_accepted_series_mismatch(document, invoice.document_type)
         return _Outcome("linked", source_key, outcome, document.id, warning)
 
+    # A user-deleted AT row stays deleted, including when this invoice arrives
+    # under a new source key. This is the same identity check as _place_at_invoice.
+    identity = at_invoice_identity(
+        invoice.issuer_nif, _stored_type(invoice), invoice.invoice_number
+    )
+    if _identity_row(db, user_id, identity, live=False) is not None:
+        return _Outcome("unchanged", source_key, "unchanged")
+
     document = _new_purchase(db, user_id=user_id, source_key=source_key, invoice=invoice)
     _add_link(
         db,
@@ -435,21 +443,37 @@ def _prepare_identity_text(value: Optional[str]) -> str:
 
 
 def normalise_nif(value: Optional[str]) -> str:
-    """NIF identity. A leading PT is removed only when a digit or space follows it."""
+    """NIF identity. A leading PT is removed only when a digit or space follows it.
+
+    Every remaining space is removed. A NIF is digits, so ``123 456 002`` is
+    ``123456002``. Spaces in an invoice number are a different rule.
+    """
     text = _prepare_identity_text(value)
     if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
         text = text[2:].lstrip()
+    return text.replace(" ", "")
+
+
+def _separate_type_token(text: str) -> str:
+    """``FT2026/12`` is ``FT 2026/12`` when the glued prefix is a known AT code."""
+    for token in ("ft", "fs", "fr", "nc", "nd"):
+        if len(text) > len(token) and text.startswith(token) and text[len(token)] not in " /":
+            return f"{token} {text[len(token):]}"
     return text
 
 
 def normalise_invoice_number(value: Optional[str]) -> str:
     """Number identity.
 
-    Inner spaces stay, collapsed to one. Leading zeros are removed only from the
-    sequence after the last ``/``. The series and every other digit run stay.
-    ``FT A1/005`` and ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
+    Inner spaces stay, collapsed to one, except the spaces next to ``/``, which
+    are removed. A leading FT, FS, FR, NC or ND glued to the series is split off
+    with one space. Leading zeros are removed only from the sequence after the
+    last ``/``. The series and every other digit run stay. ``FT A1/005`` and
+    ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
     """
     text = _prepare_identity_text(value)
+    text = re.sub(r"\s*/\s*", "/", text)
+    text = _separate_type_token(text)
     if "/" not in text:
         return text
     head, seq = text.rsplit("/", 1)

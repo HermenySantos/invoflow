@@ -756,7 +756,9 @@ def _legacy_011() -> None:
         }
         assert rows["FT5/9"]["deleted_at"] is not None
         assert rows["FT 5/9"]["deleted_at"] is None
-        assert rows["FT5/9"]["at_invoice_identity"] == "123456002|FT|ft5/9"
+        # A glued type token is split, so both are the same identity. The
+        # partial index keeps the deleted row beside the live one.
+        assert rows["FT5/9"]["at_invoice_identity"] == "123456002|FT|ft 5/9"
         assert rows["FT 5/9"]["at_invoice_identity"] == "123456002|FT|ft 5/9"
         assert rows["FT A1/5"]["deleted_at"] is not None
         assert rows["FT A1/005"]["deleted_at"] is None
