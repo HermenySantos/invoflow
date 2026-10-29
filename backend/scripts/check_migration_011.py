@@ -20,7 +20,8 @@ from sqlalchemy.engine import make_url
 
 
 BACKEND = Path(__file__).resolve().parents[1]
-HEAD = "011_restore_orphaned_efatura"
+HEAD = "012_at_invoice_identity"
+STAMP = "011_restore_orphaned_efatura"
 BEFORE = "010_series_mismatch_accepted"
 
 
@@ -419,6 +420,89 @@ def _run(name: str, arg: str) -> None:
         raise SystemExit(completed.returncode)
 
 
+def _stamp() -> None:
+    """A database already at 011, without the identity column, upgrades to head."""
+    from alembic import command
+    from alembic.config import Config
+
+    url = os.environ["DATABASE_URL"]
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, STAMP)
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == STAMP
+        column = conn.execute(
+            text(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name = 'documents' AND column_name = 'at_invoice_identity'"
+            )
+        ).scalar()
+        assert column == 0
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == HEAD
+        column = conn.execute(
+            text(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name = 'documents' AND column_name = 'at_invoice_identity'"
+            )
+        ).scalar()
+        assert column == 1
+        index = conn.execute(
+            text(
+                "SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_documents_at_invoice_identity'"
+            )
+        ).scalar()
+        assert index == 1
+    engine.dispose()
+    print("migration 012 from stamped 011 passed")
+
+
+def _dupes() -> None:
+    """Duplicate AT rows left by an older 011 collapse to one live row."""
+    from alembic import command
+    from alembic.config import Config
+
+    url = os.environ["DATABASE_URL"]
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, STAMP)
+    engine = create_engine(url)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with engine.begin() as conn:
+        user_id = _insert_user(conn, now)
+        for _ in range(2):
+            _insert_document(
+                conn,
+                user_id=user_id,
+                now=now,
+                mime="application/vnd.invoflow.efatura+json",
+                number="FT 2026/101",
+                deleted=False,
+            )
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        live = conn.execute(
+            text(
+                "SELECT count(*) FROM documents WHERE deleted_at IS NULL AND invoice_number = 'FT 2026/101'"
+            )
+        ).scalar()
+        hidden = conn.execute(
+            text(
+                "SELECT count(*) FROM documents WHERE deleted_at IS NOT NULL AND invoice_number = 'FT 2026/101'"
+            )
+        ).scalar()
+        audits = conn.execute(
+            text("SELECT count(*) FROM audit_logs WHERE action = 'efatura_dedupe'")
+        ).scalar()
+        assert live == 1, live
+        assert hidden == 1, hidden
+        assert audits == 1, audits
+    engine.dispose()
+    print("migration 012 dedupe passed")
+
+
 def main() -> None:
     if "--child" in sys.argv:
         _child()
@@ -426,15 +510,25 @@ def main() -> None:
     if "--drift" in sys.argv:
         _drift()
         return
+    if "--stamp" in sys.argv:
+        _stamp()
+        return
+    if "--dupes" in sys.argv:
+        _dupes()
+        return
     name = f"mig011_{uuid.uuid4().hex[:8]}"
     drift = f"mig011d_{uuid.uuid4().hex[:8]}"
+    stamp = f"mig011s_{uuid.uuid4().hex[:8]}"
+    dupes = f"mig011u_{uuid.uuid4().hex[:8]}"
     try:
         _run(name, "--child")
         print("migration 011 passed")
         _run(drift, "--drift")
+        _run(stamp, "--stamp")
+        _run(dupes, "--dupes")
     finally:
-        _drop(name)
-        _drop(drift)
+        for database in (name, drift, stamp, dupes):
+            _drop(database)
 
 
 if __name__ == "__main__":

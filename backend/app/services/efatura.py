@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
@@ -17,7 +19,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Optional, Protocol, Sequence
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -230,21 +232,46 @@ def import_purchases(
     skipped: list[Skipped] = []
     warnings: list[str] = []
 
+    # Each invoice commits on its own. A deadlock retries that invoice and
+    # leaves the invoices already stored.
+    db.commit()
+
     for invoice in invoices:
-        try:
-            with db.begin_nested():
-                outcome = _import_one(db, user_id=user_id, taxpayer_nif=taxpayer_nif, invoice=invoice)
-                db.flush()
-        except IntegrityError:
-            link = (
-                db.query(EfaturaLink)
-                .filter(
-                    EfaturaLink.user_id == user_id,
-                    EfaturaLink.source_key == _source_key(invoice),
+        outcome = None
+        for attempt in range(2):
+            try:
+                with db.begin_nested():
+                    outcome = _import_one(
+                        db, user_id=user_id, taxpayer_nif=taxpayer_nif, invoice=invoice
+                    )
+                    db.flush()
+                break
+            except OperationalError as exc:
+                db.rollback()
+                if attempt == 0 and is_pg_deadlock(exc):
+                    logger.warning(
+                        "e-Fatura import deadlock on %s; retrying", _source_key(invoice)
+                    )
+                    continue
+                raise
+            except IntegrityError:
+                link = (
+                    db.query(EfaturaLink)
+                    .filter(
+                        EfaturaLink.user_id == user_id,
+                        EfaturaLink.source_key == _source_key(invoice),
+                    )
+                    .one_or_none()
                 )
-                .one_or_none()
-            )
-            unchanged.append(_source_key(invoice) if link is None else link.source_key)
+                unchanged.append(_source_key(invoice) if link is None else link.source_key)
+                outcome = None
+                break
+        # Test hook. A pull can hold its locks open so a concurrent delete overlaps it.
+        pause = os.environ.get("EFATURA_IMPORT_PAUSE_S")
+        if pause:
+            time.sleep(float(pause))
+        db.commit()
+        if outcome is None:
             continue
 
         if outcome.kind == "created" and outcome.document_id:
@@ -289,6 +316,14 @@ def _import_one(
         .filter(EfaturaLink.user_id == user_id, EfaturaLink.source_key == source_key)
         .one_or_none()
     )
+    if existing is not None:
+        # Documents first, then this link. Delete uses the same order.
+        _lock_documents_then_links(
+            db,
+            [existing.document_id] if existing.document_id else [],
+            [existing.id],
+        )
+        db.refresh(existing)
     payload = _payload(invoice)
     if existing is not None:
         warning = None
@@ -386,6 +421,31 @@ def _import_one(
     return _Outcome("created", source_key, "created", document.id)
 
 
+_IDENTITY_SPACE = re.compile(r"(?:\s|\u00a0|\u202f|\u2007|\u2009)+")
+
+
+def _squeeze_identity(value: Optional[str]) -> str:
+    """Drop spaces and NBSP, then case-fold. Used by the AT invoice identity."""
+    return _IDENTITY_SPACE.sub("", value or "").casefold()
+
+
+def normalise_nif(value: Optional[str]) -> str:
+    """NIF identity: no spaces, no leading PT country prefix."""
+    text = _squeeze_identity(value)
+    if text.startswith("pt"):
+        text = text[2:]
+    return text
+
+
+def normalise_invoice_number(value: Optional[str]) -> str:
+    """Number identity: no spaces, and no leading zeros inside a digit run.
+
+    ``FT 2026/012`` and ``FT 2026/12`` are the same number. A run of zeros stays ``0``.
+    """
+    text = _squeeze_identity(value)
+    return re.sub(r"\d+", lambda match: match.group(0).lstrip("0") or "0", text)
+
+
 def at_invoice_identity(
     vendor_nif: Optional[str],
     document_type: Optional[str],
@@ -393,12 +453,10 @@ def at_invoice_identity(
 ) -> str:
     """One key for an AT invoice, shared by a doc-key link and an ATCUD link.
 
-    The number is case-folded so ``FT A/123`` and ``ft a/123`` are the same invoice.
+    NIF, type and number are normalised the same way import matching compares them.
     """
-    nif = (vendor_nif or "").strip()
     kind = (document_type or "").strip().upper()
-    number = (invoice_number or "").strip().casefold()
-    return f"{nif}|{kind}|{number}"
+    return f"{normalise_nif(vendor_nif)}|{kind}|{normalise_invoice_number(invoice_number)}"
 
 
 def _stored_type(invoice: EFaturaInvoice) -> str:
@@ -415,15 +473,20 @@ def _new_purchase(
     invoice: EFaturaInvoice,
     review_from: Optional[Document] = None,
 ) -> Document:
-    expense_category, irs_sector = categorize_document(invoice.issuer_name, invoice.issuer_nif)
     status = "needs_review"
     deductible_pct_override = None
-    # A confirmed scan keeps its category and deductible review on the AT row.
+    # A confirmed scan keeps its category and deductible review. An unconfirmed
+    # scan does not: the AT row's category stays empty, matching migration 011.
     if review_from is not None and review_from.status in ("ready", "accountant_review"):
         status = review_from.status
         expense_category = review_from.expense_category
         irs_sector = review_from.irs_sector
         deductible_pct_override = review_from.deductible_pct_override
+    elif review_from is not None:
+        expense_category = None
+        irs_sector = None
+    else:
+        expense_category, irs_sector = categorize_document(invoice.issuer_name, invoice.issuer_nif)
     document = Document(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -631,7 +694,11 @@ def restore_orphaned_link(
     if previous is None or previous.deleted_at is None or not _is_scan(previous):
         return None
     role: PartyRole = link.role if link.role in ("acquirer", "issuer", "not_party") else "acquirer"
-    if _skip_reason(invoice, role) is not None:
+    reason = _skip_reason(invoice, role)
+    if reason == "cancelled":
+        logger.warning("e-Fatura link %s skipped; invoice is cancelled", link.id)
+        return None
+    if reason is not None:
         return None
     document, created_new = _place_at_invoice(db, link, invoice, previous)
     link.document_id = document.id
@@ -683,6 +750,23 @@ def detach_deleted_scan(db: Session, document: Document) -> None:
             source_key = link.source_key
     if moved_to is not None:
         _log_unlink(db, document, moved_to, source_key, "user")
+
+
+def is_pg_deadlock(exc: BaseException) -> bool:
+    """True for Postgres deadlock (40P01) and serialization failure (40001)."""
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+    if code in {"40P01", "40001"}:
+        return True
+    return type(orig).__name__ in {"DeadlockDetected", "SerializationFailure"}
+
+
+def _lock_documents_then_links(db: Session, document_ids, link_ids) -> None:
+    """Canonical lock order: document ids ascending, then link ids ascending."""
+    for document_id in sorted({document_id for document_id in document_ids if document_id}):
+        db.query(Document).filter(Document.id == document_id).with_for_update().one()
+    for link_id in sorted({link_id for link_id in link_ids if link_id}):
+        db.query(EfaturaLink).filter(EfaturaLink.id == link_id).with_for_update().one()
 
 
 def _source_key(invoice: EFaturaInvoice) -> str:
@@ -780,21 +864,22 @@ def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list
         if by_atcud:
             return by_atcud
 
-    number = invoice.invoice_number.strip().lower()
+    number = normalise_invoice_number(invoice.invoice_number)
+    incoming_nif = normalise_nif(invoice.issuer_nif)
     if number:
         by_number = [
             document
             for document in documents
-            if document.vendor_nif == invoice.issuer_nif
+            if normalise_nif(document.vendor_nif) == incoming_nif
             and document.invoice_number
-            and document.invoice_number.strip().lower() == number
+            and normalise_invoice_number(document.invoice_number) == number
         ]
         if by_number:
             return by_number
 
     matched: list[Document] = []
     for document in documents:
-        if document.vendor_nif != invoice.issuer_nif:
+        if normalise_nif(document.vendor_nif) != normalise_nif(invoice.issuer_nif):
             continue
         if document.invoice_number and document.invoice_number.strip():
             continue

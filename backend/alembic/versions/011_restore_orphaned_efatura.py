@@ -10,21 +10,23 @@ number) and points every link for that invoice at it. A doc-key link and an
 ATCUD link for the same invoice share that row. The scan stays deleted.
 
 A deleted e-Fatura document stays deleted. This revision does not recreate it.
+It does not add columns. The identity column and its unique index are migration
+012, so a database that already applied this revision id is not asked to add
+them again.
 
-The table shapes below are frozen. This file does not import the live
-models, so a later column on Document does not break this upgrade.
+The table shapes below are frozen. This file does not import the live models.
 
-Downgrade drops at_invoice_identity. Restored rows stay. Running upgrade
-again changes nothing.
+Downgrade does not remove restored rows. Running upgrade again changes nothing.
 
-The identity string is ``nif|TYPE|number`` with the number case-folded.
-It must match at_invoice_identity() in the e-Fatura service.
+The identity string drops spaces and NBSP, a leading PT on the NIF, and leading
+zeros in a digit run. It must match at_invoice_identity().
 
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -56,7 +58,6 @@ documents = sa.table(
     sa.column("invoice_number", sa.String),
     sa.column("document_type", sa.String),
     sa.column("at_document_type", sa.String),
-    sa.column("at_invoice_identity", sa.String),
     sa.column("document_date", sa.Date),
     sa.column("net_amount", sa.Numeric),
     sa.column("vat_amount", sa.Numeric),
@@ -98,10 +99,19 @@ audits = sa.table(
 )
 
 
+_IDENTITY_SPACE = re.compile(r"(?:\s|\u00a0|\u202f|\u2007|\u2009)+")
+
+
+def _squeeze(value) -> str:
+    return _IDENTITY_SPACE.sub("", value or "").casefold()
+
+
 def _identity(vendor_nif, document_type, invoice_number) -> str:
-    nif = (vendor_nif or "").strip()
+    nif = _squeeze(vendor_nif)
+    if nif.startswith("pt"):
+        nif = nif[2:]
     kind = (document_type or "").strip().upper()
-    number = (invoice_number or "").strip().casefold()
+    number = re.sub(r"\d+", lambda match: match.group(0).lstrip("0") or "0", _squeeze(invoice_number))
     return f"{nif}|{kind}|{number}"
 
 
@@ -158,6 +168,11 @@ def _rate(payload: dict):
     return None
 
 
+class _NotStored(Exception):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+
 def _load_invoice(payload_json: str) -> dict:
     payload = json.loads(payload_json)
     if not isinstance(payload, dict):
@@ -171,56 +186,15 @@ def _load_invoice(payload_json: str) -> dict:
         raise ValueError("issuer NIF is missing")
     if not isinstance(raw_type, str) or raw_type not in _CONCRETE:
         raise ValueError("document type is missing")
-    if payload.get("fiscal_status") == "cancelled" or raw_type == "NC":
-        raise ValueError("this invoice is not stored as an expense")
+    if payload.get("fiscal_status") == "cancelled":
+        raise _NotStored("cancelled")
+    if raw_type == "NC":
+        raise _NotStored("a credit note")
     return payload
 
 
 def upgrade() -> None:
-    op.add_column(
-        "documents",
-        sa.Column("at_invoice_identity", sa.String(length=200), nullable=True),
-    )
-    op.create_index(
-        "uq_documents_at_invoice_identity",
-        "documents",
-        ["user_id", "at_invoice_identity"],
-        unique=True,
-    )
-    bind = op.get_bind()
-    _backfill_identity(bind)
-    _restore_deleted_scans(bind)
-
-
-def _backfill_identity(bind) -> None:
-    rows = bind.execute(
-        sa.select(
-            documents.c.id,
-            documents.c.user_id,
-            documents.c.vendor_nif,
-            documents.c.document_type,
-            documents.c.invoice_number,
-            documents.c.mime_type,
-            documents.c.ocr_raw_response,
-            documents.c.created_at,
-        ).order_by(documents.c.created_at.asc())
-    ).mappings()
-    seen = set()
-    for row in rows:
-        if _is_scan(row["mime_type"], row["ocr_raw_response"]):
-            continue
-        if not row["vendor_nif"] or not row["invoice_number"] or not row["document_type"]:
-            continue
-        identity = _identity(row["vendor_nif"], row["document_type"], row["invoice_number"])
-        key = (row["user_id"], identity)
-        if key in seen:
-            continue
-        seen.add(key)
-        bind.execute(
-            documents.update()
-            .where(documents.c.id == row["id"])
-            .values(at_invoice_identity=identity)
-        )
+    _restore_deleted_scans(op.get_bind())
 
 
 def _restore_deleted_scans(bind) -> None:
@@ -258,6 +232,9 @@ def _restore_deleted_scans(bind) -> None:
             continue
         try:
             payload = _load_invoice(link["payload_json"])
+        except _NotStored as exc:
+            log.warning("e-Fatura link %s skipped; invoice is %s", link["id"], exc.reason)
+            continue
         except (TypeError, ValueError, json.JSONDecodeError):
             log.warning("e-Fatura link %s skipped; payload is not readable", link["id"])
             continue
@@ -268,14 +245,7 @@ def _restore_deleted_scans(bind) -> None:
         )
 
     for (user_id, identity), items in grouped.items():
-        target = bind.execute(
-            sa.select(documents.c.id)
-            .where(
-                documents.c.user_id == user_id,
-                documents.c.at_invoice_identity == identity,
-            )
-            .order_by(documents.c.created_at.asc())
-        ).scalar()
+        target = _existing_at_row(bind, user_id, identity)
         if target is None:
             target = _insert_at_row(bind, items, now)
         for item in items:
@@ -322,7 +292,6 @@ def _insert_at_row(bind, items, now) -> str:
             invoice_number=number,
             document_type=item["kind"],
             at_document_type=str(payload.get("document_type")),
-            at_invoice_identity=item["identity"],
             document_date=issue_date,
             net_amount=_money(payload.get("net_total")),
             vat_amount=_vat(payload),
@@ -363,7 +332,29 @@ def _audit(bind, item, target: str, now) -> None:
     )
 
 
+def _existing_at_row(bind, user_id: str, identity: str):
+    """An e-Fatura row for this invoice, including one that was deleted."""
+    rows = bind.execute(
+        sa.select(
+            documents.c.id,
+            documents.c.vendor_nif,
+            documents.c.document_type,
+            documents.c.invoice_number,
+            documents.c.mime_type,
+            documents.c.ocr_raw_response,
+            documents.c.created_at,
+        )
+        .where(documents.c.user_id == user_id)
+        .order_by(documents.c.created_at.asc())
+    ).mappings()
+    for row in rows:
+        if _is_scan(row["mime_type"], row["ocr_raw_response"]):
+            continue
+        if _identity(row["vendor_nif"], row["document_type"], row["invoice_number"]) == identity:
+            return row["id"]
+    return None
+
+
 def downgrade() -> None:
-    # Restored AT rows stay. Only the identity column goes away.
-    op.drop_index("uq_documents_at_invoice_identity", table_name="documents")
-    op.drop_column("documents", "at_invoice_identity")
+    # Data only. Restored rows stay, and this revision adds no column.
+    return

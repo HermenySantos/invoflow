@@ -47,4 +47,5 @@ def test_local_database_gets_new_nullable_columns(tmp_path):
     added = add_missing_nullable_columns(engine)
 
     assert "documents.deleted_at" in added
+    assert "documents.at_invoice_identity" not in added
     assert "deleted_at" in {c["name"] for c in inspect(engine).get_columns("documents")}

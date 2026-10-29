@@ -17,7 +17,7 @@ from app.models.document import Document
 from app.models.efatura import EfaturaLink
 from app.models.user import User
 from app.services.categorization import deductible_vat_split
-from app.services.efatura import import_purchases
+from app.services.efatura import at_invoice_identity, import_purchases
 from app.services.iva_adjust import contributions
 from tests.test_efatura_import import TAXPAYER, _fixture
 
@@ -315,3 +315,68 @@ def test_unreadable_link_payload_is_logged_and_skipped(db: Session, caplog):
     assert "not readable" in caplog.text
     assert _visible(db, user) == []
     assert db.get(EfaturaLink, link.id).document_id == scan.id
+
+
+def test_cancelled_link_is_logged_as_cancelled(db: Session, caplog):
+    user, _headers = _user(db)
+    scan = _scan(db, user)
+    invoice = _continente()
+    import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice])
+    db.commit()
+    link = db.query(EfaturaLink).filter(EfaturaLink.document_id == scan.id).one()
+    payload = json.loads(link.payload_json)
+    payload["fiscal_status"] = "cancelled"
+    link.payload_json = json.dumps(payload)
+    scan.deleted_at = datetime.utcnow()
+    db.commit()
+
+    from app.services.efatura import detach_deleted_scan
+
+    with caplog.at_level(logging.WARNING):
+        detach_deleted_scan(db, scan)
+    assert "invoice is cancelled" in caplog.text
+    assert "not readable" not in caplog.text
+    assert _visible(db, user) == []
+
+
+def test_unconfirmed_scan_restores_without_a_category(client: TestClient, db: Session):
+    user, headers = _user(db)
+    scan = _scan(db, user)
+    scan.status = "needs_review"
+    scan.expense_category = "food"
+    db.commit()
+    import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[_continente()])
+    db.commit()
+    assert client.delete(f"/api/documents/{scan.id}", headers=headers).status_code == 204
+    db.expire_all()
+    at_row = _visible(db, user)[0]
+    assert at_row.status == "needs_review"
+    assert at_row.expense_category is None
+    assert at_row.irs_sector is None
+
+
+def test_editing_an_at_row_recomputes_its_identity(client: TestClient, db: Session):
+    user, headers = _user(db)
+    created = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[_continente()])
+    db.commit()
+    at_id = created.created[0]
+    before = at_invoice_identity("500100144", "FT", "FT A/123")
+    assert db.get(Document, at_id).at_invoice_identity == before
+
+    updated = client.patch(
+        f"/api/documents/{at_id}",
+        headers=headers,
+        json={"invoice_number": "FT A/124"},
+    )
+    assert updated.status_code == 200, updated.text
+    db.expire_all()
+    assert db.get(Document, at_id).at_invoice_identity == at_invoice_identity(
+        "500100144", "FT", "FT A/124"
+    )
+
+
+def test_identity_ignores_spacing_prefix_and_leading_zeros():
+    spaced = at_invoice_identity("PT 500100144", "FT", "FT  2026/012")
+    plain = at_invoice_identity("500100144", "ft", "FT\u00a02026/12")
+    assert spaced == plain
+    assert spaced.endswith("|ft2026/12")
