@@ -115,7 +115,7 @@ def _child() -> None:
         ).scalar()
         assert stored is False
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "010_series_mismatch_accepted"
+        assert version == "011_restore_orphaned_efatura"
     command.downgrade(cfg, "009_unclassified_backfill")
     with engine.connect() as conn:
         assert _column(conn) is None
@@ -128,7 +128,7 @@ def _child() -> None:
             {"id": document_id},
         ).scalar()
         assert stored is False
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "010_series_mismatch_accepted"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "011_restore_orphaned_efatura"
     engine.dispose()
     print("migration 010 child passed")
 

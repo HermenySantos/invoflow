@@ -43,6 +43,7 @@ from app.schemas.document import (
 )
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
+from app.services.efatura import detach_deleted_scan
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
 from app.services.audit import (
@@ -691,6 +692,9 @@ async def delete_document(
     try:
         log_document_delete(db, document_id=document.id, user_id=user.id)
         document.deleted_at = datetime.utcnow()
+        # The scan leaves the totals. An e-Fatura invoice that was only
+        # represented by this row is stored again as its own AT document.
+        detach_deleted_scan(db, document)
         db.commit()
 
     except SQLAlchemyError as e:

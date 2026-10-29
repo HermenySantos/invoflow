@@ -80,6 +80,8 @@ jobs:
         run: python scripts/check_migration_009.py
       - name: Migration 010 adds the accepted-mismatch flag on Postgres 16
         run: python scripts/check_migration_010.py
+      - name: Migration 011 restores an orphaned e-Fatura invoice on Postgres 16
+        run: python scripts/check_migration_011.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base

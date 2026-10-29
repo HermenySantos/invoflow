@@ -296,6 +296,9 @@ def _import_one(
         existing.payload_json = payload
         existing.updated_at = datetime.utcnow()
         _retire_printed_pair(db, existing.document_id, invoice.document_type)
+        restored = restore_orphaned_link(db, existing, invoice, audit_source="efatura")
+        if restored is not None:
+            return _Outcome("created", source_key, "created", restored.id)
         return _Outcome("unchanged", source_key, existing.outcome, existing.document_id, warning)
 
     role = _role(invoice, taxpayer_nif)
@@ -472,6 +475,119 @@ def _retire_printed_pair(db: Session, document_id: Optional[str], arriving_type:
     drop_accepted_series_mismatch(document, arriving_type)
 
 
+_RESTORABLE_OUTCOMES = frozenset({"linked_existing", "linked_hidden", "created"})
+
+
+def _is_scan(document: Document) -> bool:
+    """A photo or PDF, not the AT row this importer stores."""
+    if (document.mime_type or "").startswith("application/vnd.invoflow.efatura"):
+        return False
+    raw = document.ocr_raw_response or ""
+    return '"source":"efatura"' not in raw and '"source": "efatura"' not in raw
+
+
+def _visible_link_target(db: Session, link: EfaturaLink) -> Optional[Document]:
+    if not link.document_id:
+        return None
+    document = db.get(Document, link.document_id)
+    if document is None or document.deleted_at is not None:
+        return None
+    return document
+
+
+def restore_orphaned_link(
+    db: Session,
+    link: EfaturaLink,
+    invoice: EFaturaInvoice,
+    *,
+    audit_source: str,
+) -> Optional[Document]:
+    """Store the AT invoice when its link no longer points at a visible row.
+
+    A live scan and a live AT row are left alone, so a repeat import does not
+    add a second copy. A deleted scan stays deleted. The new row is the normal
+    e-Fatura document, and the link moves onto it.
+    """
+    if _visible_link_target(db, link) is not None:
+        return None
+    if link.outcome not in _RESTORABLE_OUTCOMES:
+        return None
+    role: PartyRole = link.role if link.role in ("acquirer", "issuer", "not_party") else "acquirer"
+    if _skip_reason(invoice, role) is not None:
+        return None
+    previous = db.get(Document, link.document_id) if link.document_id else None
+    document = _new_purchase(
+        db,
+        user_id=link.user_id,
+        source_key=link.source_key,
+        invoice=invoice,
+    )
+    link.document_id = document.id
+    link.outcome = "created"
+    link.warning = None
+    link.updated_at = datetime.utcnow()
+    if previous is not None and _is_scan(previous):
+        log_event(
+            db,
+            entity_type="document",
+            entity_id=previous.id,
+            user_id=previous.user_id,
+            action="efatura_unlink",
+            source=audit_source,
+            changes={
+                "efatura_document_id": {"old": previous.id, "new": document.id},
+                "source_key": {"old": None, "new": link.source_key},
+                "invoice_number": {"old": previous.invoice_number, "new": document.invoice_number},
+            },
+        )
+    return document
+
+
+def detach_deleted_scan(db: Session, document: Document) -> None:
+    """Deleting a linked scan must not drop the AT invoice from the totals."""
+    if document.deleted_at is None or not _is_scan(document):
+        return
+    links = (
+        db.query(EfaturaLink)
+        .filter(
+            EfaturaLink.user_id == document.user_id,
+            EfaturaLink.document_id == document.id,
+        )
+        .all()
+    )
+    for link in links:
+        try:
+            invoice = _parse_invoice(json.loads(link.payload_json))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        restore_orphaned_link(db, link, invoice, audit_source="user")
+
+
+def repair_orphaned_efatura_links(db: Session) -> int:
+    """Repair dev rows whose e-Fatura link still cites a deleted scan.
+
+    Safe to run twice. A deleted AT document is left deleted; a later import
+    restores that case. Returns how many invoices were stored.
+    """
+    restored = 0
+    links = db.query(EfaturaLink).all()
+    for link in links:
+        if link.outcome not in ("linked_existing", "linked_hidden"):
+            continue
+        previous = db.get(Document, link.document_id) if link.document_id else None
+        if previous is not None and previous.deleted_at is None:
+            continue
+        if previous is not None and not _is_scan(previous):
+            continue
+        try:
+            invoice = _parse_invoice(json.loads(link.payload_json))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if restore_orphaned_link(db, link, invoice, audit_source="efatura") is not None:
+            restored += 1
+    return restored
+
+
 def _source_key(invoice: EFaturaInvoice) -> str:
     if invoice.atcud:
         return f"atcud:{invoice.atcud}"
@@ -557,7 +673,9 @@ def _type_compatible(document: Document, invoice: EFaturaInvoice) -> bool:
 def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list[Document]:
     documents = [
         document
-        for document in db.query(Document).filter(Document.user_id == user_id).all()
+        for document in db.query(Document)
+        .filter(Document.user_id == user_id, Document.deleted_at.is_(None))
+        .all()
         if _type_compatible(document, invoice)
     ]
     if invoice.atcud:
