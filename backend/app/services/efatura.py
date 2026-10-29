@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import time
+import unicodedata
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, Optional, Protocol, Sequence
+from typing import Callable, Literal, Optional, Protocol, Sequence
 
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
@@ -204,10 +203,13 @@ def import_purchases(
     user_id: str,
     taxpayer_nif: str,
     invoices: Sequence[EFaturaInvoice],
+    after_invoice: Optional[Callable[[EFaturaInvoice], None]] = None,
 ) -> ImportResult:
     """Store acquirer purchases on Document and record every row on a link.
 
-    The caller commits. This function flushes and uses a savepoint per invoice.
+    The caller commits. This function does not. Each invoice runs in a savepoint,
+    so a failed invoice does not undo the caller's uncommitted work or the other
+    invoices. ``after_invoice`` is a test hook, called inside the savepoint.
     """
     if not _NIF.fullmatch(taxpayer_nif or ""):
         raise ValueError("taxpayer_nif must be 9 digits")
@@ -232,12 +234,9 @@ def import_purchases(
     skipped: list[Skipped] = []
     warnings: list[str] = []
 
-    # Each invoice commits on its own. A deadlock retries that invoice and
-    # leaves the invoices already stored.
-    db.commit()
-
     for invoice in invoices:
         outcome = None
+        key = _source_key(invoice)
         for attempt in range(2):
             try:
                 with db.begin_nested():
@@ -245,32 +244,33 @@ def import_purchases(
                         db, user_id=user_id, taxpayer_nif=taxpayer_nif, invoice=invoice
                     )
                     db.flush()
+                    if after_invoice is not None:
+                        after_invoice(invoice)
                 break
             except OperationalError as exc:
-                db.rollback()
-                if attempt == 0 and is_pg_deadlock(exc):
-                    logger.warning(
-                        "e-Fatura import deadlock on %s; retrying", _source_key(invoice)
-                    )
+                if not is_pg_deadlock(exc):
+                    raise
+                logger.warning("e-Fatura import deadlock on %s; retrying", key)
+                if attempt == 0:
                     continue
-                raise
+                logger.warning("e-Fatura import deadlock on %s; recorded as failed", key)
+                warning = "A importação deste documento falhou após duas tentativas."
+                skipped.append(Skipped(key, "deadlock", warning))
+                warnings.append(f"{key}: {warning}")
+                outcome = None
+                break
             except IntegrityError:
                 link = (
                     db.query(EfaturaLink)
                     .filter(
                         EfaturaLink.user_id == user_id,
-                        EfaturaLink.source_key == _source_key(invoice),
+                        EfaturaLink.source_key == key,
                     )
                     .one_or_none()
                 )
-                unchanged.append(_source_key(invoice) if link is None else link.source_key)
+                unchanged.append(key if link is None else link.source_key)
                 outcome = None
                 break
-        # Test hook. A pull can hold its locks open so a concurrent delete overlaps it.
-        pause = os.environ.get("EFATURA_IMPORT_PAUSE_S")
-        if pause:
-            time.sleep(float(pause))
-        db.commit()
         if outcome is None:
             continue
 
@@ -375,6 +375,10 @@ def _import_one(
         )
         return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
+    if len(matches) == 1 and not _matched_same_invoice(matches[0], invoice):
+        # A loose match must not swallow a different invoice. Store it instead.
+        matches = []
+
     if len(matches) == 1:
         document = matches[0]
         hidden = document.deleted_at is not None
@@ -421,29 +425,37 @@ def _import_one(
     return _Outcome("created", source_key, "created", document.id)
 
 
-_IDENTITY_SPACE = re.compile(r"(?:\s|\u00a0|\u202f|\u2007|\u2009)+")
-
-
-def _squeeze_identity(value: Optional[str]) -> str:
-    """Drop spaces and NBSP, then case-fold. Used by the AT invoice identity."""
-    return _IDENTITY_SPACE.sub("", value or "").casefold()
+def _prepare_identity_text(value: Optional[str]) -> str:
+    """NFKC, NBSP becomes a space, outer trim, inner whitespace runs become one space."""
+    text = unicodedata.normalize("NFKC", value or "")
+    text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ")
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold()
 
 
 def normalise_nif(value: Optional[str]) -> str:
-    """NIF identity: no spaces, no leading PT country prefix."""
-    text = _squeeze_identity(value)
-    if text.startswith("pt"):
-        text = text[2:]
+    """NIF identity. A leading PT is removed only when a digit or space follows it."""
+    text = _prepare_identity_text(value)
+    if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
+        text = text[2:].lstrip()
     return text
 
 
 def normalise_invoice_number(value: Optional[str]) -> str:
-    """Number identity: no spaces, and no leading zeros inside a digit run.
+    """Number identity.
 
-    ``FT 2026/012`` and ``FT 2026/12`` are the same number. A run of zeros stays ``0``.
+    Inner spaces stay, collapsed to one. Leading zeros are removed only from the
+    sequence after the last ``/``. The series and every other digit run stay.
+    ``FT A1/005`` and ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
     """
-    text = _squeeze_identity(value)
-    return re.sub(r"\d+", lambda match: match.group(0).lstrip("0") or "0", text)
+    text = _prepare_identity_text(value)
+    if "/" not in text:
+        return text
+    head, seq = text.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return f"{head}/{seq}"
 
 
 def at_invoice_identity(
@@ -849,6 +861,24 @@ def _type_compatible(document: Document, invoice: EFaturaInvoice) -> bool:
     if stored in _INVOICE_FAMILY and incoming in _INVOICE_FAMILY:
         return True
     return stored == incoming
+
+
+def _matched_same_invoice(document: Document, invoice: EFaturaInvoice) -> bool:
+    """A numbered row links only when it is this invoice.
+
+    An unnumbered scan matched by date and amount stays a link. ATCUD is the
+    same invoice even when the printed number differs. A different number is
+    stored on its own row instead of being reported as a link and dropped.
+    """
+    if invoice.atcud and _qr_atcud(document) == invoice.atcud:
+        return True
+    if not (document.invoice_number or "").strip():
+        return True
+    return (
+        normalise_nif(document.vendor_nif) == normalise_nif(invoice.issuer_nif)
+        and normalise_invoice_number(document.invoice_number)
+        == normalise_invoice_number(invoice.invoice_number)
+    )
 
 
 def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list[Document]:

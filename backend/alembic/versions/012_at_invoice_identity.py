@@ -6,8 +6,12 @@ Create Date: 2026-10-29
 
 Adds at_invoice_identity and its unique index when they are missing, so a
 database that already has the column (an older draft of 011, or dev startup)
-still upgrades. Duplicate live AT rows for the same invoice are soft-deleted
-down to one. The kept row is the oldest. Each removed row gets an audit entry.
+still upgrades. Any existing unique index is dropped first, because that draft
+indexed deleted rows too. Identity is recomputed on every AT row, including
+deleted ones. Duplicate live rows are soft-deleted down to one: a confirmed
+row, then one a user edited, then one with links, then the latest update.
+Links on the removed rows move to the kept row. Each removed row gets an audit
+entry. The new unique index ignores deleted rows.
 
 The shapes below are frozen and do not import the live models.
 
@@ -21,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 import uuid
 from datetime import datetime
 
@@ -34,20 +39,30 @@ branch_labels = None
 depends_on = None
 
 log = logging.getLogger("alembic.runtime.migration")
-_IDENTITY_SPACE = re.compile(r"(?:\s|\u00a0|\u202f|\u2007|\u2009)+")
+_CONFIRMED = {"ready", "accountant_review"}
 
 documents = sa.table(
     "documents",
     sa.column("id", sa.String),
     sa.column("user_id", sa.String),
+    sa.column("status", sa.String),
     sa.column("vendor_nif", sa.String),
     sa.column("invoice_number", sa.String),
     sa.column("document_type", sa.String),
     sa.column("mime_type", sa.String),
     sa.column("ocr_raw_response", sa.Text),
+    sa.column("review_notes", sa.Text),
+    sa.column("deductible_pct_override", sa.Integer),
     sa.column("at_invoice_identity", sa.String),
     sa.column("deleted_at", sa.DateTime),
     sa.column("created_at", sa.DateTime),
+    sa.column("updated_at", sa.DateTime),
+)
+
+links = sa.table(
+    "efatura_links",
+    sa.column("id", sa.String),
+    sa.column("document_id", sa.String),
     sa.column("updated_at", sa.DateTime),
 )
 
@@ -64,17 +79,34 @@ audits = sa.table(
 )
 
 
-def _squeeze(value) -> str:
-    return _IDENTITY_SPACE.sub("", value or "").casefold()
+def _prepare(value) -> str:
+    text = unicodedata.normalize("NFKC", value or "")
+    text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ")
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold()
+
+
+def _nif(value) -> str:
+    text = _prepare(value)
+    if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
+        text = text[2:].lstrip()
+    return text
+
+
+def _number(value) -> str:
+    text = _prepare(value)
+    if "/" not in text:
+        return text
+    head, seq = text.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return f"{head}/{seq}"
 
 
 def _identity(vendor_nif, document_type, invoice_number) -> str:
-    nif = _squeeze(vendor_nif)
-    if nif.startswith("pt"):
-        nif = nif[2:]
     kind = (document_type or "").strip().upper()
-    number = re.sub(r"\d+", lambda match: match.group(0).lstrip("0") or "0", _squeeze(invoice_number))
-    return f"{nif}|{kind}|{number}"
+    return f"{_nif(vendor_nif)}|{kind}|{_number(invoice_number)}"
 
 
 def _is_scan(mime, raw) -> bool:
@@ -92,16 +124,20 @@ def upgrade() -> None:
             "documents",
             sa.Column("at_invoice_identity", sa.String(length=200), nullable=True),
         )
+    indexes = {index["name"] for index in sa.inspect(bind).get_indexes("documents")}
+    if "uq_documents_at_invoice_identity" in indexes:
+        # An older 011 created this index without the deleted_at predicate.
+        op.drop_index("uq_documents_at_invoice_identity", table_name="documents")
     removed = _dedupe(bind)
     log.info("e-Fatura identity dedupe soft-deleted %s duplicate row(s)", removed)
-    indexes = {index["name"] for index in sa.inspect(bind).get_indexes("documents")}
-    if "uq_documents_at_invoice_identity" not in indexes:
-        op.create_index(
-            "uq_documents_at_invoice_identity",
-            "documents",
-            ["user_id", "at_invoice_identity"],
-            unique=True,
-        )
+    op.create_index(
+        "uq_documents_at_invoice_identity",
+        "documents",
+        ["user_id", "at_invoice_identity"],
+        unique=True,
+        postgresql_where=sa.text("deleted_at IS NULL"),
+        sqlite_where=sa.text("deleted_at IS NULL"),
+    )
 
 
 def _dedupe(bind) -> int:
@@ -111,16 +147,32 @@ def _dedupe(bind) -> int:
             sa.select(
                 documents.c.id,
                 documents.c.user_id,
+                documents.c.status,
                 documents.c.vendor_nif,
                 documents.c.document_type,
                 documents.c.invoice_number,
                 documents.c.mime_type,
                 documents.c.ocr_raw_response,
+                documents.c.review_notes,
+                documents.c.deductible_pct_override,
                 documents.c.deleted_at,
                 documents.c.created_at,
+                documents.c.updated_at,
             ).order_by(documents.c.created_at.asc(), documents.c.id.asc())
         ).mappings()
     )
+    edited = {
+        entity_id
+        for entity_id in bind.execute(
+            sa.select(audits.c.entity_id).where(audits.c.source == "user")
+        ).scalars()
+    }
+    link_counts: dict[str, int] = {}
+    for document_id in bind.execute(
+        sa.select(links.c.document_id).where(links.c.document_id.is_not(None))
+    ).scalars():
+        link_counts[document_id] = link_counts.get(document_id, 0) + 1
+
     groups: dict[tuple, list] = {}
     for row in rows:
         if _is_scan(row["mime_type"], row["ocr_raw_response"]):
@@ -128,22 +180,42 @@ def _dedupe(bind) -> int:
         if not row["vendor_nif"] or not row["invoice_number"] or not row["document_type"]:
             continue
         identity = _identity(row["vendor_nif"], row["document_type"], row["invoice_number"])
-        groups.setdefault((row["user_id"], identity), []).append(row)
+        groups.setdefault((row["user_id"], identity), []).append((identity, row))
 
     removed = 0
     for (_user_id, identity), group in groups.items():
-        live = [row for row in group if row["deleted_at"] is None]
-        keeper = live[0] if live else group[0]
-        bind.execute(
-            documents.update()
-            .where(documents.c.id == keeper["id"])
-            .values(at_invoice_identity=identity, updated_at=now)
-        )
-        for extra in live[1:]:
+        live = [row for _ident, row in group if row["deleted_at"] is None]
+
+        def rank(row):
+            confirmed = 1 if (row["status"] or "") in _CONFIRMED else 0
+            has_edit = 1 if (
+                row["id"] in edited
+                or row["review_notes"]
+                or row["deductible_pct_override"] is not None
+            ) else 0
+            has_links = 1 if link_counts.get(row["id"]) else 0
+            updated = row["updated_at"] or datetime.min
+            return (confirmed, has_edit, has_links, updated)
+
+        keeper = max(live, key=rank) if live else group[0][1]
+        for _ident, row in group:
+            bind.execute(
+                documents.update()
+                .where(documents.c.id == row["id"])
+                .values(at_invoice_identity=identity)
+            )
+        for extra in live:
+            if extra["id"] == keeper["id"]:
+                continue
             bind.execute(
                 documents.update()
                 .where(documents.c.id == extra["id"])
-                .values(deleted_at=now, at_invoice_identity=None, updated_at=now)
+                .values(deleted_at=now, updated_at=now)
+            )
+            bind.execute(
+                links.update()
+                .where(links.c.document_id == extra["id"])
+                .values(document_id=keeper["id"], updated_at=now)
             )
             bind.execute(
                 audits.insert().values(

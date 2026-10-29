@@ -18,8 +18,9 @@ The table shapes below are frozen. This file does not import the live models.
 
 Downgrade does not remove restored rows. Running upgrade again changes nothing.
 
-The identity string drops spaces and NBSP, a leading PT on the NIF, and leading
-zeros in a digit run. It must match at_invoice_identity().
+The identity string matches at_invoice_identity(): NFKC, one space for each
+inner run, a leading PT stripped from the NIF only, and leading zeros stripped
+only from the sequence after the last slash.
 
 """
 from __future__ import annotations
@@ -27,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -99,20 +101,34 @@ audits = sa.table(
 )
 
 
-_IDENTITY_SPACE = re.compile(r"(?:\s|\u00a0|\u202f|\u2007|\u2009)+")
+def _prepare(value) -> str:
+    text = unicodedata.normalize("NFKC", value or "")
+    text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ")
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold()
 
 
-def _squeeze(value) -> str:
-    return _IDENTITY_SPACE.sub("", value or "").casefold()
+def _nif(value) -> str:
+    text = _prepare(value)
+    if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
+        text = text[2:].lstrip()
+    return text
+
+
+def _number(value) -> str:
+    text = _prepare(value)
+    if "/" not in text:
+        return text
+    head, seq = text.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return f"{head}/{seq}"
 
 
 def _identity(vendor_nif, document_type, invoice_number) -> str:
-    nif = _squeeze(vendor_nif)
-    if nif.startswith("pt"):
-        nif = nif[2:]
     kind = (document_type or "").strip().upper()
-    number = re.sub(r"\d+", lambda match: match.group(0).lstrip("0") or "0", _squeeze(invoice_number))
-    return f"{nif}|{kind}|{number}"
+    return f"{_nif(vendor_nif)}|{kind}|{_number(invoice_number)}"
 
 
 def _is_scan(mime, raw) -> bool:

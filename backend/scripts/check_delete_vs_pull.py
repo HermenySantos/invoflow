@@ -162,7 +162,6 @@ def _seed(url: str) -> tuple[str, str]:
 
 def _pull(url: str, errors: list[BaseException]) -> None:
     os.environ["DATABASE_URL"] = url
-    os.environ["EFATURA_IMPORT_PAUSE_S"] = "0.05"
     sys.path.insert(0, str(BACKEND))
     from app.services.efatura import EFaturaInvoice, VatLine, import_purchases
 
@@ -190,7 +189,14 @@ def _pull(url: str, errors: list[BaseException]) -> None:
     engine = create_engine(url)
     db = sessionmaker(bind=engine)()
     try:
-        import_purchases(db, user_id=_user_id(engine), taxpayer_nif="555555555", invoices=invoices)
+        import_purchases(
+            db,
+            user_id=_user_id(engine),
+            taxpayer_nif="555555555",
+            invoices=invoices,
+            after_invoice=lambda _invoice: time.sleep(0.05),
+        )
+        db.commit()
     except Exception as exc:
         errors.append(exc)
     finally:

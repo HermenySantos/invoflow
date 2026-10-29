@@ -12,7 +12,8 @@ import os
 import subprocess
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -449,12 +450,12 @@ def _stamp() -> None:
             )
         ).scalar()
         assert column == 1
-        index = conn.execute(
+        indexdef = conn.execute(
             text(
-                "SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_documents_at_invoice_identity'"
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_documents_at_invoice_identity'"
             )
         ).scalar()
-        assert index == 1
+        assert indexdef and "deleted_at IS NULL" in indexdef
     engine.dispose()
     print("migration 012 from stamped 011 passed")
 
@@ -503,6 +504,274 @@ def _dupes() -> None:
     print("migration 012 dedupe passed")
 
 
+def _insert_at(
+    conn,
+    *,
+    user_id: str,
+    number: str,
+    vat: str,
+    status: str,
+    category: str,
+    created,
+    updated,
+    deleted,
+    identity: str | None,
+    review_notes: str | None,
+) -> str:
+    document_id = str(uuid.uuid4())
+    columns = (
+        "id, user_id, status, storage_key, original_filename, mime_type, "
+        "invoice_number, document_type, vendor_nif, vendor_name, net_amount, vat_amount, "
+        "gross_amount, expense_category, review_notes, document_date, ocr_raw_response, "
+        "deleted_at, created_at, updated_at"
+    )
+    values = (
+        ":id, :user_id, :status, :storage_key, 'at.efatura', "
+        "'application/vnd.invoflow.efatura+json', :number, 'FT', '123456002', 'Loja', "
+        "10.00, :vat, :gross, :category, :notes, '2026-04-01', :raw, :deleted_at, "
+        ":created, :updated"
+    )
+    params = {
+        "id": document_id,
+        "user_id": user_id,
+        "status": status,
+        "storage_key": f"efatura/{document_id}.efatura",
+        "number": number,
+        "vat": vat,
+        "gross": str(Decimal(vat) + Decimal("10.00")),
+        "category": category,
+        "notes": review_notes,
+        "raw": json.dumps({"source": "efatura"}),
+        "deleted_at": deleted,
+        "created": created,
+        "updated": updated,
+    }
+    if identity is not None:
+        columns += ", at_invoice_identity"
+        values += ", :identity"
+        params["identity"] = identity
+    conn.execute(
+        text(f"INSERT INTO documents ({columns}) VALUES ({values})"),
+        params,
+    )
+    return document_id
+
+
+def _keeper() -> None:
+    """The reviewed duplicate survives, and distinct numbers are not merged."""
+    from alembic import command
+    from alembic.config import Config
+
+    url = os.environ["DATABASE_URL"]
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, STAMP)
+    engine = create_engine(url)
+    base = datetime.now(timezone.utc).replace(tzinfo=None)
+    with engine.begin() as conn:
+        user_id = _insert_user(conn, base)
+        loser = _insert_at(
+            conn,
+            user_id=user_id,
+            number="FT 5/1",
+            vat="2.30",
+            status="needs_review",
+            category="other",
+            created=base,
+            updated=base + timedelta(hours=2),
+            deleted=None,
+            identity=None,
+            review_notes=None,
+        )
+        keeper = _insert_at(
+            conn,
+            user_id=user_id,
+            number="FT 5/01",
+            vat="2.00",
+            status="ready",
+            category="office",
+            created=base + timedelta(minutes=1),
+            updated=base + timedelta(minutes=1),
+            deleted=None,
+            identity=None,
+            review_notes="VAT corrected",
+        )
+        for number, vat in (
+            ("FT A01/5", "2.30"),
+            ("FT A1/5", "4.60"),
+            ("FT 1 23/4", "3.00"),
+            ("FT 12 3/4", "1.00"),
+        ):
+            _insert_at(
+                conn,
+                user_id=user_id,
+                number=number,
+                vat=vat,
+                status="needs_review",
+                category="other",
+                created=base + timedelta(minutes=5),
+                updated=base + timedelta(minutes=5),
+                deleted=None,
+                identity=None,
+                review_notes=None,
+            )
+        _insert_link(
+            conn,
+            user_id=user_id,
+            document_id=loser,
+            now=base,
+            source_key="doc:123456002:FT:ft 5/1",
+            outcome="created",
+            payload=_payload(),
+        )
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        live = conn.execute(
+            text(
+                "SELECT invoice_number, status, expense_category, vat_amount "
+                "FROM documents WHERE user_id = :user_id AND deleted_at IS NULL "
+                "ORDER BY invoice_number"
+            ),
+            {"user_id": user_id},
+        ).mappings().all()
+        assert len(live) == 5, [row["invoice_number"] for row in live]
+        total = conn.execute(
+            text(
+                "SELECT coalesce(sum(vat_amount), 0) FROM documents "
+                "WHERE user_id = :user_id AND deleted_at IS NULL"
+            ),
+            {"user_id": user_id},
+        ).scalar()
+        assert Decimal(total) == Decimal("12.90"), total
+        numbers = {row["invoice_number"] for row in live}
+        assert "FT 5/01" in numbers
+        assert "FT 5/1" not in numbers
+        assert {"FT A01/5", "FT A1/5", "FT 1 23/4", "FT 12 3/4"} <= numbers
+        kept = next(row for row in live if row["invoice_number"] == "FT 5/01")
+        assert kept["status"] == "ready"
+        assert kept["expense_category"] == "office"
+        assert Decimal(kept["vat_amount"]) == Decimal("2.00")
+        pointed = conn.execute(
+            text("SELECT document_id FROM efatura_links WHERE source_key = 'doc:123456002:FT:ft 5/1'")
+        ).scalar()
+        assert pointed == keeper
+        hidden = conn.execute(
+            text(
+                "SELECT count(*) FROM documents WHERE id = :id AND deleted_at IS NOT NULL"
+            ),
+            {"id": loser},
+        ).scalar()
+        assert hidden == 1
+        audits = conn.execute(
+            text("SELECT changes_json FROM audit_logs WHERE action = 'efatura_dedupe'")
+        ).scalars().all()
+        assert len(audits) == 1
+        assert keeper in audits[0]
+    engine.dispose()
+    print("migration 012 keeps the reviewed row passed")
+
+
+def _legacy_011() -> None:
+    """71576aa's 011 already had a non-partial unique index. Upgrade must succeed."""
+    from alembic import command
+    from alembic.config import Config
+
+    url = os.environ["DATABASE_URL"]
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, STAMP)
+    engine = create_engine(url)
+    base = datetime.now(timezone.utc).replace(tzinfo=None)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE documents ADD COLUMN at_invoice_identity VARCHAR(200)"))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_documents_at_invoice_identity "
+                "ON documents (user_id, at_invoice_identity)"
+            )
+        )
+        user_id = _insert_user(conn, base)
+        _insert_at(
+            conn,
+            user_id=user_id,
+            number="FT5/9",
+            vat="1.00",
+            status="needs_review",
+            category="other",
+            created=base,
+            updated=base,
+            deleted=base,
+            identity="123456002|FT|ft5/9",
+            review_notes=None,
+        )
+        _insert_at(
+            conn,
+            user_id=user_id,
+            number="FT 5/9",
+            vat="1.50",
+            status="needs_review",
+            category="other",
+            created=base + timedelta(minutes=1),
+            updated=base + timedelta(minutes=1),
+            deleted=None,
+            identity="123456002|FT|ft 5/9",
+            review_notes=None,
+        )
+        _insert_at(
+            conn,
+            user_id=user_id,
+            number="FT A1/5",
+            vat="2.30",
+            status="needs_review",
+            category="other",
+            created=base,
+            updated=base,
+            deleted=base,
+            identity="123456002|FT|ft a1/5",
+            review_notes=None,
+        )
+        _insert_at(
+            conn,
+            user_id=user_id,
+            number="FT A1/005",
+            vat="2.30",
+            status="ready",
+            category="office",
+            created=base + timedelta(minutes=1),
+            updated=base + timedelta(minutes=1),
+            deleted=None,
+            identity="123456002|FT|ft a1/005",
+            review_notes=None,
+        )
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == HEAD
+        rows = {
+            row["invoice_number"]: row
+            for row in conn.execute(
+                text(
+                    "SELECT invoice_number, deleted_at, at_invoice_identity FROM documents"
+                )
+            ).mappings()
+        }
+        assert rows["FT5/9"]["deleted_at"] is not None
+        assert rows["FT 5/9"]["deleted_at"] is None
+        assert rows["FT5/9"]["at_invoice_identity"] == "123456002|FT|ft5/9"
+        assert rows["FT 5/9"]["at_invoice_identity"] == "123456002|FT|ft 5/9"
+        assert rows["FT A1/5"]["deleted_at"] is not None
+        assert rows["FT A1/005"]["deleted_at"] is None
+        assert rows["FT A1/5"]["at_invoice_identity"] == "123456002|FT|ft a1/5"
+        assert rows["FT A1/005"]["at_invoice_identity"] == rows["FT A1/5"]["at_invoice_identity"]
+        indexdef = conn.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_documents_at_invoice_identity'"
+            )
+        ).scalar()
+        assert indexdef and "deleted_at IS NULL" in indexdef
+    engine.dispose()
+    print("migration 012 from 71576aa 011 passed")
+
+
 def main() -> None:
     if "--child" in sys.argv:
         _child()
@@ -516,18 +785,28 @@ def main() -> None:
     if "--dupes" in sys.argv:
         _dupes()
         return
+    if "--keeper" in sys.argv:
+        _keeper()
+        return
+    if "--legacy" in sys.argv:
+        _legacy_011()
+        return
     name = f"mig011_{uuid.uuid4().hex[:8]}"
     drift = f"mig011d_{uuid.uuid4().hex[:8]}"
     stamp = f"mig011s_{uuid.uuid4().hex[:8]}"
     dupes = f"mig011u_{uuid.uuid4().hex[:8]}"
+    keeper = f"mig011k_{uuid.uuid4().hex[:8]}"
+    legacy = f"mig011b_{uuid.uuid4().hex[:8]}"
     try:
         _run(name, "--child")
         print("migration 011 passed")
         _run(drift, "--drift")
         _run(stamp, "--stamp")
         _run(dupes, "--dupes")
+        _run(keeper, "--keeper")
+        _run(legacy, "--legacy")
     finally:
-        for database in (name, drift, stamp, dupes):
+        for database in (name, drift, stamp, dupes, keeper, legacy):
             _drop(database)
 
 

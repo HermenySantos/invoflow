@@ -534,6 +534,7 @@ async def update_document(
         )
     
     try:
+        intended_identity = None
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
         if "document_type" in update_data and update_data["document_type"] is None:
@@ -629,9 +630,10 @@ async def update_document(
             if document.at_invoice_identity or (
                 document.mime_type or ""
             ).startswith("application/vnd.invoflow.efatura"):
-                document.at_invoice_identity = at_invoice_identity(
+                intended_identity = at_invoice_identity(
                     document.vendor_nif, document.document_type, document.invoice_number
                 )
+                document.at_invoice_identity = intended_identity
         
         # Audit log
         after_state = {field: getattr(document, field, None) for field in update_data}
@@ -659,6 +661,27 @@ async def update_document(
     except HTTPException:
         db.rollback()
         raise
+    except IntegrityError:
+        db.rollback()
+        other = None
+        if intended_identity:
+            other = (
+                db.query(Document)
+                .filter(
+                    Document.user_id == user.id,
+                    Document.at_invoice_identity == intended_identity,
+                    Document.id != document_id,
+                    Document.deleted_at.is_(None),
+                )
+                .first()
+            )
+        number = (other.invoice_number if other and other.invoice_number else "").strip()
+        detail = (
+            f"Já existe outro documento com o n.º {number}."
+            if number
+            else "Já existe outro documento com este NIF e n.º."
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating document: {e}")

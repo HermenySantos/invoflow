@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import Boolean, Column, Index, String, DateTime, Date, Numeric, ForeignKey, Text, Integer, false as sql_false
+from sqlalchemy import Boolean, Column, Index, String, DateTime, Date, Numeric, ForeignKey, Text, Integer, false as sql_false, text as sql_text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -69,7 +69,7 @@ class Document(Base):
         Boolean, nullable=False, default=False, server_default=sql_false()
     )
     # Set on an e-Fatura document: nif|type|number. Empty on scans.
-    # One live or deleted value per user, so a restore cannot insert a second copy.
+    # Unique among live rows. Deleted rows may share it.
     at_invoice_identity = Column(String(200), nullable=True)
     
     # Timestamps
@@ -86,6 +86,8 @@ class Document(Base):
             "user_id",
             "at_invoice_identity",
             unique=True,
+            postgresql_where=sql_text("deleted_at IS NULL"),
+            sqlite_where=sql_text("deleted_at IS NULL"),
         ),
     )
 
