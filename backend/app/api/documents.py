@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.database import get_db, session_factory
 from app.core.security import get_current_user, CurrentUser
@@ -673,6 +673,7 @@ async def delete_document(
     """Hide a document. The row and the original file are kept (invoice retention)."""
     user = get_or_create_user(db, current_user)
     
+    # Lock the scan so a second DELETE waits, then sees it already hidden.
     document = (
         db.query(Document)
         .filter(
@@ -680,6 +681,7 @@ async def delete_document(
             Document.user_id == user.id,
             Document.deleted_at.is_(None),
         )
+        .with_for_update()
         .first()
     )
     
@@ -696,7 +698,13 @@ async def delete_document(
         # represented by this row is stored again as its own AT document.
         detach_deleted_scan(db, document)
         db.commit()
-
+    except IntegrityError:
+        db.rollback()
+        logger.warning("AT invoice restore collided for document %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error deleting document: {e}")

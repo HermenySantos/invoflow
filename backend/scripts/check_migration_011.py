@@ -157,9 +157,31 @@ def _insert_link(conn, *, user_id: str, document_id: str | None, now, source_key
 
 
 def _child() -> None:
+    import logging
     from alembic import command
     from alembic.config import Config
 
+    source = (BACKEND / "alembic/versions/011_restore_orphaned_efatura.py").read_text()
+    assert "import app" not in source
+    assert "from app." not in source
+    warnings: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            if record.levelno >= logging.WARNING:
+                warnings.append(record.getMessage())
+
+    import logging.config
+
+    original_file_config = logging.config.fileConfig
+
+    def _file_config(*args, **kwargs):
+        original_file_config(*args, **kwargs)
+        logger = logging.getLogger("alembic.runtime.migration")
+        logger.setLevel(logging.INFO)
+        logger.addHandler(_Capture())
+
+    logging.config.fileConfig = _file_config
     url = os.environ["DATABASE_URL"]
     cfg = Config("alembic.ini")
     cfg.set_main_option("sqlalchemy.url", url)
@@ -184,6 +206,44 @@ def _child() -> None:
             source_key="atcud:GIL160",
             outcome="linked_existing",
             payload=payload,
+        )
+        _insert_link(
+            conn,
+            user_id=user_id,
+            document_id=orphan_id,
+            now=now,
+            source_key="doc:500100144:FT:ft a/123",
+            outcome="linked_existing",
+            payload=payload,
+        )
+        deleted_at_id = _insert_document(
+            conn,
+            user_id=user_id,
+            now=now,
+            mime="application/vnd.invoflow.efatura+json",
+            number="FT Z/1",
+            deleted=True,
+        )
+        _insert_link(
+            conn,
+            user_id=user_id,
+            document_id=deleted_at_id,
+            now=now,
+            source_key="atcud:GIL160-AT",
+            outcome="created",
+            payload=payload.replace("FT A/123", "FT Z/1").replace("GIL160", "GIL160-AT"),
+        )
+        bad_id = _insert_document(
+            conn, user_id=user_id, now=now, mime="image/jpeg", number="FT BAD/1", deleted=True
+        )
+        _insert_link(
+            conn,
+            user_id=user_id,
+            document_id=bad_id,
+            now=now,
+            source_key="atcud:GIL160-BAD",
+            outcome="linked_existing",
+            payload="{",
         )
         _insert_link(
             conn,
@@ -235,6 +295,29 @@ def _child() -> None:
         ).one()
         assert pointed.document_id == at_id
         assert pointed.outcome == "created"
+        doc_key = conn.execute(
+            text(
+                "SELECT document_id FROM efatura_links WHERE source_key = 'doc:500100144:FT:ft a/123'"
+            )
+        ).scalar()
+        assert doc_key == at_id
+        assert conn.execute(
+            text(
+                "SELECT deleted_at IS NOT NULL FROM documents WHERE id = :id"
+            ),
+            {"id": deleted_at_id},
+        ).scalar() is True
+        assert conn.execute(
+            text(
+                "SELECT count(*) FROM documents WHERE deleted_at IS NULL AND invoice_number = 'FT Z/1'"
+            )
+        ).scalar() == 0
+        assert conn.execute(
+            text(
+                "SELECT count(*) FROM documents WHERE deleted_at IS NULL AND invoice_number = 'FT BAD/1'"
+            )
+        ).scalar() == 0
+        assert "not readable" in " ".join(warnings)
         still_live = conn.execute(
             text("SELECT document_id FROM efatura_links WHERE source_key = 'atcud:GIL160-LIVE'")
         ).scalar()
@@ -279,26 +362,79 @@ def _child() -> None:
     print("migration 011 child passed")
 
 
+def _drift() -> None:
+    """010 -> 011 still repairs when the live Document model has a new column."""
+    sys.path.insert(0, str(BACKEND))
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import Column, String
+
+    from app.models.document import Document
+
+    if "future_col_012" not in Document.__table__.c:
+        Document.__table__.append_column(Column("future_col_012", String(20), nullable=True))
+    url = os.environ["DATABASE_URL"]
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, BEFORE)
+    engine = create_engine(url)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with engine.begin() as conn:
+        user_id = _insert_user(conn, now)
+        orphan_id = _insert_document(
+            conn, user_id=user_id, now=now, mime="image/jpeg", number="FT A/123", deleted=True
+        )
+        _insert_link(
+            conn,
+            user_id=user_id,
+            document_id=orphan_id,
+            now=now,
+            source_key="atcud:DRIFT",
+            outcome="linked_existing",
+            payload=_payload(),
+        )
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        count = conn.execute(
+            text(
+                "SELECT count(*) FROM documents WHERE deleted_at IS NULL AND invoice_number = 'FT A/123'"
+            )
+        ).scalar()
+        assert count == 1, count
+    engine.dispose()
+    print("migration 011 model drift passed")
+
+
+def _run(name: str, arg: str) -> None:
+    url = _recreate(name)
+    env = os.environ.copy()
+    env["DATABASE_URL"] = url
+    completed = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), arg],
+        cwd=BACKEND,
+        env=env,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+
+
 def main() -> None:
     if "--child" in sys.argv:
         _child()
         return
+    if "--drift" in sys.argv:
+        _drift()
+        return
     name = f"mig011_{uuid.uuid4().hex[:8]}"
+    drift = f"mig011d_{uuid.uuid4().hex[:8]}"
     try:
-        url = _recreate(name)
-        env = os.environ.copy()
-        env["DATABASE_URL"] = url
-        completed = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), "--child"],
-            cwd=BACKEND,
-            env=env,
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise SystemExit(completed.returncode)
+        _run(name, "--child")
         print("migration 011 passed")
+        _run(drift, "--drift")
     finally:
         _drop(name)
+        _drop(drift)
 
 
 if __name__ == "__main__":

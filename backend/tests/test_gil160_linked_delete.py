@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -14,6 +16,7 @@ from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink
 from app.models.user import User
+from app.services.categorization import deductible_vat_split
 from app.services.efatura import import_purchases
 from app.services.iva_adjust import contributions
 from tests.test_efatura_import import TAXPAYER, _fixture
@@ -175,3 +178,140 @@ def test_delete_unlinked_scan_does_not_invent_an_at_row(client: TestClient, db: 
         .count()
         == 1
     )
+
+
+def test_two_links_for_one_invoice_restore_one_row(client: TestClient, db: Session):
+    user, headers = _user(db)
+    scan = _scan(db, user)
+    invoice = _continente()
+    with_atcud = replace(invoice, atcud="X-1")
+    import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice, with_atcud])
+    db.commit()
+    assert db.query(EfaturaLink).filter(EfaturaLink.document_id == scan.id).count() == 2
+
+    deleted = client.delete(f"/api/documents/{scan.id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    db.expire_all()
+
+    visible = _visible(db, user)
+    assert len(visible) == 1
+    assert visible[0].vat_amount == Decimal("2.30")
+    assert _counted_vat(db, user) == [Decimal("2.30")]
+    targets = {link.document_id for link in db.query(EfaturaLink).filter(EfaturaLink.user_id == user.id)}
+    assert targets == {visible[0].id}
+    assert (
+        db.query(AuditLog)
+        .filter(AuditLog.entity_id == scan.id, AuditLog.action == "efatura_unlink")
+        .count()
+        == 1
+    )
+
+
+def test_reimport_of_two_links_does_not_double_the_invoice(db: Session):
+    user, _headers = _user(db)
+    scan = _scan(db, user)
+    invoice = _continente()
+    with_atcud = replace(invoice, atcud="X-1")
+    import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice, with_atcud])
+    db.commit()
+    scan.deleted_at = datetime.utcnow()
+    db.commit()
+
+    restored = import_purchases(
+        db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice, with_atcud]
+    )
+    db.commit()
+    assert len(restored.created) == 1
+    visible = _visible(db, user)
+    assert [row.id for row in visible] == [restored.created[0]]
+    assert _counted_vat(db, user) == [Decimal("2.30")]
+    targets = {link.document_id for link in db.query(EfaturaLink).filter(EfaturaLink.user_id == user.id)}
+    assert targets == {visible[0].id}
+    assert (
+        db.query(AuditLog)
+        .filter(AuditLog.entity_id == scan.id, AuditLog.action == "efatura_unlink")
+        .count()
+        == 1
+    )
+
+
+def test_deleted_at_row_stays_deleted_across_three_pulls(client: TestClient, db: Session):
+    user, headers = _user(db)
+    invoice = _continente()
+    created = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice])
+    db.commit()
+    at_id = created.created[0]
+    assert db.query(Document).filter(Document.user_id == user.id).count() == 1
+
+    for cycle in range(3):
+        status = client.delete(f"/api/documents/{at_id}", headers=headers)
+        assert status.status_code == (204 if cycle == 0 else 404), (cycle, status.status_code, status.text)
+        again = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[invoice])
+        db.commit()
+        db.expire_all()
+        assert again.created == ()
+        assert again.unchanged
+        assert _visible(db, user) == []
+        assert _counted_vat(db, user) == []
+        rows = db.query(Document).filter(Document.user_id == user.id).all()
+        assert [row.id for row in rows] == [at_id]
+        assert rows[0].deleted_at is not None
+        assert (
+            db.query(AuditLog)
+            .filter(AuditLog.entity_id == at_id, AuditLog.action == "efatura_unlink")
+            .count()
+            == 0
+        )
+
+
+def test_restored_row_keeps_a_confirmed_office_review(client: TestClient, db: Session):
+    user, headers = _user(db)
+    scan = _scan(db, user)
+    scan.expense_category = "office"
+    scan.irs_sector = "geral"
+    scan.deductible_pct_override = None
+    scan.status = "ready"
+    db.commit()
+    import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[_continente()])
+    db.commit()
+
+    assert client.delete(f"/api/documents/{scan.id}", headers=headers).status_code == 204
+    db.expire_all()
+    at_row = _visible(db, user)[0]
+    assert at_row.status == "ready"
+    assert at_row.expense_category == "office"
+    assert at_row.irs_sector == "geral"
+    confirmed, pending = deductible_vat_split([at_row])
+    assert confirmed == Decimal("2.30")
+    assert pending == Decimal("0.00")
+
+
+def test_unreadable_link_payload_is_logged_and_skipped(db: Session, caplog):
+    user, _headers = _user(db)
+    scan = _scan(db, user)
+    link = EfaturaLink(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        source_key="atcud:BAD",
+        role="acquirer",
+        outcome="linked_existing",
+        document_id=scan.id,
+        fiscal_status="normal",
+        warning=None,
+        payload_json="{",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(link)
+    scan.deleted_at = datetime.utcnow()
+    db.commit()
+
+    from app.services.efatura import detach_deleted_scan
+
+    with caplog.at_level(logging.WARNING):
+        detach_deleted_scan(db, scan)
+    db.commit()
+    assert scan.id in caplog.text or link.id in caplog.text
+    assert "not readable" in caplog.text
+    assert _visible(db, user) == []
+    assert db.get(EfaturaLink, link.id).document_id == scan.id
