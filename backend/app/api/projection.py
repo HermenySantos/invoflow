@@ -15,7 +15,13 @@ from app.models.document import Document
 from app.models.vat_sales import VatSalesEntry
 from app.schemas.projection import ProjectionResponse
 from app.services.categorization import deductible_vat_split
-from app.services.iva_adjust import credit_note_warnings, duplicate_warnings
+from app.schemas.summary import ExcludedDocument
+from app.services.iva_adjust import (
+    EXCLUDED_HEADING,
+    credit_note_warnings,
+    duplicate_warnings,
+    projection_excluded,
+)
 from app.services.iva_projection import QuarterProjectionInput, project_quarter_to_date
 
 router = APIRouter()
@@ -115,4 +121,16 @@ async def get_projection(
         projected_iva_payable=projection.projected_iva_payable,
         sales_basis=projection.sales_basis,
         warnings=credit_warnings,
+        excluded_heading=EXCLUDED_HEADING,
+        excluded_documents=[
+            ExcludedDocument(
+                id=str(document.id),
+                vendor_name=document.vendor_name,
+                invoice_number=document.invoice_number,
+                document_type=document.document_type or "unclassified",
+                status=document.status,
+                reason=reason,
+            )
+            for document, reason in projection_excluded(clipped, library)
+        ],
     )

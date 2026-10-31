@@ -67,23 +67,24 @@ def test_new_purchase_lands_as_needs_review_and_stays_out_of_the_payable(db: Ses
     db.commit()
 
     created = [db.get(Document, document_id) for document_id in result.created]
-    edp = next(document for document in created if document.vendor_nif == "503504564")
-    assert edp.status == "needs_review"
-    assert edp.status != "processing"
-    assert edp.invoice_number == "FT EDPC/2026/1"
-    assert "JF8K2M9X" not in edp.invoice_number
-    assert edp.storage_key == f"efatura/{user.id}/atcud:JF8K2M9X-1"
-    assert edp.original_filename.endswith(".efatura")
-    assert edp.mime_type == "application/vnd.invoflow.efatura+json"
-    assert edp.vat_amount == Decimal("26.00")
-    assert edp.vat_rate is None
-    assert json.loads(edp.ocr_raw_response) == {"source": "efatura"}
-    assert "text" not in json.loads(edp.ocr_raw_response)
-    assert edp.expense_category == "utilities"
+    utility = next(document for document in created if document.vendor_nif == "123456002")
+    assert utility.status == "needs_review"
+    assert utility.status != "processing"
+    assert utility.invoice_number == "FT LX/2026/1"
+    assert "JF8K2M9X" not in utility.invoice_number
+    assert utility.storage_key == f"efatura/{user.id}/atcud:JF8K2M9X-1"
+    assert utility.original_filename.endswith(".efatura")
+    assert utility.mime_type == "application/vnd.invoflow.efatura+json"
+    assert utility.vat_amount == Decimal("26.00")
+    assert utility.vat_rate is None
+    assert json.loads(utility.ocr_raw_response) == {"source": "efatura"}
+    assert "text" not in json.loads(utility.ocr_raw_response)
+    # The name matches the utilities rule. The NIF is synthetic and is not in the map.
+    assert utility.expense_category == "utilities"
 
-    confirmed, pending = deductible_vat_split([edp])
+    confirmed, pending = deductible_vat_split([utility])
     assert confirmed == Decimal("0.00")
-    assert pending == edp.vat_amount
+    assert pending == utility.vat_amount
 
     again = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=_fixture())
     db.commit()

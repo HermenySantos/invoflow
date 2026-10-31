@@ -1,9 +1,13 @@
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
 
 from app.services.ocr_extract import extract_fields, extract_portuguese_nif, parse_pt_amount
+
+FIXTURES = Path(__file__).parent / "fixtures" / "libreoffice"
 
 
 SAMPLE = """
@@ -34,11 +38,80 @@ def test_extract_continente_receipt():
     fields = extract_fields(SAMPLE)
     assert fields.vendor_name and "CONTINENTE" in fields.vendor_name.upper()
     assert fields.vendor_nif == "500100144"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "FT 2026/1842"
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
     assert fields.document_date == date(2026, 3, 15)
     assert fields.gross_amount == Decimal("23.00")
     assert fields.vat_amount == Decimal("4.30")
     assert fields.vat_rate == Decimal("23.00")
     assert fields.net_amount == Decimal("18.70")
+
+
+def test_series_code_stays_on_the_invoice_number():
+    fatura = extract_fields("Fatura FT A/12\nTotal 1,00")
+    assert fatura.invoice_number is None
+    assert fatura.suggested_type == "FT"
+    assert fatura.suggested_invoice_number == "FT A/12"
+    assert fatura.document_type == "unclassified"
+    assert fatura.needs_review is True
+    credit = extract_fields("Nota de crédito NC Q2\nTotal 1,00")
+    assert credit.invoice_number is None
+    assert credit.suggested_type == "NC"
+    assert credit.suggested_invoice_number == "NC Q2"
+    assert extract_fields(CONTOSO).suggested_invoice_number is None
+    assert extract_fields(CONTOSO).invoice_number is None
+
+
+def test_portuguese_month_name_dates():
+    assert extract_fields("Data: 31 de março de 2026\nTotal 1,00").document_date == date(2026, 3, 31)
+    assert extract_fields("Data: 15 de abril de 2026\nTotal 1,00").document_date == date(2026, 4, 15)
+    assert extract_fields("Data: 1 de marco de 2026\nTotal 1,00").document_date == date(2026, 3, 1)
+
+
+def test_spaced_minus_is_stored_as_an_absolute_total():
+    assert parse_pt_amount("-10,00") == Decimal("-10.00")
+    assert parse_pt_amount("23,00") == Decimal("23.00")
+    fields = extract_fields("Total: -10,00 EUR")
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
+
+
+def _pdf_text(name: str) -> str:
+    reader = PdfReader(FIXTURES / name)
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def test_cafe_lisboa_fixture_text():
+    fields = extract_fields(_pdf_text("fatura-cafe-lisboa.pdf"))
+    assert fields.vendor_nif == "123456002"
+    assert fields.document_date == date(2026, 3, 31)
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "FT A/12"
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
+    assert fields.gross_amount == Decimal("12.30")
+    assert fields.vat_amount == Decimal("2.30")
+    assert fields.net_amount == Decimal("10.00")
+    assert fields.vat_rate == Decimal("23.00")
+
+
+def test_credit_note_fixture_keeps_series_date_and_absolute_total():
+    fields = extract_fields(_pdf_text("nota-credito.pdf"))
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number == "NC Q2"
+    assert fields.suggested_type == "NC"
+    assert fields.document_date == date(2026, 4, 15)
+    assert fields.document_type == "unclassified"
+    assert fields.gross_amount == Decimal("10.00")
+    assert fields.needs_review is True
+    assert fields.net_amount is None
+    assert fields.vat_amount is None
+    assert fields.vat_rate is None
+    # 501111111 fails the check digit. The extractor leaves it empty.
+    assert fields.vendor_nif is None
 
 
 def test_empty_text_needs_review():
@@ -98,7 +171,10 @@ def test_italian_payment_beats_vat_rate():
 def test_contoso_invoice_total_not_balance_due():
     fields = extract_fields(CONTOSO)
     assert fields.vendor_name == "CONTOSO LTD."
-    assert fields.invoice_number == "INV-100"
+    assert fields.invoice_number is None
+    assert fields.suggested_invoice_number is None
+    assert fields.document_type == "unclassified"
+    assert fields.needs_review is True
     assert fields.document_date == date(2019, 11, 15)
     assert fields.gross_amount == Decimal("110.00")
     assert fields.vat_amount == Decimal("10.00")
@@ -111,7 +187,7 @@ def test_unlabeled_noise_does_not_invent_a_total():
 
 def test_receipt_with_two_vat_rates_sums_both():
     fields = extract_fields(
-        "Pingo Doce\nNIF 503504564\n01/10/2026\n"
+        "Ana Exemplo\nNIF 123456002\n01/10/2026\n"
         "IVA 6% 10,00 0,60\nIVA 23% 20,00 4,60\nTOTAL 35,20"
     )
     assert fields.vat_amount == Decimal("5.20")
@@ -130,12 +206,12 @@ def test_amounts_with_thousands_separators(raw, expected):
 
 def test_nif_must_pass_check_digit():
     assert extract_portuguese_nif("NIF 123456780") is None
-    assert extract_portuguese_nif("NIF 503504564") == "503504564"
+    assert extract_portuguese_nif("NIF 123456002") == "123456002"
 
 
 def test_vendor_nif_preferred_over_customer_nif():
-    text = "Cliente NIF 123456789 / Fornecedor NIF 503504564"
-    assert extract_portuguese_nif(text) == "503504564"
+    text = "Cliente NIF 123456789 / Fornecedor NIF 123456002"
+    assert extract_portuguese_nif(text) == "123456002"
 
 
 @pytest.mark.parametrize("vat, net, expected", [
@@ -150,6 +226,6 @@ def test_vendor_nif_preferred_over_customer_nif():
 def test_regional_vat_rates_are_recognised(vat, net, expected):
     gross = parse_pt_amount(vat) + parse_pt_amount(net)
     fields = extract_fields(
-        f"Loja Funchal\nNIF 503504564\n15/09/2026\nIVA {vat}\nBase {net}\nTOTAL {str(gross).replace('.', ',')}"
+        f"Loja Funchal\nNIF 123456002\n15/09/2026\nIVA {vat}\nBase {net}\nTOTAL {str(gross).replace('.', ',')}"
     )
     assert fields.vat_rate == Decimal(expected)

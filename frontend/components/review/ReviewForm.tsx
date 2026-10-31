@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Document } from '@/lib/api';
+import { DOCUMENT_TYPE_OPTIONS, documentTypeLabel, isConcreteDocumentType } from '@/lib/reviewEdit';
 import { ConfidenceIndicator } from './ConfidenceBadge';
 import { AlertCircle, Calculator, Building2, FileText, Euro } from 'lucide-react';
 
@@ -9,6 +10,7 @@ export interface ReviewFormData {
   vendor_name: string;
   vendor_nif: string;
   invoice_number: string;
+  document_type: string;
   document_date: string;
   net_amount: string;
   vat_amount: string;
@@ -44,6 +46,9 @@ export function ReviewForm({
     vendor_name: document.vendor_name || '',
     vendor_nif: document.vendor_nif || '',
     invoice_number: document.invoice_number || '',
+    document_type: isConcreteDocumentType(document.document_type)
+      ? document.document_type!
+      : 'unclassified',
     document_date: document.document_date || '',
     net_amount: document.net_amount || '',
     vat_amount: document.vat_amount || '',
@@ -203,6 +208,31 @@ export function ReviewForm({
                 {errors.invoice_number}
               </p>
             )}
+          </div>
+
+          <div>
+            <label htmlFor="document-type" className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+              Tipo de documento
+              {isFieldEdited('document_type') && (
+                <span className="text-xs text-primary-600 font-normal">(edited)</span>
+              )}
+            </label>
+            <select
+              id="document-type"
+              value={formData.document_type}
+              onChange={(e) => handleChange('document_type', e.target.value)}
+              className={getFieldClass('document_type')}
+            >
+              <option value="unclassified">Por classificar</option>
+              {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            {document.suggested_type && !isConcreteDocumentType(document.document_type) ? (
+              <p className="mt-1 text-sm text-gray-500">
+                Sugestão: {documentTypeLabel(document.suggested_type)}
+              </p>
+            ) : null}
           </div>
 
           <div>

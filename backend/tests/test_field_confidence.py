@@ -194,6 +194,7 @@ class TestAccountantReviewStatus:
             f"/api/documents/{doc_id}",
             json={
                 "status": "accountant_review",
+                "document_type": "FT",
                 "review_notes": "Need accountant to verify",
             },
             headers=headers,

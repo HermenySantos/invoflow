@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
+import { DOCUMENT_TYPE_OPTIONS, SERIES_MISMATCH_DETAIL, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -68,6 +69,15 @@ const AUDIT_SOURCE_BADGE: Record<string, { label: string; className: string }> =
   system: { label: 'Sistema', className: 'bg-gray-100 text-gray-600' },
 };
 
+/** The API's Portuguese 422, or a generic save failure. */
+function saveError(err: unknown): string {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const message = String((err as { message: unknown }).message);
+    if (message && !message.startsWith('API Error')) return message;
+  }
+  return 'Não foi possível guardar. Tente novamente.';
+}
+
 /** Relative timestamp in Portuguese */
 function relativeTime(dateStr: string): string {
   const now = Date.now();
@@ -101,7 +111,13 @@ export default function ReceiptDetailPage() {
     document_date: '',
     gross_amount: '',
     vat_amount: '',
+    document_type: 'unclassified',
+    invoice_number: '',
   });
+  // Non-QR rows open on Por classificar. A suggestion is read-only text, not the value.
+  const [confirmType, setConfirmType] = useState('unclassified');
+  const [reloadKey, setReloadKey] = useState(0);
+  const loadSeq = useRef(0);
 
   // Category picker
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
@@ -112,69 +128,104 @@ export default function ReceiptDetailPage() {
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [showAuditTrail, setShowAuditTrail] = useState(false);
 
-  const fetchDocument = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await api.getDocument(params.id as string);
-      setDocument(data);
-      
-      // Pre-fill edit form
-      setEditData({
-        vendor_name: data.vendor_name || '',
-        document_date: data.document_date || '',
-        gross_amount: data.gross_amount || '',
-        vat_amount: data.vat_amount || '',
-      });
-    } catch (err) {
-      setError('Não foi possível carregar o recibo.');
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const routeId = String(params.id ?? '');
+  const [trackedId, setTrackedId] = useState(routeId);
+  if (trackedId !== routeId) {
+    setTrackedId(routeId);
+    setDocument(null);
+    setIsEditing(false);
+    setConfirmType('unclassified');
+    setIsLoading(true);
+    setError(null);
+    setAuditTrail(null);
+  }
 
+  // Ignore a response that belongs to a previous id. A failed load leaves no receipt to confirm.
   useEffect(() => {
-    fetchDocument();
-  }, [params.id]);
+    const seq = ++loadSeq.current;
+    const requestedId = routeId;
+    setDocument(null);
+    setIsEditing(false);
+    setConfirmType('unclassified');
+    setEditData({
+      vendor_name: '',
+      document_date: '',
+      gross_amount: '',
+      vat_amount: '',
+      document_type: 'unclassified',
+      invoice_number: '',
+    });
+    setAuditTrail(null);
+    setIsLoading(true);
+    setError(null);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.getDocument(requestedId);
+        if (cancelled || seq !== loadSeq.current || data.id !== requestedId) return;
+        setDocument(data);
+        setEditData(initialReviewEdit(data));
+        setConfirmType(isConcreteDocumentType(data.document_type) ? data.document_type! : 'unclassified');
+      } catch (err) {
+        if (cancelled || seq !== loadSeq.current) return;
+        setDocument(null);
+        setError('Não foi possível carregar o recibo.');
+        console.error(err);
+      } finally {
+        if (!cancelled && seq === loadSeq.current) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId, reloadKey]);
 
   // The receipt is still being read in the background: poll until it settles.
   const isProcessing = document?.status === 'processing';
   useEffect(() => {
     if (!isProcessing) return;
+    const seq = loadSeq.current;
+    const requestedId = routeId;
     const timer = setInterval(async () => {
       try {
-        const data = await api.getDocument(params.id as string);
+        const data = await api.getDocument(requestedId);
+        if (seq !== loadSeq.current || data.id !== requestedId) return;
         if (data.status === 'processing') return;
         setDocument(data);
-        setEditData({
-          vendor_name: data.vendor_name || '',
-          document_date: data.document_date || '',
-          gross_amount: data.gross_amount || '',
-          vat_amount: data.vat_amount || '',
-        });
+        setEditData(initialReviewEdit(data));
+        setConfirmType(isConcreteDocumentType(data.document_type) ? data.document_type! : 'unclassified');
       } catch {
         // Next tick retries.
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, [isProcessing, params.id]);
+  }, [isProcessing, routeId]);
 
-  // Fetch audit trail on mount
+  // Fetch audit trail for the receipt currently on screen.
   useEffect(() => {
+    const seq = loadSeq.current;
+    const requestedId = routeId;
+    let cancelled = false;
     const fetchAudit = async () => {
       try {
         setIsAuditLoading(true);
-        const data = await api.getDocumentAuditTrail(params.id as string);
+        const data = await api.getDocumentAuditTrail(requestedId);
+        if (cancelled || seq !== loadSeq.current) return;
         setAuditTrail(data);
       } catch (err) {
+        if (cancelled || seq !== loadSeq.current) return;
         console.error('Failed to load audit trail:', err);
       } finally {
-        setIsAuditLoading(false);
+        if (!cancelled && seq === loadSeq.current) setIsAuditLoading(false);
       }
     };
     fetchAudit();
-  }, [params.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId]);
 
   // Auto-detect VAT rate for display
   const getVatRateDisplay = useCallback(() => {
@@ -223,40 +274,56 @@ export default function ReceiptDetailPage() {
   }, [document]);
 
   const handleConfirm = async () => {
-    if (!document) return;
+    if (!document || document.id !== routeId) return;
+    const chosen = isConcreteDocumentType(document.document_type)
+      ? document.document_type!
+      : confirmType;
+    if (!isConcreteDocumentType(chosen)) return;
+    if (seriesBlocks(chosen, document.invoice_number, document.at_document_type, document.at_invoice_number)) {
+      setError(SERIES_MISMATCH_DETAIL);
+      return;
+    }
+    const payload = isConcreteDocumentType(document.document_type)
+      ? { status: 'ready' as const }
+      : { document_type: chosen, status: 'ready' as const };
     
     try {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, { status: 'ready' });
+      await api.updateDocument(document.id, payload);
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to confirm:', err);
-      setError('Não foi possível guardar. Tente novamente.');
+      setError(saveError(err));
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSaveEdit = async () => {
-    if (!document) return;
+    if (!document || document.id !== routeId) return;
+    if (
+      seriesBlocks(
+        editData.document_type,
+        editData.invoice_number,
+        document.at_document_type,
+        document.at_invoice_number,
+      )
+    ) {
+      setError(SERIES_MISMATCH_DETAIL);
+      return;
+    }
     
     try {
       setIsSaving(true);
       setError(null);
       
-      await api.updateDocument(document.id, {
-        vendor_name: editData.vendor_name || null,
-        document_date: editData.document_date || null,
-        gross_amount: editData.gross_amount || null,
-        vat_amount: editData.vat_amount || null,
-        status: 'ready',
-      });
+      await api.updateDocument(document.id, saveEditPayload(editData));
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
-      setError('Não foi possível guardar. Tente novamente.');
+      setError(saveError(err));
     } finally {
       setIsSaving(false);
     }
@@ -336,6 +403,26 @@ export default function ReceiptDetailPage() {
     }
   };
 
+  const editIsConcrete = isConcreteDocumentType(editData.document_type);
+  const editSeriesMismatch = seriesBlocks(
+    editData.document_type,
+    editData.invoice_number,
+    document?.at_document_type,
+    document?.at_invoice_number,
+  );
+  const confirmChosen =
+    document && isConcreteDocumentType(document.document_type)
+      ? document.document_type!
+      : confirmType;
+  const confirmSeriesMismatch =
+    !!document &&
+    seriesBlocks(
+      confirmChosen,
+      document.invoice_number,
+      document.at_document_type,
+      document.at_invoice_number,
+    );
+
   return (
     <AppLayout>
       {/* Header */}
@@ -371,7 +458,7 @@ export default function ReceiptDetailPage() {
           <div className="card p-6 text-center">
             <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-3" />
             <p className="text-gray-600 mb-4">{error}</p>
-            <button onClick={fetchDocument} className="btn-secondary btn-md">
+            <button onClick={() => setReloadKey((key) => key + 1)} className="btn-secondary btn-md">
               Tentar de novo
             </button>
           </div>
@@ -426,6 +513,49 @@ export default function ReceiptDetailPage() {
                   >
                     Cancelar
                   </button>
+                </div>
+
+                <div>
+                  <label htmlFor="edit-document-type" className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de documento
+                  </label>
+                  <select
+                    id="edit-document-type"
+                    value={editData.document_type}
+                    onChange={(e) => setEditData(d => ({ ...d, document_type: e.target.value }))}
+                    className="input"
+                  >
+                    <option value="unclassified">Por classificar</option>
+                    {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  {document.suggested_type && document.document_type === 'unclassified' ? (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Sugestão: {documentTypeLabel(document.suggested_type)}
+                    </p>
+                  ) : null}
+                  {document.at_document_type ? (
+                    <p className="mt-1 text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label htmlFor="edit-invoice-number" className="block text-sm font-medium text-gray-700 mb-1">
+                    N.º da fatura
+                  </label>
+                  <input
+                    id="edit-invoice-number"
+                    type="text"
+                    value={editData.invoice_number}
+                    onChange={(e) => setEditData(d => ({ ...d, invoice_number: e.target.value }))}
+                    className="input"
+                  />
+                  {document.suggested_invoice_number && document.document_type === 'unclassified' ? (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Sugestão de n.º {document.suggested_invoice_number}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div>
@@ -504,6 +634,31 @@ export default function ReceiptDetailPage() {
 
                 {/* Extracted data summary */}
                 <div className="card divide-y divide-gray-100">
+                  <div className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Receipt className="w-5 h-5 text-gray-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-500">Tipo</p>
+                      <p className="font-semibold text-gray-900">
+                        {documentTypeLabel(document.document_type)}
+                      </p>
+                      {document.document_type === 'unclassified' && document.suggested_type ? (
+                        <p className="text-sm text-gray-500">Sugestão: {documentTypeLabel(document.suggested_type)}</p>
+                      ) : null}
+                      {document.at_document_type ? (
+                        <p className="text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
+                      ) : null}
+                      {(document.invoice_number || document.suggested_invoice_number) ? (
+                        <p className="text-sm text-gray-500">
+                          {document.invoice_number
+                            ? `N.º ${document.invoice_number}`
+                            : `Sugestão de n.º ${document.suggested_invoice_number}`}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
                   {/* Vendor */}
                   <div className="p-4 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
@@ -750,9 +905,13 @@ export default function ReceiptDetailPage() {
               </dl>
             )}
             {isEditing ? (
+              <>
+              {editSeriesMismatch ? (
+                <p className="text-sm text-red-700 mb-2">{SERIES_MISMATCH_DETAIL}</p>
+              ) : null}
               <button
                 onClick={handleSaveEdit}
-                disabled={isSaving}
+                disabled={isSaving || editSeriesMismatch}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
@@ -763,14 +922,42 @@ export default function ReceiptDetailPage() {
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5" />
-                    Guardar e confirmar
+                    {editIsConcrete ? 'Guardar e confirmar' : 'Guardar'}
                   </>
                 )}
               </button>
+              </>
             ) : (
+              <>
+              {!isConcreteDocumentType(document.document_type) ? (
+                <div className="mb-3 space-y-2">
+                  <label htmlFor="confirm-document-type" className="block text-sm font-medium text-gray-700">
+                    Tipo de documento
+                  </label>
+                  <select
+                    id="confirm-document-type"
+                    value={confirmType}
+                    onChange={(e) => setConfirmType(e.target.value)}
+                    className="input"
+                  >
+                    <option value="unclassified">Por classificar</option>
+                    {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  {document.suggested_type ? (
+                    <p className="text-sm text-gray-500">
+                      Sugestão: {documentTypeLabel(document.suggested_type)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {confirmSeriesMismatch ? (
+                <p className="text-sm text-red-700 mb-2">{SERIES_MISMATCH_DETAIL}</p>
+              ) : null}
               <button
                 onClick={handleConfirm}
-                disabled={isSaving}
+                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || confirmSeriesMismatch}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
@@ -785,6 +972,7 @@ export default function ReceiptDetailPage() {
                   </>
                 )}
               </button>
+              </>
             )}
           </div>
         </div>

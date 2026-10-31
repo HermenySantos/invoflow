@@ -2,7 +2,8 @@
 OCR backends behind one interface.
 
 Default is open-source:
-  auto       → Tesseract if installed, otherwise mock (no keys)
+  auto       → Tesseract if installed, otherwise mock (no keys).
+               APP_ENV=production refuses auto and mock at startup.
   tesseract  → Tesseract + PT field extractor (optional local LLM polish)
   mock       → deterministic demo data, no system OCR
   azure      → optional paid Azure Document Intelligence
@@ -17,6 +18,8 @@ import json
 import logging
 import random
 import shutil
+import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -34,6 +37,9 @@ from app.services.pt_qr import InvoiceQR, read_invoice_qr, read_invoice_qr_from_
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+# Only these AT QR codes set a type and may skip review. Anything else waits.
+_CONCRETE_QR_TYPES = frozenset({"FT", "FS", "FR", "NC", "ND"})
 
 AZURE_SUPPORTED_FORMATS = {
     "image/jpeg",
@@ -58,6 +64,7 @@ class OCRResult:
     vendor_name: Optional[str] = None
     vendor_nif: Optional[str] = None
     invoice_number: Optional[str] = None
+    document_type: Optional[str] = None
     document_date: Optional[date] = None
     net_amount: Optional[Decimal] = None
     vat_amount: Optional[Decimal] = None
@@ -68,6 +75,11 @@ class OCRResult:
     needs_review: bool = False
     error: Optional[str] = None
     backend: str = "mock"
+    # Prefill only. Netting and confirmation ignore both.
+    suggested_type: Optional[str] = None
+    suggested_invoice_number: Optional[str] = None
+    # Raw AT code (PF, OR, …) when it is not one of the types we confirm.
+    at_document_type: Optional[str] = None
 
 
 def tesseract_available() -> bool:
@@ -80,21 +92,155 @@ def tesseract_available() -> bool:
     return True
 
 
+class TesseractProbeError(Exception):
+    """The tesseract binary crashed, or a language pack did not load."""
+
+    def __init__(self, kind: str):
+        self.kind = kind
+        super().__init__(kind)
+
+
+_tesseract_languages: Optional[frozenset[str]] = None
+_tesseract_packs_loaded: Optional[bool] = None
+_tesseract_pack_failures: list[str] = []
+_tesseract_fallback_logged = False
+_unknown_backend_logged = False
+_KNOWN_OCR_BACKENDS = {"mock", "tesseract", "azure", "auto"}
+
+
+def tesseract_languages() -> frozenset[str]:
+    """Language codes Tesseract reports. Empty when the binary is missing.
+
+    A binary that exits while listing languages raises TesseractProbeError('crash')
+    instead of looking like a missing language pack.
+    """
+    global _tesseract_languages
+    if _tesseract_languages is not None:
+        return _tesseract_languages
+    if not tesseract_available():
+        return frozenset()
+    try:
+        import pytesseract
+
+        listed = pytesseract.get_languages(config="")
+    except Exception:
+        logger.warning("Tesseract binary failed while listing languages.", exc_info=True)
+        raise TesseractProbeError("crash") from None
+    _tesseract_languages = frozenset(listed)
+    return _tesseract_languages
+
+
+def probe_tesseract_language(lang: str, tessdata_dir: Optional[str] = None) -> Optional[str]:
+    """None when this one pack loads. Otherwise a short reason.
+
+    por and eng are probed separately. Stderr containing
+    'Failed loading language' is a failure even when Tesseract exits 0
+    after falling back to another pack.
+    """
+    if not tesseract_available():
+        return "the tesseract binary is not installed"
+    with tempfile.NamedTemporaryFile(suffix=".png") as image_file:
+        Image.new("L", (16, 16), 255).save(image_file.name)
+        command = ["tesseract", image_file.name, "stdout", "-l", lang, "--psm", "7"]
+        if tessdata_dir:
+            command.extend(["--tessdata-dir", tessdata_dir])
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            return f"language pack failed to load (tesseract-ocr-{lang})"
+    stderr = completed.stderr or ""
+    if "Failed loading language" in stderr or completed.returncode != 0:
+        return f"language pack failed to load (tesseract-ocr-{lang})"
+    return None
+
+
+def tesseract_packs_load() -> bool:
+    """True when por and eng each load. A fallback from one to the other is a failure."""
+    global _tesseract_packs_loaded, _tesseract_pack_failures
+    if _tesseract_packs_loaded is not None:
+        return _tesseract_packs_loaded
+    failures = [lang for lang in ("por", "eng") if probe_tesseract_language(lang)]
+    if failures:
+        logger.warning(
+            "Tesseract language packs failed to load: %s.",
+            ", ".join(failures),
+        )
+    _tesseract_pack_failures = failures
+    _tesseract_packs_loaded = not failures
+    return _tesseract_packs_loaded
+
+
+def tesseract_gap() -> Optional[str]:
+    """None when por and eng can run. Otherwise a short reason."""
+    if not tesseract_available():
+        return "the tesseract binary is not installed"
+    try:
+        languages = tesseract_languages()
+    except TesseractProbeError:
+        return "the tesseract binary failed to run"
+    missing = [lang for lang in ("por", "eng") if lang not in languages]
+    if missing:
+        packs = ", ".join(f"tesseract-ocr-{lang}" for lang in missing)
+        return f"language packs are missing ({packs})"
+    if not tesseract_packs_load():
+        failed = _tesseract_pack_failures or ["por", "eng"]
+        packs = ", ".join(f"tesseract-ocr-{lang}" for lang in failed)
+        return f"language packs failed to load ({packs})"
+    return None
+
+
+def tesseract_fallback_message(requested: str) -> str:
+    gap = tesseract_gap() or "Tesseract is not ready"
+    return (
+        f"OCR_BACKEND={requested} fell back to mock because {gap}. "
+        "Install tesseract-ocr, tesseract-ocr-por, and tesseract-ocr-eng. "
+        "Set OCR_BACKEND=mock to choose mock data on purpose."
+    )
+
+
+def _log_unknown_backend(requested: str) -> None:
+    global _unknown_backend_logged
+    if _unknown_backend_logged:
+        return
+    _unknown_backend_logged = True
+    logger.error(
+        "OCR_BACKEND=%s is not a known backend. Use auto, tesseract, mock, or azure.",
+        requested,
+    )
+
+
+def _log_tesseract_fallback(requested: str) -> None:
+    global _tesseract_fallback_logged
+    if _tesseract_fallback_logged:
+        return
+    _tesseract_fallback_logged = True
+    logger.warning(tesseract_fallback_message(requested))
+
+
+def _tesseract_or_mock(requested: str) -> str:
+    if tesseract_gap() is None:
+        return "tesseract"
+    _log_tesseract_fallback(requested)
+    return "mock"
+
+
 def resolve_ocr_backend() -> str:
-    """Pick a runnable backend. Azure is opt-in only."""
+    """Pick a runnable backend. Azure is opt-in only.
+
+    auto uses mock when the binary or the por/eng packs are missing, and logs that once.
+    OCR_BACKEND=mock is an explicit choice and does not log a fallback.
+    """
     current = get_settings()
     requested = (current.ocr_backend or "auto").strip().lower()
-    if requested in {"mock", "tesseract", "azure", "auto"}:
-        backend = requested
-    elif current.ocr_mock_mode:
-        backend = "mock"
-    else:
-        backend = "auto"
+    if requested not in _KNOWN_OCR_BACKENDS:
+        _log_unknown_backend(requested)
+        return requested
+    backend = requested
 
     if backend == "auto":
-        backend = "tesseract" if tesseract_available() else "mock"
+        backend = _tesseract_or_mock(requested or "auto")
     if backend == "azure" and (not current.azure_doc_endpoint or not current.azure_doc_key):
-        backend = "tesseract" if tesseract_available() else "mock"
+        backend = _tesseract_or_mock("azure")
     return backend
 
 
@@ -115,16 +261,25 @@ class OCRService:
                 result = self._generate_mock_result(mime_type)
             elif backend == "azure":
                 result = await self._process_with_azure(file_content, mime_type)
-            else:
+            elif backend == "tesseract":
                 result = await self._process_with_tesseract(file_content, mime_type)
+            else:
+                return finalize_non_qr(OCRResult(
+                    error=f"Unknown OCR backend {backend}",
+                    confidence=0,
+                    needs_review=True,
+                    document_type="unclassified",
+                    backend=backend,
+                ))
             qr = await asyncio.to_thread(_invoice_qr, file_content, mime_type)
         except PdfRasterLimited:
             if result is None:
                 result = OCRResult(confidence=0, needs_review=True, backend=backend)
-            result.needs_review = True
             result.error = None
-            return result
-        return _apply_invoice_qr(result, qr) if qr else result
+            return finalize_non_qr(result)
+        if qr is None:
+            return finalize_non_qr(result)
+        return _apply_invoice_qr(result, qr)
 
     def _generate_mock_result(self, mime_type: str) -> OCRResult:
         vendors = [
@@ -133,7 +288,9 @@ class OCRService:
             ("Worten", "502428880"),
             ("GALP Energia", "504499777"),
             ("NOS Comunicações", "504448064"),
-            ("EDP Comercial", "503504564"),
+            # 123456002 is a synthetic placeholder, not verified unissued.
+            # Decreto-Lei n.º 14/2013, art. 4.º n.º 2: first digit 1-4 is a pessoa singular, not a company.
+            ("Ana Exemplo", "123456002"),
             ("Uber Portugal", "514111111"),
             ("Bolt Technology", None),
             ("Restaurante O Manel", "123456789"),
@@ -571,20 +728,75 @@ def _invoice_qr(file_content: bytes, mime_type: str) -> Optional[InvoiceQR]:
     return read_invoice_qr_from_file(file_content, mime_type, _pdf_first_page_image)
 
 
+def _qr_net_agrees(net: Optional[Decimal], vat: Optional[Decimal], gross: Optional[Decimal]) -> bool:
+    """True when a QR without base amounts can still trust the OCR net."""
+    if net is None:
+        return vat is None or gross is None or vat <= gross
+    if gross is None:
+        return True
+    if net < 0 or net > gross:
+        return False
+    if vat is None:
+        return True
+    return vat <= gross and abs((net + vat) - gross) <= Decimal("0.01")
+
+
+def _absolute_amounts(result: OCRResult) -> bool:
+    """Store every amount as a non-negative number. Return whether any was negative."""
+    printed_negative = False
+    for field in ("net_amount", "vat_amount", "gross_amount"):
+        value = getattr(result, field)
+        if value is None:
+            continue
+        amount = Decimal(value)
+        if amount < 0:
+            printed_negative = True
+            setattr(result, field, abs(amount))
+    return printed_negative
+
+
+def finalize_non_qr(result: OCRResult) -> OCRResult:
+    """No AT QR: unclassified, always review, amounts non-negative.
+
+    A number the reader found is only a suggestion. It is not the invoice number.
+    """
+    _absolute_amounts(result)
+    # A confirmed number comes only from an AT QR. Text suggestions are already set.
+    result.invoice_number = None
+    result.document_type = "unclassified"
+    result.needs_review = True
+    return result
+
+
 def _apply_invoice_qr(result: OCRResult, qr: InvoiceQR) -> OCRResult:
-    """The AT QR's NIF, date, number and amounts replace what OCR read; OCR keeps the vendor name."""
+    """The AT QR's NIF, date, number and amounts replace what OCR read; OCR keeps the vendor name.
+
+    FT, FS, FR, NC and ND may be confirmed. Any other AT code stays unclassified,
+    keeps the raw code, and waits for a person.
+    """
     result.vendor_nif = qr.vendor_nif
     result.document_date = qr.document_date or result.document_date
-    result.invoice_number = qr.invoice_number or result.invoice_number
-    result.net_amount = qr.net_amount if qr.net_amount is not None else result.net_amount
+    result.invoice_number = qr.invoice_number or None
+    raw_type = (qr.document_type or "").strip().upper() or None
+    result.at_document_type = raw_type
+    concrete = raw_type in _CONCRETE_QR_TYPES
+    result.document_type = raw_type if concrete else "unclassified"
+    qr_has_base = qr.net_amount is not None
+    ocr_net = result.net_amount
+    result.net_amount = qr.net_amount if qr_has_base else ocr_net
     result.vat_amount = qr.vat_amount if qr.vat_amount is not None else result.vat_amount
     result.gross_amount = qr.gross_amount
     result.vat_rate = qr.vat_rate
+    printed_negative = _absolute_amounts(result)
     result.error = None
     result.confidence = max(result.confidence, 95.0)
     # Everything but the vendor name came from the issuer, so only a missing
-    # name still needs a person.
-    result.needs_review = not result.vendor_name
+    # name still needs a person. A QR with no base leaves the OCR net in
+    # place, and that net has to agree with the QR total.
+    result.needs_review = not result.vendor_name or not concrete or printed_negative
+    if not qr_has_base and not _qr_net_agrees(result.net_amount, result.vat_amount, result.gross_amount):
+        result.needs_review = True
+    # Mock invents the vendor name, so a QR on that path still waits for a person.
     if result.backend == "mock":
         result.needs_review = True
 
@@ -612,13 +824,23 @@ def _fields_to_result(fields: ExtractedFields, text: str, backend: str) -> OCRRe
         vendor_name=fields.vendor_name,
         vendor_nif=fields.vendor_nif,
         invoice_number=fields.invoice_number,
+        document_type=fields.document_type or "unclassified",
+        suggested_type=fields.suggested_type,
+        suggested_invoice_number=fields.suggested_invoice_number,
         document_date=fields.document_date,
         net_amount=fields.net_amount,
         vat_amount=fields.vat_amount,
         gross_amount=fields.gross_amount,
         vat_rate=fields.vat_rate,
         confidence=fields.confidence,
-        raw_response=extracted_to_json(fields, extra={"backend": backend, "text": text[:4000]}),
+        raw_response=extracted_to_json(
+            fields,
+            extra={
+                "backend": backend,
+                "text": text[:4000],
+                **({"document_type": fields.document_type} if fields.document_type else {}),
+            },
+        ),
         needs_review=fields.needs_review,
         backend=backend,
     )
@@ -660,6 +882,15 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
     ):
         value = getattr(overlay, field) or getattr(base, field)
         setattr(merged, field, value)
+    for field in ("net_amount", "vat_amount", "gross_amount"):
+        value = getattr(merged, field)
+        if value is not None and value < 0:
+            setattr(merged, field, abs(value))
+    # No QR on this merge. Suggestions stay suggestions.
+    merged.document_type = "unclassified"
+    merged.invoice_number = None
+    merged.suggested_type = base.suggested_type
+    merged.suggested_invoice_number = base.suggested_invoice_number
     filled = sum(
         1
         for value in (
@@ -672,7 +903,7 @@ def _merge_fields(base: ExtractedFields, overlay: ExtractedFields) -> ExtractedF
         if value is not None
     )
     merged.confidence = min(95.0, max(base.confidence, 20.0 * filled))
-    merged.needs_review = merged.confidence < 85 or not merged.vendor_name or not merged.gross_amount
+    merged.needs_review = True
     return merged
 
 
@@ -680,13 +911,19 @@ _ocr_service: Optional[OCRService] = None
 
 
 def ocr_runtime_status() -> dict:
-    requested = (get_settings().ocr_backend or "auto").strip().lower()
-    available = tesseract_available()
-    degraded = requested == "tesseract" and not available
+    from app.core.config import app_env_name
+
+    current = get_settings()
+    requested = (current.ocr_backend or "auto").strip().lower()
+    ready = tesseract_gap() is None
+    backend = resolve_ocr_backend()
+    unknown = requested not in _KNOWN_OCR_BACKENDS
+    production_mock = app_env_name(current.app_env) == "production" and backend == "mock"
+    degraded = (requested == "tesseract" and not ready) or unknown or production_mock
     return {
         "status": "degraded" if degraded else "healthy",
-        "ocr_backend": resolve_ocr_backend(),
-        "tesseract": available,
+        "ocr_backend": backend,
+        "tesseract": ready,
     }
 
 

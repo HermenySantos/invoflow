@@ -1,11 +1,13 @@
 """Guards from the QA gate: mock OCR, tesseract, the e-Fatura flag, uploads."""
 
+import logging
 import uuid
 
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.core.startup import ConfigurationError, validate_configuration
+from app.services import ocr as ocr_module
 from app.services.ocr import OCRService
 from app.services.uploads import allowed_upload
 
@@ -22,6 +24,48 @@ def test_tesseract_without_a_binary_refuses_startup(monkeypatch):
     monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: False)
     with __import__("pytest").raises(ConfigurationError, match="tesseract binary"):
         validate_configuration()
+
+
+def test_tesseract_without_por_refuses_startup(monkeypatch):
+    monkeypatch.setattr(get_settings(), "ocr_backend", "tesseract")
+    monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: True)
+    monkeypatch.setattr("app.services.ocr.tesseract_languages", lambda: frozenset({"eng", "osd"}))
+    with __import__("pytest").raises(ConfigurationError, match="tesseract-ocr-por"):
+        validate_configuration()
+
+
+def test_auto_without_tesseract_logs_the_fallback(monkeypatch, caplog):
+    monkeypatch.setattr(get_settings(), "ocr_backend", "auto")
+    monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: False)
+    ocr_module._tesseract_fallback_logged = False
+    with caplog.at_level(logging.WARNING, logger="app.services.ocr"):
+        assert ocr_module.resolve_ocr_backend() == "mock"
+        assert ocr_module.resolve_ocr_backend() == "mock"
+    fallbacks = [record.message for record in caplog.records if "fell back to mock" in record.message]
+    assert len(fallbacks) == 1
+    assert "tesseract-ocr-por" in fallbacks[0]
+    assert "tesseract-ocr-eng" in fallbacks[0]
+    warnings = validate_configuration()
+    assert any("fell back to mock" in warning and "tesseract-ocr" in warning for warning in warnings)
+
+
+def test_auto_without_por_logs_the_language_pack(monkeypatch, caplog):
+    monkeypatch.setattr(get_settings(), "ocr_backend", "auto")
+    monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: True)
+    monkeypatch.setattr("app.services.ocr.tesseract_languages", lambda: frozenset({"eng"}))
+    ocr_module._tesseract_fallback_logged = False
+    with caplog.at_level(logging.WARNING, logger="app.services.ocr"):
+        assert ocr_module.resolve_ocr_backend() == "mock"
+    assert any("tesseract-ocr-por" in record.message for record in caplog.records)
+
+
+def test_explicit_mock_does_not_log_a_fallback(monkeypatch, caplog):
+    monkeypatch.setattr(get_settings(), "ocr_backend", "mock")
+    monkeypatch.setattr("app.services.ocr.tesseract_available", lambda: False)
+    ocr_module._tesseract_fallback_logged = False
+    with caplog.at_level(logging.WARNING, logger="app.services.ocr"):
+        assert ocr_module.resolve_ocr_backend() == "mock"
+    assert not any("fell back to mock" in record.message for record in caplog.records)
 
 
 def test_health_is_degraded_when_tesseract_is_missing(client: TestClient, monkeypatch):

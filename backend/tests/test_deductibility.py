@@ -59,7 +59,7 @@ def test_override_through_the_api_changes_the_estimate(client: TestClient, db: S
         user_id=user.id, status="ready", storage_key=f"{user.clerk_id}/{uuid.uuid4().hex}",
         original_filename="r.jpg", mime_type="image/jpeg", vendor_name="Oficina Auto",
         document_date=date(2026, 9, 10), vat_amount=Decimal("46.00"), gross_amount=Decimal("246.00"),
-        expense_category="services",
+        expense_category="services", document_type="FT",
     )
     db.add(repair)
     db.commit()

@@ -19,6 +19,7 @@ from app.core.security import get_current_user, CurrentUser
 from app.core.rate_limit import limiter, RATE_LIMITS
 from app.models.user import User
 from app.models.document import Document
+from app.models.efatura import EfaturaLink
 from app.schemas.document import (
     DocumentCreate,
     DocumentUpdate,
@@ -27,7 +28,17 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    AMOUNT_MISMATCH_DETAIL,
+    CONCRETE_DOCUMENT_TYPES,
+    NULL_TYPE_DETAIL,
+    SERIES_MISMATCH_DETAIL,
+    TYPE_REQUIRED_DETAIL,
+    amounts_are_consistent,
+    invoice_series_prefix,
+    keeps_at_issued_pair,
+    series_fields_changed,
 )
+from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
@@ -115,6 +126,65 @@ def parse_field_confidence(ocr_raw_response: Optional[str], overall_confidence: 
         return None
 
 
+def _json_object(raw: Optional[str]) -> Optional[dict]:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _row_is_efatura(document: Document, raw: Optional[dict]) -> bool:
+    if raw and raw.get("source") == "efatura":
+        return True
+    return "efatura" in (document.mime_type or "")
+
+
+def _efatura_issued(document: Document, db: Optional[Session]) -> Optional[tuple]:
+    """Type and number from the e-Fatura snapshot linked to this row."""
+    if db is None:
+        return None
+    link = (
+        db.query(EfaturaLink)
+        .filter(EfaturaLink.document_id == document.id)
+        .order_by(desc(EfaturaLink.created_at), desc(EfaturaLink.id))
+        .first()
+    )
+    if link is None or not link.payload_json:
+        return None
+    payload = _json_object(link.payload_json)
+    if not payload:
+        return None
+    at_type = str(payload.get("document_type") or "").strip().upper() or None
+    at_number = str(payload.get("invoice_number") or "").strip() or None
+    if not at_type and not at_number:
+        return None
+    return at_type, at_number
+
+
+def _at_issued(document: Document, db: Optional[Session]) -> Optional[tuple]:
+    """(type, number) AT supplied, from a QR payload or an e-Fatura link.
+
+    A row with no payload has no issued pair, so a later edit is checked normally.
+    """
+    raw = _json_object(document.ocr_raw_response)
+    qr = raw.get("qr") if raw else None
+    if isinstance(qr, dict) and qr.get("payload"):
+        try:
+            parsed = parse_invoice_qr(str(qr["payload"]))
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None and (parsed.document_type or parsed.invoice_number):
+            at_type = (parsed.document_type or "").strip().upper() or None
+            at_number = (parsed.invoice_number or "").strip() or None
+            return at_type, at_number
+    if _row_is_efatura(document, raw):
+        return _efatura_issued(document, db)
+    return None
+
+
 def build_document_response(
     document: Document,
     file_url: Optional[str] = None,
@@ -125,6 +195,7 @@ def build_document_response(
         document.ocr_raw_response, 
         float(document.ocr_confidence) if document.ocr_confidence else None
     )
+    issued = _at_issued(document, db)
 
     # Run validation
     warnings = validate_document(document)
@@ -142,6 +213,11 @@ def build_document_response(
         vendor_name=document.vendor_name,
         vendor_nif=document.vendor_nif,
         invoice_number=document.invoice_number,
+        document_type=document.document_type or "unclassified",
+        suggested_type=getattr(document, "suggested_type", None),
+        suggested_invoice_number=getattr(document, "suggested_invoice_number", None),
+        at_document_type=getattr(document, "at_document_type", None),
+        at_invoice_number=issued[1] if issued else None,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -432,6 +508,69 @@ async def update_document(
     try:
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
+        if "document_type" in update_data and update_data["document_type"] is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=NULL_TYPE_DETAIL,
+            )
+        confirmed = {"ready", "accountant_review"}
+        amount_fields = ("net_amount", "vat_amount", "gross_amount")
+        was_confirmed = document.status in confirmed
+        type_changed = (
+            "document_type" in update_data
+            and update_data["document_type"] != document.document_type
+        )
+        merged_net = update_data.get("net_amount", document.net_amount)
+        merged_vat = update_data.get("vat_amount", document.vat_amount)
+        merged_gross = update_data.get("gross_amount", document.gross_amount)
+        merged_type = update_data.get("document_type", document.document_type)
+        # A ready row is re-checked on every amount or type edit, not only
+        # when the status itself moves. A draft may stay inconsistent.
+        if was_confirmed and any(field in update_data for field in (*amount_fields, "document_type")):
+            if not amounts_are_consistent(merged_net, merged_vat, merged_gross):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=AMOUNT_MISMATCH_DETAIL,
+                )
+        if update_data.get("status") in confirmed and not amounts_are_consistent(
+            merged_net, merged_vat, merged_gross
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=AMOUNT_MISMATCH_DETAIL,
+            )
+        # Retyping a checked row sends it back to review.
+        if type_changed and was_confirmed:
+            update_data["status"] = "needs_review"
+        if (
+            update_data.get("status") in confirmed
+            and merged_type not in CONCRETE_DOCUMENT_TYPES
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=TYPE_REQUIRED_DETAIL,
+            )
+        merged_number = (
+            update_data["invoice_number"]
+            if "invoice_number" in update_data
+            else document.invoice_number
+        )
+        # Category, deductible, notes and a status-only confirm do not re-check
+        # the series. An AT pair that is still the one AT issued is legal even
+        # when the internal code and field D differ.
+        if series_fields_changed(document.document_type, document.invoice_number, update_data):
+            issued = _at_issued(document, db)
+            if not keeps_at_issued_pair(merged_type, merged_number, issued):
+                series = invoice_series_prefix(merged_number)
+                if (
+                    merged_type in CONCRETE_DOCUMENT_TYPES
+                    and series is not None
+                    and series != merged_type
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=SERIES_MISMATCH_DETAIL,
+                    )
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields
@@ -450,6 +589,9 @@ async def update_document(
 
         db.commit()
         db.refresh(document)
+    except HTTPException:
+        db.rollback()
+        raise
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating document: {e}")

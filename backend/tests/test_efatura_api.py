@@ -94,6 +94,7 @@ def test_summary_keeps_a_later_receipt_that_the_projection_drops(
             vat_amount=Decimal(vat),
             gross_amount=Decimal(vat),
             expense_category="office",
+            document_type="FT",
         ))
     db.commit()
     headers = {"X-Mock-User-Id": clerk_id}
