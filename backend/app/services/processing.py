@@ -17,6 +17,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
+from app.schemas.document import drop_accepted_series_mismatch
 from app.services.audit import log_auto_categorize, log_ocr_extraction
 from app.services.categorization import categorize_document
 from app.services.ocr import get_ocr_service
@@ -80,8 +81,15 @@ async def _read_into(db: Session, document: Document) -> None:
 
     if result.error:
         document.status = "failed"
+    else:
+        document.status = "needs_review" if result.needs_review else "ready"
+    # A QR that arrives after a printed-pair acceptance retires that acceptance.
+    if _result_has_at_pair(result):
+        drop_accepted_series_mismatch(
+            document, result.at_document_type or result.document_type
+        )
+    if result.error:
         return
-    document.status = "needs_review" if result.needs_review else "ready"
 
     log_ocr_extraction(
         db,
@@ -106,6 +114,21 @@ async def _read_into(db: Session, document: Document) -> None:
             expense_category=document.expense_category,
             irs_sector=document.irs_sector or "geral",
         )
+
+
+def _result_has_at_pair(result) -> bool:
+    """True when this read carried a QR payload or an AT document code."""
+    if getattr(result, "at_document_type", None):
+        return True
+    raw = getattr(result, "raw_response", None)
+    if not raw:
+        return False
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return False
+    qr = payload.get("qr") if isinstance(payload, dict) else None
+    return isinstance(qr, dict) and bool(qr.get("payload"))
 
 
 def _with_file_hash(raw: str | None, file_content: bytes | None) -> str | None:

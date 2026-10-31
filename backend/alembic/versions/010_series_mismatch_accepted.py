@@ -6,6 +6,11 @@ Create Date: 2026-10-26
 
 Does not edit 009. Existing rows are not an accepted mismatch.
 
+Downgrade drops series_mismatch_accepted. Rows that had been accepted come
+back as false and leave the accepted-mismatch list (summary, projection,
+summary.pdf and pares_aceites.csv). The series_mismatch_accepted audit
+entries are not stored in this column, so they remain.
+
 """
 from alembic import op
 import sqlalchemy as sa

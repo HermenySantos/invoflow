@@ -7,6 +7,7 @@ import {
   saveEditPayload,
   seriesAgrees,
   seriesBlocks,
+  crossesCreditBoundary,
   seriesOverrideAllowed,
 } from '@/lib/reviewEdit';
 
@@ -132,6 +133,17 @@ describe('invoice series prefix', () => {
     expect(invoiceSeriesPrefix('Nc.12')).toBeNull();
     expect(invoiceSeriesPrefix('NC1')).toBeNull();
     expect(invoiceSeriesPrefix('nd.2026')).toBeNull();
+    expect(invoiceSeriesPrefix('NC.2026/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('NC.1')).toBe('NC');
+    expect(invoiceSeriesPrefix('ND.5/1')).toBe('ND');
+    expect(invoiceSeriesPrefix('NC2026')).toBe('NC');
+    expect(invoiceSeriesPrefix('NC001')).toBe('NC');
+    expect(invoiceSeriesPrefix('NC1 2026')).toBe('NC');
+    expect(invoiceSeriesPrefix('ND2026')).toBe('ND');
+    expect(invoiceSeriesPrefix('FT.12')).toBe('FT');
+    expect(invoiceSeriesPrefix('FT.2026/12')).toBe('FT');
+    expect(invoiceSeriesPrefix('FR.1')).toBe('FR');
+    expect(invoiceSeriesPrefix('FS.2026/1')).toBe('FS');
     expect(invoiceSeriesPrefix('fr.a')).toBe('FR');
     expect(invoiceSeriesPrefix('N\u200bC A/5')).toBe('NC');
     expect(invoiceSeriesPrefix('\uFEFFNC A/5')).toBe('NC');
@@ -175,6 +187,14 @@ describe('invoice series prefix', () => {
     expect(seriesAgrees('FT', 'Nc.12')).toBe(true);
     expect(seriesAgrees('FT', 'NC1')).toBe(true);
     expect(seriesAgrees('FT', 'nd.2026')).toBe(true);
+    expect(seriesAgrees('FT', 'NC.2026/5')).toBe(false);
+    expect(seriesAgrees('FT', 'NC2026')).toBe(false);
+    expect(seriesAgrees('FT', 'NC001')).toBe(false);
+    expect(seriesAgrees('NC', 'FT.12')).toBe(false);
+    expect(seriesAgrees('NC', 'FT.2026/12')).toBe(false);
+    expect(seriesAgrees('FT', 'FT.12')).toBe(true);
+    expect(seriesAgrees('NC', 'Fr.12')).toBe(true);
+    expect(seriesAgrees('NC', 'frete 12')).toBe(true);
     expect(seriesAgrees('FT', 'fr.a')).toBe(false);
     expect(seriesAgrees('FT', 'FRA 2026/12')).toBe(true);
     expect(seriesAgrees('FT', 'NC2026/5')).toBe(false);
@@ -209,6 +229,17 @@ describe('invoice series prefix', () => {
     expect(seriesOverrideAllowed('FS', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(false);
     expect(seriesOverrideAllowed('FT', 'Fr.12', null, null)).toBe(false);
     expect(seriesOverrideAllowed('FT', 'NC1', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('FT', 'NC.1', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('NC', 'FT.12', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('FR', 'FT.12', null, null)).toBe(true);
+    expect(seriesOverrideAllowed('FR', 'FT 2026/12', 'FR', null)).toBe(false);
+    expect(crossesCreditBoundary('FT', 'NC')).toBe(true);
+    expect(crossesCreditBoundary('NC', 'FT')).toBe(true);
+    expect(crossesCreditBoundary('FT', 'FS')).toBe(false);
+    expect(crossesCreditBoundary('FT', 'FT')).toBe(false);
+    expect(seriesBlocks('NC', '2026/12', 'FT', 'FT A/12')).toBe(true);
+    expect(seriesBlocks('FT', '2026/12', 'FT', 'FT A/12')).toBe(false);
+    expect(seriesBlocks('NC', '2026/12')).toBe(false);
   });
 });
 

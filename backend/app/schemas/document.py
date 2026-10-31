@@ -40,21 +40,31 @@ CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
 # The printed-pair flag may only cross codes inside this family.
 INVOICE_FAMILY = frozenset({"FT", "FS", "FR"})
-# A series token, then a boundary. A dot counts only when a letter follows
-# ("NC.A/5", "fr.a"). A dot then a digit is an abbreviation ("Fr.12", "Nc.12").
+# A series token, then a boundary. A dot counts when a letter follows
+# ("NC.A/5", "fr.a"), in any case.
 _SERIES_TOKEN = re.compile(
     r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))",
     re.IGNORECASE,
 )
+# A dot then a digit is a series only when both code letters are uppercase
+# ("NC.2026/5", "NC.1", "FT.12", "ND.5/1"). Title case and lowercase stay
+# abbreviations ("Fr.12", "Fs.12", "Nc.12", "nd.2026"). Case is the distinction.
+_SERIES_DOT_DIGIT = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)\.(?=\d)")
 # "NCA/5": the code, one extra letter, then / . or -. Whitespace does not count,
 # so "FRA 2026/12" is vendor numbering.
 _SERIES_GLUED_LETTER = re.compile(
     r"^(?P<code>FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])",
     re.IGNORECASE,
 )
-# "NC2026/5". Glued digits are a series only when / . or - follows them.
-# "NC1" has no separator, so it stays vendor numbering.
-_SERIES_GLUED_DIGIT = re.compile(r"^(?P<code>NC|ND)\d+(?=[/.\-])", re.IGNORECASE)
+# Glued NC/ND digits. A separator after the digits always counts ("NC2026/5",
+# "NC1/5"). Two or more digits count with nothing after ("NC2026", "NC001",
+# "ND2026"). One digit counts only when whitespace continues the number
+# ("NC1 2026"). A bare "NC1" does not. FT/FS/FR glued to digits stay vendor
+# numbering ("FS2026/12", "FT2026/1").
+_SERIES_GLUED_DIGIT = re.compile(
+    r"^(?P<code>NC|ND)(?:\d+(?=[/.\-])|\d{2,}|\d(?=\s))",
+    re.IGNORECASE,
+)
 # "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
 _SERIES_SPLIT = re.compile(
     r"^(?P<c1>[A-Za-z])[\s./\-]+(?P<c2>[A-Za-z])(?=[\s/.\-]|$)",
@@ -148,13 +158,19 @@ def fold_series_text(value: Optional[str]) -> str:
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     """FT, FS, FR, NC or ND as a token at the start of a document number.
 
-    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a', 'NC2026/5'.
-    A dot then a letter is a series. A dot then a digit is not ('Fr.12',
-    'Fs.12', 'Nc.12', 'nd.2026'). Glued NC/ND digits count only when a
-    separator follows ('NC2026/5'), so 'NC1' does not.
-    Does not count: 'frete 12', 'fr001', 'FS2026/12', 'FT2026/1',
-    'FRA2026/12', 'Fr. 12', 'FRA 2026/12'. A number with no recognisable
-    prefix is allowed with any type.
+    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a',
+    'NC2026/5', 'NC.2026/5', 'NC.1', 'FT.12', 'FT.2026/12', 'ND.5/1',
+    'NC2026', 'NC001', 'ND2026', 'NC1 2026'.
+    A dot then a letter is a series in any case. A dot then a digit is a
+    series only when both code letters are uppercase, so 'FT.12' and 'NC.1'
+    count and 'Fr.12', 'Fs.12', 'Nc.12' and 'nd.2026' do not. That case
+    split is what keeps the abbreviations off the credit/invoice check.
+    Glued NC/ND digits count when a separator follows, when there are two
+    or more digits, or when one digit is followed by a space ('NC1 2026').
+    A bare 'NC1' does not.
+    Does not count: 'frete 12' (letters continue after the code), 'fr001',
+    'FS2026/12', 'FT2026/1', 'FRA2026/12', 'Fr. 12', 'FRA 2026/12'.
+    A number with no recognisable prefix is allowed with any type.
     """
     text = fold_series_text(number)
     if not text:
@@ -162,6 +178,9 @@ def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     token = _SERIES_TOKEN.match(text)
     if token:
         return token.group("code").upper()
+    dot_digit = _SERIES_DOT_DIGIT.match(text)
+    if dot_digit:
+        return dot_digit.group("code").upper()
     glued_digit = _SERIES_GLUED_DIGIT.match(text)
     if glued_digit:
         return glued_digit.group("code").upper()
@@ -206,22 +225,50 @@ def series_fields_changed(
     return False
 
 
+def crosses_credit_boundary(left: Optional[str], right: Optional[str]) -> bool:
+    """True when one concrete code is an invoice and the other is NC or ND, or NC differs from ND.
+
+    FT, FS and FR may differ from each other. An empty or non-concrete code does not cross.
+    """
+    a = (left or "").strip().upper()
+    b = (right or "").strip().upper()
+    if a not in CONCRETE_DOCUMENT_TYPES or b not in CONCRETE_DOCUMENT_TYPES:
+        return False
+    if a == b or (a in INVOICE_FAMILY and b in INVOICE_FAMILY):
+        return False
+    return True
+
+
 def series_override_allowed(
     document_type: Optional[str],
     invoice_number: Optional[str],
     issued: Optional[tuple],
+    at_typed: bool = False,
 ) -> bool:
     """The printed-pair flag applies only with no AT pair, and only inside {FT, FS, FR}.
 
-    A QR pair or an e-Fatura pair makes ``issued`` set, and the flag is ignored.
+    A QR pair, an e-Fatura pair, or a stored AT type (``at_typed``) makes the flag ignored.
     NC or ND on either side crosses the credit/debit boundary and is refused.
     """
-    if issued is not None:
+    if issued is not None or at_typed:
         return False
     if document_type not in INVOICE_FAMILY:
         return False
     prefix = invoice_series_prefix(invoice_number)
     return prefix in INVOICE_FAMILY and prefix != document_type
+
+
+def drop_accepted_series_mismatch(document, arriving_type: Optional[str]) -> None:
+    """A QR or e-Fatura pair ends a printed-pair acceptance.
+
+    The audit row is left in place. A confirmed row whose type now crosses
+    the credit/invoice boundary against the arriving AT type goes back to review.
+    """
+    document.series_mismatch_accepted = False
+    if document.status in ("ready", "accountant_review") and crosses_credit_boundary(
+        arriving_type, document.document_type
+    ):
+        document.status = "needs_review"
 
 
 def keeps_at_issued_pair(
@@ -276,9 +323,9 @@ class DocumentUpdate(BaseModel):
     irs_sector: Optional[str] = Field(None, max_length=50)
     # 0-100; send null to go back to the category rule.
     deductible_pct_override: Optional[int] = Field(None, ge=0, le=100)
-    # Not a column. Honoured only when the row has no QR pair and no e-Fatura
-    # pair, and only for a mismatch inside {FT, FS, FR}. The stored flag is
-    # series_mismatch_accepted.
+    # Not a column. Honoured only when the row has no QR pair, no e-Fatura
+    # pair and no stored AT type, and only for a mismatch inside {FT, FS, FR}.
+    # The stored flag is series_mismatch_accepted.
     accept_series_mismatch: bool = False
 
     @field_validator("net_amount", "vat_amount", "gross_amount", mode="before")
