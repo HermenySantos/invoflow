@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import Column, String, DateTime, Date, Numeric, ForeignKey, Text, Integer
+from sqlalchemy import Boolean, Column, String, DateTime, Date, Numeric, ForeignKey, Text, Integer, false as sql_false
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -61,6 +61,11 @@ class Document(Base):
     # User-set VAT deductible % (0-100), e.g. 0 for a passenger-car repair
     # (CIVA art. 21(1)(a)). None means use the category rule.
     deductible_pct_override = Column(Integer, nullable=True)
+    # The user kept a printed FT/FS/FR pair whose series does not match the type.
+    # Only when the row has no QR pair and no e-Fatura pair. Listed in exports.
+    series_mismatch_accepted = Column(
+        Boolean, nullable=False, default=False, server_default=sql_false()
+    )
     
     # Timestamps
     # Set instead of deleting: invoices must be kept (10 years in Portugal), so

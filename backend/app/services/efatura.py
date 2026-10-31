@@ -523,8 +523,30 @@ def _skip_reason(invoice: EFaturaInvoice, role: PartyRole) -> Optional[str]:
     return None
 
 
+_INVOICE_FAMILY = frozenset({"FT", "FS", "FR"})
+
+
+def _type_compatible(document: Document, invoice: EFaturaInvoice) -> bool:
+    """An imported FT must not link to an NC or ND row.
+
+    Unclassified rows still match. FT, FS and FR match each other. NC matches
+    NC and ND matches ND.
+    """
+    stored = (document.document_type or "unclassified").strip().upper()
+    incoming = (invoice.document_type or "").strip().upper()
+    if stored in ("", "UNCLASSIFIED"):
+        return True
+    if stored in _INVOICE_FAMILY and incoming in _INVOICE_FAMILY:
+        return True
+    return stored == incoming
+
+
 def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list[Document]:
-    documents = db.query(Document).filter(Document.user_id == user_id).all()
+    documents = [
+        document
+        for document in db.query(Document).filter(Document.user_id == user_id).all()
+        if _type_compatible(document, invoice)
+    ]
     if invoice.atcud:
         by_atcud = [document for document in documents if _qr_atcud(document) == invoice.atcud]
         if by_atcud:

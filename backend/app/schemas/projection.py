@@ -6,8 +6,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.schemas.summary import ExcludedDocument
-from app.services.iva_adjust import EXCLUDED_HEADING
+from app.schemas.summary import AcceptedSeriesMismatch, ExcludedDocument
+from app.services.iva_adjust import ACCEPTED_MISMATCH_HEADING, EXCLUDED_HEADING
 
 
 class ProjectionResponse(BaseModel):
@@ -27,3 +27,5 @@ class ProjectionResponse(BaseModel):
     warnings: list[str] = []
     excluded_heading: str = EXCLUDED_HEADING
     excluded_documents: list[ExcludedDocument] = []
+    series_mismatch_heading: str = ACCEPTED_MISMATCH_HEADING
+    series_mismatch_documents: list[AcceptedSeriesMismatch] = []

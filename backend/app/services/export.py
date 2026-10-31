@@ -29,7 +29,9 @@ from app.services.categorization import (
 )
 from app.services.deadlines import deadline_line
 from app.services.iva_adjust import (
+    ACCEPTED_MISMATCH_HEADING,
     EXCLUDED_HEADING,
+    accepted_series_mismatches,
     contributions,
     credit_note_warnings,
     duplicate_warnings,
@@ -120,6 +122,10 @@ class ExportService:
             zf.writestr(
                 "documentos_por_rever.csv",
                 self._generate_excluded_csv(documents, library),
+            )
+            zf.writestr(
+                "pares_aceites.csv",
+                self._generate_accepted_csv(documents),
             )
             
             # Generate and add summary PDF
@@ -263,6 +269,24 @@ class ExportService:
                 listing_reason(doc, loser_ids=losers) or "por rever",
             ])
         return output.getvalue()
+
+    def _generate_accepted_csv(self, documents: list[Document]) -> str:
+        """Counted rows whose printed type and number were accepted anyway."""
+        output = io.StringIO()
+        output.write("\ufeff")
+        output.write(ACCEPTED_MISMATCH_HEADING + "\r\n")
+        writer = csv.writer(output, delimiter=";")
+        writer.writerow(["ID", "Data", "Fornecedor", "Tipo", "N.º da fatura", "Estado"])
+        for doc in accepted_series_mismatches(documents):
+            writer.writerow([
+                str(doc.id),
+                doc.document_date.isoformat() if doc.document_date else "",
+                _csv_text(doc.vendor_name),
+                doc.document_type or "",
+                _csv_text(doc.invoice_number),
+                doc.status,
+            ])
+        return output.getvalue()
     
     def _generate_pdf(
         self,
@@ -397,6 +421,33 @@ class ExportService:
             elements.append(excluded_table)
             if len(excluded) > 50:
                 elements.append(Paragraph(f"e mais {len(excluded) - 50}, ver CSV", styles["Normal"]))
+
+        accepted = accepted_series_mismatches(documents)
+        elements.append(Spacer(1, 16))
+        elements.append(Paragraph(ACCEPTED_MISMATCH_HEADING, styles["Heading2"]))
+        if not accepted:
+            elements.append(Paragraph("Nenhum.", styles["Normal"]))
+        else:
+            accepted_data = [["Data", "Fornecedor", "Tipo", "N.º", "Estado"]]
+            for d in accepted[:50]:
+                accepted_data.append([
+                    d.document_date.strftime("%d/%m/%Y") if d.document_date else "-",
+                    (d.vendor_name or "Desconhecido")[:25],
+                    d.document_type or "-",
+                    (d.invoice_number or "-")[:18],
+                    STATUS_LABELS.get(d.status, d.status),
+                ])
+            accepted_table = Table(accepted_data, colWidths=[2.2 * cm, 5 * cm, 2 * cm, 3.5 * cm, 3 * cm])
+            accepted_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]))
+            elements.append(accepted_table)
+            if len(accepted) > 50:
+                elements.append(Paragraph(f"e mais {len(accepted) - 50}, ver CSV", styles["Normal"]))
         
         # Build PDF
         doc.build(elements)

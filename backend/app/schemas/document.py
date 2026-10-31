@@ -33,15 +33,28 @@ AMOUNT_MISMATCH_DETAIL = "O valor líquido mais o IVA tem de ser igual ao total.
 TYPE_REQUIRED_DETAIL = "Indique o tipo de documento antes de o marcar como pronto."
 NULL_TYPE_DETAIL = "O tipo de documento não pode ficar vazio."
 SERIES_MISMATCH_DETAIL = "O n.º do documento não corresponde ao tipo indicado."
+SERIES_OVERRIDE_WARNING = (
+    "O n.º não corresponde ao tipo. Confirme só se for o par impresso no documento."
+)
 CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
-# A series token, then a boundary. "frete", "fr001", "FS2026/12" and "FRA2026/12" are not one.
-_SERIES_TOKEN = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/.\-]|$)", re.IGNORECASE)
-# "NCA/5": the code, one extra letter, then a separator.
-_SERIES_GLUED_LETTER = re.compile(
-    r"^(?P<code>FT|FS|FR|NC|ND)[A-Za-z](?=[\s/.\-])",
+# The printed-pair flag may only cross codes inside this family.
+INVOICE_FAMILY = frozenset({"FT", "FS", "FR"})
+# A series token, then a boundary. A dot counts only when a letter follows
+# ("NC.A/5", "fr.a"). A dot then a digit is an abbreviation ("Fr.12", "Nc.12").
+_SERIES_TOKEN = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))",
     re.IGNORECASE,
 )
+# "NCA/5": the code, one extra letter, then / . or -. Whitespace does not count,
+# so "FRA 2026/12" is vendor numbering.
+_SERIES_GLUED_LETTER = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])",
+    re.IGNORECASE,
+)
+# "NC2026/5". Glued digits are a series only when / . or - follows them.
+# "NC1" has no separator, so it stays vendor numbering.
+_SERIES_GLUED_DIGIT = re.compile(r"^(?P<code>NC|ND)\d+(?=[/.\-])", re.IGNORECASE)
 # "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
 _SERIES_SPLIT = re.compile(
     r"^(?P<c1>[A-Za-z])[\s./\-]+(?P<c2>[A-Za-z])(?=[\s/.\-]|$)",
@@ -81,24 +94,66 @@ _CONFUSABLES = str.maketrans(
             (0x0406, "I"), (0x0456, "i"),
             (0x0407, "I"), (0x0457, "i"),
             (0x0408, "J"), (0x0458, "j"),
+            (0x0274, "N"),  # ɴ small capital n
+            (0x1D04, "C"),  # ᴄ small capital c
+            (0xA730, "F"),  # ꜰ
+            (0x1D1B, "T"),  # ᴛ
+            (0xA731, "S"),  # ꜱ
+            (0x0280, "R"),  # ʀ
+            (0x1D05, "D"),  # ᴅ
+            (0xA4E0, "N"),  # ꓠ Lisu na, the N lookalike
+            (0xA4DA, "C"),  # ꓚ Lisu ca, the C lookalike
         )
+    }
+)
+# Unicode hyphens and slashes that should be the ASCII series separators.
+_HYPHEN_SLASH = str.maketrans(
+    {
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\ufe58": "-",
+        "\ufe63": "-",
+        "\uff0d": "-",
+        "\u2044": "/",
+        "\u2215": "/",
+        "\u29f8": "/",
+        "\uff0f": "/",
     }
 )
 
 
 def fold_series_text(value: Optional[str]) -> str:
-    """NFKC, then the small confusables fold. Empty when there is nothing to read."""
+    """Normalise a document number before the series token is read.
+
+    NFKC, then format characters (zero-width space, BOM, soft hyphen) are
+    dropped. Greek, Cyrillic, small-cap and Lisu lookalikes fold to Latin.
+    Accents fold away (Ń/Ć). Unicode hyphens and slashes become ASCII.
+    """
     if value is None:
         return ""
-    text = unicodedata.normalize("NFKC", str(value)).translate(_CONFUSABLES)
+    text = unicodedata.normalize("NFKC", str(value))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    text = text.translate(_CONFUSABLES)
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.translate(_HYPHEN_SLASH)
     return text.strip()
 
 
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     """FT, FS, FR, NC or ND as a token at the start of a document number.
 
-    'NC-A/5', 'NCA/5', 'N/C' and 'N C A/5' count. 'frete 12', 'fr001',
-    'FS2026/12' and 'FRA2026/12' do not. A number with no recognisable
+    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a', 'NC2026/5'.
+    A dot then a letter is a series. A dot then a digit is not ('Fr.12',
+    'Fs.12', 'Nc.12', 'nd.2026'). Glued NC/ND digits count only when a
+    separator follows ('NC2026/5'), so 'NC1' does not.
+    Does not count: 'frete 12', 'fr001', 'FS2026/12', 'FT2026/1',
+    'FRA2026/12', 'Fr. 12', 'FRA 2026/12'. A number with no recognisable
     prefix is allowed with any type.
     """
     text = fold_series_text(number)
@@ -107,6 +162,9 @@ def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     token = _SERIES_TOKEN.match(text)
     if token:
         return token.group("code").upper()
+    glued_digit = _SERIES_GLUED_DIGIT.match(text)
+    if glued_digit:
+        return glued_digit.group("code").upper()
     glued = _SERIES_GLUED_LETTER.match(text)
     if glued:
         return glued.group("code").upper()
@@ -117,6 +175,14 @@ def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     if code not in CONCRETE_DOCUMENT_TYPES:
         return None
     return code
+
+
+def series_disagrees(document_type: Optional[str], invoice_number: Optional[str]) -> bool:
+    """True when a concrete type and the number's series token are different codes."""
+    if document_type not in CONCRETE_DOCUMENT_TYPES:
+        return False
+    series = invoice_series_prefix(invoice_number)
+    return series is not None and series != document_type
 
 
 def _norm_type(value: Optional[str]) -> str:
@@ -138,6 +204,24 @@ def series_fields_changed(
     if "invoice_number" in update and _norm_number(update.get("invoice_number")) != _norm_number(stored_number):
         return True
     return False
+
+
+def series_override_allowed(
+    document_type: Optional[str],
+    invoice_number: Optional[str],
+    issued: Optional[tuple],
+) -> bool:
+    """The printed-pair flag applies only with no AT pair, and only inside {FT, FS, FR}.
+
+    A QR pair or an e-Fatura pair makes ``issued`` set, and the flag is ignored.
+    NC or ND on either side crosses the credit/debit boundary and is refused.
+    """
+    if issued is not None:
+        return False
+    if document_type not in INVOICE_FAMILY:
+        return False
+    prefix = invoice_series_prefix(invoice_number)
+    return prefix in INVOICE_FAMILY and prefix != document_type
 
 
 def keeps_at_issued_pair(
@@ -192,6 +276,10 @@ class DocumentUpdate(BaseModel):
     irs_sector: Optional[str] = Field(None, max_length=50)
     # 0-100; send null to go back to the category rule.
     deductible_pct_override: Optional[int] = Field(None, ge=0, le=100)
+    # Not a column. Honoured only when the row has no QR pair and no e-Fatura
+    # pair, and only for a mismatch inside {FT, FS, FR}. The stored flag is
+    # series_mismatch_accepted.
+    accept_series_mismatch: bool = False
 
     @field_validator("net_amount", "vat_amount", "gross_amount", mode="before")
     @classmethod
@@ -256,6 +344,7 @@ class DocumentResponse(BaseModel):
     irs_sector: Optional[str] = None
     deductible_pct: int = 0                         # what the estimate uses
     deductible_pct_override: Optional[int] = None   # user-set, if any
+    series_mismatch_accepted: bool = False
     
     # Validation warnings (populated per-request)
     validation_warnings: list[dict] = []

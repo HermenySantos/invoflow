@@ -15,9 +15,11 @@ from app.models.document import Document
 from app.models.vat_sales import VatSalesEntry
 from app.schemas.projection import ProjectionResponse
 from app.services.categorization import deductible_vat_split
-from app.schemas.summary import ExcludedDocument
+from app.schemas.summary import AcceptedSeriesMismatch, ExcludedDocument
 from app.services.iva_adjust import (
+    ACCEPTED_MISMATCH_HEADING,
     EXCLUDED_HEADING,
+    accepted_series_mismatches,
     credit_note_warnings,
     duplicate_warnings,
     projection_excluded,
@@ -132,5 +134,16 @@ async def get_projection(
                 reason=reason,
             )
             for document, reason in projection_excluded(clipped, library)
+        ],
+        series_mismatch_heading=ACCEPTED_MISMATCH_HEADING,
+        series_mismatch_documents=[
+            AcceptedSeriesMismatch(
+                id=str(document.id),
+                vendor_name=document.vendor_name,
+                invoice_number=document.invoice_number,
+                document_type=document.document_type,
+                status=document.status,
+            )
+            for document in accepted_series_mismatches(clipped)
         ],
     )

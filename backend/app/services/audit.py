@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -130,6 +131,38 @@ def log_document_update(
         action="update",
         source="user",
         changes=changes,
+    )
+
+
+def log_series_mismatch_accepted(
+    db: Session,
+    *,
+    document_id: str,
+    user_id: str,
+    document_type: Optional[str],
+    invoice_number: Optional[str],
+    previous_accepted: bool,
+    previous_type: Optional[str],
+    previous_number: Optional[str],
+) -> AuditLog:
+    """Record that this user accepted a printed pair whose series does not match.
+
+    The row is entity_id. The user is user_id. created_at is the timestamp.
+    """
+    accepted_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return log_event(
+        db,
+        entity_type="document",
+        entity_id=document_id,
+        user_id=user_id,
+        action="series_mismatch_accepted",
+        source="user",
+        changes={
+            "series_mismatch_accepted": {"old": previous_accepted, "new": True},
+            "document_type": {"old": previous_type, "new": document_type},
+            "invoice_number": {"old": previous_number, "new": invoice_number},
+            "accepted_at": {"old": None, "new": accepted_at},
+        },
     )
 
 

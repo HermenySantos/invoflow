@@ -9,14 +9,23 @@ export interface ReviewEditFields {
 }
 
 const CONCRETE_TYPES = new Set(['FT', 'FS', 'FR', 'NC', 'ND']);
+const INVOICE_FAMILY = new Set(['FT', 'FS', 'FR']);
 
 /** Shown when a series prefix and the chosen type disagree. Same string as the API 422. */
 export const SERIES_MISMATCH_DETAIL = 'O n.º do documento não corresponde ao tipo indicado.';
 
-// A series token, then a boundary. "frete", "fr001", "FS2026/12" and "FRA2026/12" are not one.
-const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/.\-]|$)/i;
-// "NCA/5": the code, one extra letter, then a separator.
-const SERIES_GLUED_LETTER = /^(FT|FS|FR|NC|ND)[A-Za-z](?=[\s/.\-])/i;
+/** Shown when the user may keep a printed pair the QR could not confirm. */
+export const SERIES_OVERRIDE_WARNING =
+  'O n.º não corresponde ao tipo. Confirme só se for o par impresso no documento.';
+
+export const PRINTED_PAIR_LABEL = 'Confirmo que este é o par impresso no documento.';
+
+// A dot counts only when a letter follows ("NC.A/5", "fr.a"). "Fr.12" does not.
+const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))/i;
+// "NC2026/5". Glued digits count only when / . or - follows. "NC1" does not.
+const SERIES_GLUED_DIGIT = /^(NC|ND)\d+(?=[/.\-])/i;
+// "NCA/5": one extra letter, then / . or -. Whitespace does not count ("FRA 2026/12").
+const SERIES_GLUED_LETTER = /^(FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])/i;
 // "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
 const SERIES_SPLIT = /^([A-Za-z])[\s./\-]+([A-Za-z])(?=[\s/.\-]|$)/;
 
@@ -52,17 +61,35 @@ const CONFUSABLES = new Map<number, string>([
   [0x0406, 'I'], [0x0456, 'i'],
   [0x0407, 'I'], [0x0457, 'i'],
   [0x0408, 'J'], [0x0458, 'j'],
+  [0x0274, 'N'],
+  [0x1d04, 'C'],
+  [0xa730, 'F'],
+  [0x1d1b, 'T'],
+  [0xa731, 'S'],
+  [0x0280, 'R'],
+  [0x1d05, 'D'],
+  [0xa4e0, 'N'],
+  [0xa4da, 'C'],
 ]);
 
-/** NFKC, then the small confusables fold. */
+const UNICODE_HYPHEN = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g;
+const UNICODE_SLASH = /[\u2044\u2215\u29F8\uFF0F]/g;
+
+/** NFKC, drop format characters, fold lookalikes, accents, hyphens and slashes. */
 export function foldSeriesText(value: string | null | undefined): string {
   if (value == null || value === '') return '';
+  const nfkc = value.normalize('NFKC').replace(/\p{Cf}/gu, '');
   let folded = '';
-  for (const ch of value.normalize('NFKC')) {
+  for (const ch of nfkc) {
     const code = ch.codePointAt(0);
     folded += code === undefined ? ch : (CONFUSABLES.get(code) ?? ch);
   }
-  return folded.trim();
+  return folded
+    .normalize('NFD')
+    .replace(/\p{Mn}/gu, '')
+    .replace(UNICODE_HYPHEN, '-')
+    .replace(UNICODE_SLASH, '/')
+    .trim();
 }
 
 /** A stored or explicitly picked AT type. A suggestion is not one. */
@@ -72,14 +99,17 @@ export function isConcreteDocumentType(code: string | null | undefined): boolean
 
 /**
  * FT, FS, FR, NC or ND as a token at the start of a document number.
- * 'NC-A/5', 'NCA/5', 'N/C' and 'N C A/5' count. 'frete 12', 'fr001',
- * 'FS2026/12' and 'FRA2026/12' do not.
+ * 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a' and 'NC2026/5' count.
+ * A dot then a digit does not ('Fr.12', 'Fs.12', 'Nc.12', 'nd.2026').
+ * 'NC1' does not. 'frete 12', 'fr001', 'FS2026/12', 'Fr. 12' and 'FRA 2026/12' do not.
  */
 export function invoiceSeriesPrefix(number: string | null | undefined): string | null {
   const text = foldSeriesText(number);
   if (!text) return null;
   const token = SERIES_TOKEN.exec(text);
   if (token) return token[1].toUpperCase();
+  const gluedDigit = SERIES_GLUED_DIGIT.exec(text);
+  if (gluedDigit) return gluedDigit[1].toUpperCase();
   const glued = SERIES_GLUED_LETTER.exec(text);
   if (glued) return glued[1].toUpperCase();
   const split = SERIES_SPLIT.exec(text);
@@ -112,6 +142,30 @@ export function isAtIssuedPair(
 ): boolean {
   if (!atType || atNumber == null || atNumber === '') return false;
   return sameSeriesText(documentType, atType) && sameSeriesText(invoiceNumber, atNumber);
+}
+
+/** True when the row already has a QR pair or an e-Fatura pair. */
+export function hasAtPair(
+  atType: string | null | undefined,
+  atNumber: string | null | undefined,
+): boolean {
+  return Boolean(atType) || Boolean(atNumber);
+}
+
+/**
+ * The printed-pair checkbox. Only a row with no AT pair, and only when both
+ * the type and the number's series are inside {FT, FS, FR}.
+ */
+export function seriesOverrideAllowed(
+  documentType: string | null | undefined,
+  invoiceNumber: string | null | undefined,
+  atType?: string | null,
+  atNumber?: string | null,
+): boolean {
+  if (hasAtPair(atType, atNumber)) return false;
+  if (!documentType || !INVOICE_FAMILY.has(documentType)) return false;
+  const prefix = invoiceSeriesPrefix(invoiceNumber);
+  return prefix !== null && INVOICE_FAMILY.has(prefix) && prefix !== documentType;
 }
 
 /**
@@ -179,7 +233,7 @@ function netFromGrossAndVat(gross: string, vat: string): string | null {
 }
 
 /** Payload for the receipt review save. Amounts stay non-negative; NC is the sign. */
-export function saveEditPayload(editData: ReviewEditFields) {
+export function saveEditPayload(editData: ReviewEditFields, acceptSeriesMismatch = false) {
   const net = netFromGrossAndVat(editData.gross_amount, editData.vat_amount);
   const chosen = editData.document_type;
   const draft = chosen === 'unclassified';
@@ -192,5 +246,6 @@ export function saveEditPayload(editData: ReviewEditFields) {
     ...(chosen ? { document_type: chosen } : {}),
     ...('invoice_number' in editData ? { invoice_number: editData.invoice_number || null } : {}),
     status: (draft ? 'needs_review' : 'ready') as 'ready' | 'needs_review',
+    ...(acceptSeriesMismatch ? { accept_series_mismatch: true } : {}),
   };
 }

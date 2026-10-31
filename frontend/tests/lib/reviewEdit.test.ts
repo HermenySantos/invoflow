@@ -7,6 +7,7 @@ import {
   saveEditPayload,
   seriesAgrees,
   seriesBlocks,
+  seriesOverrideAllowed,
 } from '@/lib/reviewEdit';
 
 describe('saveEditPayload', () => {
@@ -121,6 +122,27 @@ describe('invoice series prefix', () => {
     expect(invoiceSeriesPrefix('fr001')).toBeNull();
     expect(invoiceSeriesPrefix('FS2026/12')).toBeNull();
     expect(invoiceSeriesPrefix('FRA2026/12')).toBeNull();
+    expect(invoiceSeriesPrefix('Fr. 12')).toBeNull();
+    expect(invoiceSeriesPrefix('FRA 2026/12')).toBeNull();
+    expect(invoiceSeriesPrefix('FT2026/1')).toBeNull();
+    expect(invoiceSeriesPrefix('NC2026/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('ND2026/3')).toBe('ND');
+    expect(invoiceSeriesPrefix('Fr.12')).toBeNull();
+    expect(invoiceSeriesPrefix('Fs.12')).toBeNull();
+    expect(invoiceSeriesPrefix('Nc.12')).toBeNull();
+    expect(invoiceSeriesPrefix('NC1')).toBeNull();
+    expect(invoiceSeriesPrefix('nd.2026')).toBeNull();
+    expect(invoiceSeriesPrefix('fr.a')).toBe('FR');
+    expect(invoiceSeriesPrefix('N\u200bC A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\uFEFFNC A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N\u00adC A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\u0143\u0106 A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N\u2010C A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('N\u2013C')).toBe('NC');
+    expect(invoiceSeriesPrefix('N\u2044C A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\u0274\u1d04 A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\ua4e0C A/5')).toBe('NC');
+    expect(invoiceSeriesPrefix('\ua4e0\ua4da A/5')).toBe('NC');
     expect(invoiceSeriesPrefix('nc a/5')).toBe('NC');
     expect(invoiceSeriesPrefix('N C A/5')).toBe('NC');
     expect(invoiceSeriesPrefix('NC.A/5')).toBe('NC');
@@ -147,6 +169,16 @@ describe('invoice series prefix', () => {
     expect(seriesAgrees('NC', null)).toBe(true);
     expect(seriesAgrees('FT', 'frete 12')).toBe(true);
     expect(seriesAgrees('FT', 'FRA2026/12')).toBe(true);
+    expect(seriesAgrees('FT', 'Fr. 12')).toBe(true);
+    expect(seriesAgrees('FT', 'Fr.12')).toBe(true);
+    expect(seriesAgrees('FT', 'Fs.12')).toBe(true);
+    expect(seriesAgrees('FT', 'Nc.12')).toBe(true);
+    expect(seriesAgrees('FT', 'NC1')).toBe(true);
+    expect(seriesAgrees('FT', 'nd.2026')).toBe(true);
+    expect(seriesAgrees('FT', 'fr.a')).toBe(false);
+    expect(seriesAgrees('FT', 'FRA 2026/12')).toBe(true);
+    expect(seriesAgrees('FT', 'NC2026/5')).toBe(false);
+    expect(seriesAgrees('FT', 'N\u200bC A/5')).toBe(false);
     expect(seriesAgrees('FT', 'N\u0421 A/5')).toBe(false);
     expect(seriesAgrees('FT', '\u041DC A/5')).toBe(false);
     expect(seriesAgrees('FT', '\uFF2E\uFF23 A/5')).toBe(false);
@@ -162,6 +194,21 @@ describe('invoice series prefix', () => {
     expect(seriesBlocks('NC', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(true);
     expect(seriesBlocks('FT', 'frete 12')).toBe(false);
     expect(seriesBlocks('unclassified', 'FT A/12', 'FR', 'FT 2026/12')).toBe(false);
+  });
+
+  it('offers the printed-pair flag only inside the invoice family and never on an AT row', () => {
+    expect(seriesOverrideAllowed('FR', 'FT 2026/12', null, null)).toBe(true);
+    expect(seriesOverrideAllowed('FS', 'FR 1/5', null, null)).toBe(true);
+    expect(seriesOverrideAllowed('FT', 'FT A/12', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('NC', 'FT A/12', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('FT', 'NC A/5', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('FT', 'NC2026/5', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('ND', 'FT 2026/12', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('FR', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(false);
+    expect(seriesOverrideAllowed('NC', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(false);
+    expect(seriesOverrideAllowed('FS', 'FT 2026/12', 'FR', 'FT 2026/12')).toBe(false);
+    expect(seriesOverrideAllowed('FT', 'Fr.12', null, null)).toBe(false);
+    expect(seriesOverrideAllowed('FT', 'NC1', null, null)).toBe(false);
   });
 });
 
