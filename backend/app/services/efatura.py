@@ -8,16 +8,20 @@ purchases and link rows.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import unicodedata
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, Optional, Protocol, Sequence
+from typing import Callable, Literal, Optional, Protocol, Sequence
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
@@ -199,10 +203,13 @@ def import_purchases(
     user_id: str,
     taxpayer_nif: str,
     invoices: Sequence[EFaturaInvoice],
+    after_invoice: Optional[Callable[[EFaturaInvoice], None]] = None,
 ) -> ImportResult:
     """Store acquirer purchases on Document and record every row on a link.
 
-    The caller commits. This function flushes and uses a savepoint per invoice.
+    The caller commits. This function does not. Each invoice runs in a savepoint,
+    so a failed invoice does not undo the caller's uncommitted work or the other
+    invoices. ``after_invoice`` is a test hook, called inside the savepoint.
     """
     if not _NIF.fullmatch(taxpayer_nif or ""):
         raise ValueError("taxpayer_nif must be 9 digits")
@@ -228,20 +235,43 @@ def import_purchases(
     warnings: list[str] = []
 
     for invoice in invoices:
-        try:
-            with db.begin_nested():
-                outcome = _import_one(db, user_id=user_id, taxpayer_nif=taxpayer_nif, invoice=invoice)
-                db.flush()
-        except IntegrityError:
-            link = (
-                db.query(EfaturaLink)
-                .filter(
-                    EfaturaLink.user_id == user_id,
-                    EfaturaLink.source_key == _source_key(invoice),
+        outcome = None
+        key = _source_key(invoice)
+        for attempt in range(2):
+            try:
+                with db.begin_nested():
+                    outcome = _import_one(
+                        db, user_id=user_id, taxpayer_nif=taxpayer_nif, invoice=invoice
+                    )
+                    db.flush()
+                    if after_invoice is not None:
+                        after_invoice(invoice)
+                break
+            except OperationalError as exc:
+                if not is_pg_deadlock(exc):
+                    raise
+                logger.warning("e-Fatura import deadlock on %s; retrying", key)
+                if attempt == 0:
+                    continue
+                logger.warning("e-Fatura import deadlock on %s; recorded as failed", key)
+                warning = "A importação deste documento falhou após duas tentativas."
+                skipped.append(Skipped(key, "deadlock", warning))
+                warnings.append(f"{key}: {warning}")
+                outcome = None
+                break
+            except IntegrityError:
+                link = (
+                    db.query(EfaturaLink)
+                    .filter(
+                        EfaturaLink.user_id == user_id,
+                        EfaturaLink.source_key == key,
+                    )
+                    .one_or_none()
                 )
-                .one_or_none()
-            )
-            unchanged.append(_source_key(invoice) if link is None else link.source_key)
+                unchanged.append(key if link is None else link.source_key)
+                outcome = None
+                break
+        if outcome is None:
             continue
 
         if outcome.kind == "created" and outcome.document_id:
@@ -286,6 +316,14 @@ def _import_one(
         .filter(EfaturaLink.user_id == user_id, EfaturaLink.source_key == source_key)
         .one_or_none()
     )
+    if existing is not None:
+        # Documents first, then this link. Delete uses the same order.
+        _lock_documents_then_links(
+            db,
+            [existing.document_id] if existing.document_id else [],
+            [existing.id],
+        )
+        db.refresh(existing)
     payload = _payload(invoice)
     if existing is not None:
         warning = None
@@ -296,6 +334,12 @@ def _import_one(
         existing.payload_json = payload
         existing.updated_at = datetime.utcnow()
         _retire_printed_pair(db, existing.document_id, invoice.document_type)
+        restored = restore_orphaned_link(db, existing, invoice, audit_source="efatura")
+        if restored is not None:
+            document, created_new = restored
+            if created_new:
+                return _Outcome("created", source_key, "created", document.id)
+            return _Outcome("unchanged", source_key, existing.outcome, document.id, warning)
         return _Outcome("unchanged", source_key, existing.outcome, existing.document_id, warning)
 
     role = _role(invoice, taxpayer_nif)
@@ -331,6 +375,10 @@ def _import_one(
         )
         return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
+    if len(matches) == 1 and not _matched_same_invoice(matches[0], invoice):
+        # A loose match must not swallow a different invoice. Store it instead.
+        matches = []
+
     if len(matches) == 1:
         document = matches[0]
         hidden = document.deleted_at is not None
@@ -362,6 +410,14 @@ def _import_one(
         drop_accepted_series_mismatch(document, invoice.document_type)
         return _Outcome("linked", source_key, outcome, document.id, warning)
 
+    # A user-deleted AT row stays deleted, including when this invoice arrives
+    # under a new source key. This is the same identity check as _place_at_invoice.
+    identity = at_invoice_identity(
+        invoice.issuer_nif, _stored_type(invoice), invoice.invoice_number
+    )
+    if _identity_row(db, user_id, identity, live=False) is not None:
+        return _Outcome("unchanged", source_key, "unchanged")
+
     document = _new_purchase(db, user_id=user_id, source_key=source_key, invoice=invoice)
     _add_link(
         db,
@@ -377,18 +433,100 @@ def _import_one(
     return _Outcome("created", source_key, "created", document.id)
 
 
+def _prepare_identity_text(value: Optional[str]) -> str:
+    """NFKC, NBSP becomes a space, outer trim, inner whitespace runs become one space."""
+    text = unicodedata.normalize("NFKC", value or "")
+    text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ")
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold()
+
+
+def normalise_nif(value: Optional[str]) -> str:
+    """NIF identity. A leading PT is removed only when a digit or space follows it.
+
+    Every remaining space is removed. A NIF is digits, so ``123 456 002`` is
+    ``123456002``. Spaces in an invoice number are a different rule.
+    """
+    text = _prepare_identity_text(value)
+    if text.startswith("pt") and (len(text) == 2 or text[2] == " " or text[2].isdigit()):
+        text = text[2:].lstrip()
+    return text.replace(" ", "")
+
+
+def _separate_type_token(text: str) -> str:
+    """``FT2026/12`` is ``FT 2026/12`` when the glued prefix is a known AT code."""
+    for token in ("ft", "fs", "fr", "nc", "nd"):
+        if len(text) > len(token) and text.startswith(token) and text[len(token)] not in " /":
+            return f"{token} {text[len(token):]}"
+    return text
+
+
+def normalise_invoice_number(value: Optional[str]) -> str:
+    """Number identity.
+
+    Inner spaces stay, collapsed to one, except the spaces next to ``/``, which
+    are removed. A leading FT, FS, FR, NC or ND glued to the series is split off
+    with one space. Leading zeros are removed only from the sequence after the
+    last ``/``. The series and every other digit run stay. ``FT A1/005`` and
+    ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
+    """
+    text = _prepare_identity_text(value)
+    text = re.sub(r"\s*/\s*", "/", text)
+    text = _separate_type_token(text)
+    if "/" not in text:
+        return text
+    head, seq = text.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return f"{head}/{seq}"
+
+
+def at_invoice_identity(
+    vendor_nif: Optional[str],
+    document_type: Optional[str],
+    invoice_number: Optional[str],
+) -> str:
+    """One key for an AT invoice, shared by a doc-key link and an ATCUD link.
+
+    NIF, type and number are normalised the same way import matching compares them.
+    """
+    kind = (document_type or "").strip().upper()
+    return f"{normalise_nif(vendor_nif)}|{kind}|{normalise_invoice_number(invoice_number)}"
+
+
+def _stored_type(invoice: EFaturaInvoice) -> str:
+    if invoice.document_type in _CONCRETE_AT_TYPES:
+        return invoice.document_type
+    return "unclassified"
+
+
 def _new_purchase(
     db: Session,
     *,
     user_id: str,
     source_key: str,
     invoice: EFaturaInvoice,
+    review_from: Optional[Document] = None,
 ) -> Document:
-    expense_category, irs_sector = categorize_document(invoice.issuer_name, invoice.issuer_nif)
+    status = "needs_review"
+    deductible_pct_override = None
+    # A confirmed scan keeps its category and deductible review. An unconfirmed
+    # scan does not: the AT row's category stays empty, matching migration 011.
+    if review_from is not None and review_from.status in ("ready", "accountant_review"):
+        status = review_from.status
+        expense_category = review_from.expense_category
+        irs_sector = review_from.irs_sector
+        deductible_pct_override = review_from.deductible_pct_override
+    elif review_from is not None:
+        expense_category = None
+        irs_sector = None
+    else:
+        expense_category, irs_sector = categorize_document(invoice.issuer_name, invoice.issuer_nif)
     document = Document(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        status="needs_review",
+        status=status,
         storage_key=f"efatura/{user_id}/{source_key}",
         original_filename=_safe_filename(invoice.invoice_number),
         mime_type="application/vnd.invoflow.efatura+json",
@@ -396,12 +534,11 @@ def _new_purchase(
         vendor_nif=invoice.issuer_nif,
         vendor_name=invoice.issuer_name,
         invoice_number=invoice.invoice_number,
-        document_type=(
-            invoice.document_type
-            if invoice.document_type in _CONCRETE_AT_TYPES
-            else "unclassified"
-        ),
+        document_type=_stored_type(invoice),
         at_document_type=invoice.document_type,
+        at_invoice_identity=at_invoice_identity(
+            invoice.issuer_nif, _stored_type(invoice), invoice.invoice_number
+        ),
         document_date=invoice.issue_date,
         net_amount=_non_negative(invoice.net_total),
         gross_amount=_non_negative(invoice.gross_total),
@@ -409,7 +546,7 @@ def _new_purchase(
         vat_rate=_single_vat_rate(invoice),
         ocr_confidence=None,
         ocr_raw_response='{"source":"efatura"}',
-        deductible_pct_override=None,
+        deductible_pct_override=deductible_pct_override,
         expense_category=expense_category,
         irs_sector=irs_sector,
     )
@@ -470,6 +607,202 @@ def _retire_printed_pair(db: Session, document_id: Optional[str], arriving_type:
     if document is None:
         return
     drop_accepted_series_mismatch(document, arriving_type)
+
+
+_LINKED_SCAN_OUTCOMES = frozenset({"linked_existing", "linked_hidden"})
+
+
+def _is_scan(document: Document) -> bool:
+    """A photo or PDF, not the AT row this importer stores."""
+    if (document.mime_type or "").startswith("application/vnd.invoflow.efatura"):
+        return False
+    raw = document.ocr_raw_response or ""
+    return '"source":"efatura"' not in raw and '"source": "efatura"' not in raw
+
+
+def _visible_link_target(db: Session, link: EfaturaLink) -> Optional[Document]:
+    if not link.document_id:
+        return None
+    document = db.get(Document, link.document_id)
+    if document is None or document.deleted_at is not None:
+        return None
+    return document
+
+
+def _identity_row(
+    db: Session,
+    user_id: str,
+    identity: str,
+    *,
+    live: bool,
+) -> Optional[Document]:
+    query = db.query(Document).filter(
+        Document.user_id == user_id,
+        Document.at_invoice_identity == identity,
+    )
+    if live:
+        query = query.filter(Document.deleted_at.is_(None))
+    else:
+        query = query.filter(Document.deleted_at.isnot(None))
+    return query.order_by(Document.created_at.asc()).with_for_update().first()
+
+
+def _place_at_invoice(
+    db: Session,
+    link: EfaturaLink,
+    invoice: EFaturaInvoice,
+    scan: Document,
+) -> tuple[Document, bool]:
+    """Return the one AT row for this invoice, creating it only when none exists.
+
+    A deleted AT row stays deleted. A second link for the same nif, type and
+    number attaches to the row the first link already has. ``created`` is true
+    only when this call inserted that row.
+    """
+    identity = at_invoice_identity(invoice.issuer_nif, _stored_type(invoice), invoice.invoice_number)
+    live = _identity_row(db, link.user_id, identity, live=True)
+    if live is not None:
+        return live, False
+    deleted = _identity_row(db, link.user_id, identity, live=False)
+    if deleted is not None:
+        return deleted, False
+    try:
+        with db.begin_nested():
+            document = _new_purchase(
+                db,
+                user_id=link.user_id,
+                source_key=link.source_key,
+                invoice=invoice,
+                review_from=scan,
+            )
+    except IntegrityError:
+        db.expire_all()
+        live = _identity_row(db, link.user_id, identity, live=True)
+        if live is not None:
+            return live, False
+        deleted = _identity_row(db, link.user_id, identity, live=False)
+        if deleted is not None:
+            return deleted, False
+        raise
+    return document, True
+
+
+def _log_unlink(
+    db: Session,
+    scan: Document,
+    at_row: Document,
+    source_key: str,
+    audit_source: str,
+) -> None:
+    log_event(
+        db,
+        entity_type="document",
+        entity_id=scan.id,
+        user_id=scan.user_id,
+        action="efatura_unlink",
+        source=audit_source,
+        changes={
+            "efatura_document_id": {"old": scan.id, "new": at_row.id},
+            "source_key": {"old": None, "new": source_key},
+            "invoice_number": {"old": scan.invoice_number, "new": at_row.invoice_number},
+        },
+    )
+
+
+def restore_orphaned_link(
+    db: Session,
+    link: EfaturaLink,
+    invoice: EFaturaInvoice,
+    *,
+    audit_source: str,
+    write_audit: bool = True,
+) -> Optional[tuple[Document, bool]]:
+    """Move one link off a deleted scan onto the single AT row for that invoice.
+
+    A live target is left alone. A deleted e-Fatura document stays deleted:
+    only a deleted scan is restored. Returns ``(row, created_new)``.
+    """
+    if _visible_link_target(db, link) is not None:
+        return None
+    if link.outcome not in _LINKED_SCAN_OUTCOMES and link.outcome != "created":
+        return None
+    previous = db.get(Document, link.document_id) if link.document_id else None
+    if previous is None or previous.deleted_at is None or not _is_scan(previous):
+        return None
+    role: PartyRole = link.role if link.role in ("acquirer", "issuer", "not_party") else "acquirer"
+    reason = _skip_reason(invoice, role)
+    if reason == "cancelled":
+        logger.warning("e-Fatura link %s skipped; invoice is cancelled", link.id)
+        return None
+    if reason is not None:
+        return None
+    document, created_new = _place_at_invoice(db, link, invoice, previous)
+    link.document_id = document.id
+    link.outcome = "created"
+    link.warning = None
+    link.updated_at = datetime.utcnow()
+    if created_new and write_audit:
+        _log_unlink(db, previous, document, link.source_key, audit_source)
+    return document, created_new
+
+
+def detach_deleted_scan(db: Session, document: Document) -> None:
+    """Deleting a linked scan must not drop the AT invoice from the totals.
+
+    Every link on the scan is moved. Links for the same invoice share one AT
+    row, and the scan gets one ``efatura_unlink`` entry.
+    """
+    if document.deleted_at is None or not _is_scan(document):
+        return
+    links = (
+        db.query(EfaturaLink)
+        .filter(
+            EfaturaLink.user_id == document.user_id,
+            EfaturaLink.document_id == document.id,
+        )
+        .order_by(EfaturaLink.id)
+        .with_for_update()
+        .all()
+    )
+    moved_to: Optional[Document] = None
+    source_key = ""
+    for link in links:
+        try:
+            invoice = _parse_invoice(json.loads(link.payload_json))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.warning(
+                "e-Fatura link %s skipped; payload is not readable",
+                link.id,
+            )
+            continue
+        restored = restore_orphaned_link(
+            db, link, invoice, audit_source="user", write_audit=False
+        )
+        if restored is None:
+            continue
+        row, _created_new = restored
+        if moved_to is None:
+            moved_to = row
+            source_key = link.source_key
+    if moved_to is not None:
+        _log_unlink(db, document, moved_to, source_key, "user")
+
+
+def is_pg_deadlock(exc: BaseException) -> bool:
+    """True for Postgres deadlock (40P01) and serialization failure (40001)."""
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+    if code in {"40P01", "40001"}:
+        return True
+    return type(orig).__name__ in {"DeadlockDetected", "SerializationFailure"}
+
+
+def _lock_documents_then_links(db: Session, document_ids, link_ids) -> None:
+    """Canonical lock order: document ids ascending, then link ids ascending."""
+    for document_id in sorted({document_id for document_id in document_ids if document_id}):
+        db.query(Document).filter(Document.id == document_id).with_for_update().one()
+    for link_id in sorted({link_id for link_id in link_ids if link_id}):
+        db.query(EfaturaLink).filter(EfaturaLink.id == link_id).with_for_update().one()
 
 
 def _source_key(invoice: EFaturaInvoice) -> str:
@@ -554,10 +887,30 @@ def _type_compatible(document: Document, invoice: EFaturaInvoice) -> bool:
     return stored == incoming
 
 
+def _matched_same_invoice(document: Document, invoice: EFaturaInvoice) -> bool:
+    """A numbered row links only when it is this invoice.
+
+    An unnumbered scan matched by date and amount stays a link. ATCUD is the
+    same invoice even when the printed number differs. A different number is
+    stored on its own row instead of being reported as a link and dropped.
+    """
+    if invoice.atcud and _qr_atcud(document) == invoice.atcud:
+        return True
+    if not (document.invoice_number or "").strip():
+        return True
+    return (
+        normalise_nif(document.vendor_nif) == normalise_nif(invoice.issuer_nif)
+        and normalise_invoice_number(document.invoice_number)
+        == normalise_invoice_number(invoice.invoice_number)
+    )
+
+
 def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list[Document]:
     documents = [
         document
-        for document in db.query(Document).filter(Document.user_id == user_id).all()
+        for document in db.query(Document)
+        .filter(Document.user_id == user_id, Document.deleted_at.is_(None))
+        .all()
         if _type_compatible(document, invoice)
     ]
     if invoice.atcud:
@@ -565,21 +918,22 @@ def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list
         if by_atcud:
             return by_atcud
 
-    number = invoice.invoice_number.strip().lower()
+    number = normalise_invoice_number(invoice.invoice_number)
+    incoming_nif = normalise_nif(invoice.issuer_nif)
     if number:
         by_number = [
             document
             for document in documents
-            if document.vendor_nif == invoice.issuer_nif
+            if normalise_nif(document.vendor_nif) == incoming_nif
             and document.invoice_number
-            and document.invoice_number.strip().lower() == number
+            and normalise_invoice_number(document.invoice_number) == number
         ]
         if by_number:
             return by_number
 
     matched: list[Document] = []
     for document in documents:
-        if document.vendor_nif != invoice.issuer_nif:
+        if normalise_nif(document.vendor_nif) != normalise_nif(invoice.issuer_nif):
             continue
         if document.invoice_number and document.invoice_number.strip():
             continue

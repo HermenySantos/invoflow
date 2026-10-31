@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 from app.core.database import get_db, session_factory
 from app.core.security import get_current_user, CurrentUser
@@ -43,6 +43,7 @@ from app.schemas.document import (
 )
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
+from app.services.efatura import at_invoice_identity, detach_deleted_scan, is_pg_deadlock
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
 from app.services.audit import (
@@ -533,6 +534,7 @@ async def update_document(
         )
     
     try:
+        intended_identity = None
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
         if "document_type" in update_data and update_data["document_type"] is None:
@@ -624,6 +626,14 @@ async def update_document(
         # Update fields
         for field, value in update_data.items():
             setattr(document, field, value)
+        if any(field in update_data for field in ("vendor_nif", "document_type", "invoice_number")):
+            if document.at_invoice_identity or (
+                document.mime_type or ""
+            ).startswith("application/vnd.invoflow.efatura"):
+                intended_identity = at_invoice_identity(
+                    document.vendor_nif, document.document_type, document.invoice_number
+                )
+                document.at_invoice_identity = intended_identity
         
         # Audit log
         after_state = {field: getattr(document, field, None) for field in update_data}
@@ -651,6 +661,27 @@ async def update_document(
     except HTTPException:
         db.rollback()
         raise
+    except IntegrityError:
+        db.rollback()
+        other = None
+        if intended_identity:
+            other = (
+                db.query(Document)
+                .filter(
+                    Document.user_id == user.id,
+                    Document.at_invoice_identity == intended_identity,
+                    Document.id != document_id,
+                    Document.deleted_at.is_(None),
+                )
+                .first()
+            )
+        number = (other.invoice_number if other and other.invoice_number else "").strip()
+        detail = (
+            f"Já existe outro documento com o n.º {number}."
+            if number
+            else "Já existe outro documento com este NIF e n.º."
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating document: {e}")
@@ -672,31 +703,52 @@ async def delete_document(
     """Hide a document. The row and the original file are kept (invoice retention)."""
     user = get_or_create_user(db, current_user)
     
-    document = (
-        db.query(Document)
-        .filter(
-            Document.id == document_id,
-            Document.user_id == user.id,
-            Document.deleted_at.is_(None),
+    for attempt in range(2):
+        # Lock the scan first. detach_deleted_scan then locks its links by id.
+        document = (
+            db.query(Document)
+            .filter(
+                Document.id == document_id,
+                Document.user_id == user.id,
+                Document.deleted_at.is_(None),
+            )
+            .with_for_update()
+            .first()
         )
-        .first()
-    )
-    
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
-    
-    try:
-        log_document_delete(db, document_id=document.id, user_id=user.id)
-        document.deleted_at = datetime.utcnow()
-        db.commit()
-
-    except SQLAlchemyError as e:
-        db.rollback()
-        logger.error(f"Database error deleting document: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete document",
-        )
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found",
+            )
+        try:
+            log_document_delete(db, document_id=document.id, user_id=user.id)
+            document.deleted_at = datetime.utcnow()
+            # The scan leaves the totals. An e-Fatura invoice that was only
+            # represented by this row is stored again as its own AT document.
+            detach_deleted_scan(db, document)
+            db.commit()
+            return
+        except IntegrityError:
+            db.rollback()
+            logger.warning("AT invoice restore collided for document %s", document_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found",
+            )
+        except OperationalError as exc:
+            db.rollback()
+            if attempt == 0 and is_pg_deadlock(exc):
+                logger.warning("delete of document %s deadlocked; retrying", document_id)
+                continue
+            logger.error(f"Database error deleting document: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete document",
+            )
+        except SQLAlchemyError as exc:
+            db.rollback()
+            logger.error(f"Database error deleting document: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete document",
+            )

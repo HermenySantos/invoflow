@@ -61,8 +61,16 @@ def add_missing_nullable_columns(bind) -> list[str]:
             if not inspector.has_table(table.name):
                 continue
             existing = {column["name"] for column in inspector.get_columns(table.name)}
+            # A unique identity column belongs to Alembic. Adding it here would
+            # skip the index and make the later migration fail with DuplicateColumn.
+            unique_names = {
+                column.name
+                for index in table.indexes
+                if index.unique
+                for column in index.columns
+            }
             for column in table.columns:
-                if column.name in existing or not column.nullable:
+                if column.name in existing or not column.nullable or column.name in unique_names:
                     continue
                 column_type = column.type.compile(dialect=bind.dialect)
                 connection.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {column.name} {column_type}'))

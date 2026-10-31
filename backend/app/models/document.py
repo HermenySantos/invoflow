@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import Boolean, Column, String, DateTime, Date, Numeric, ForeignKey, Text, Integer, false as sql_false
+from sqlalchemy import Boolean, Column, Index, String, DateTime, Date, Numeric, ForeignKey, Text, Integer, false as sql_false, text as sql_text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -68,6 +68,9 @@ class Document(Base):
     series_mismatch_accepted = Column(
         Boolean, nullable=False, default=False, server_default=sql_false()
     )
+    # Set on an e-Fatura document: nif|type|number. Empty on scans.
+    # Unique among live rows. Deleted rows may share it.
+    at_invoice_identity = Column(String(200), nullable=True)
     
     # Timestamps
     # Set instead of deleting: invoices must be kept (10 years in Portugal), so
@@ -77,6 +80,17 @@ class Document(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
+    __table_args__ = (
+        Index(
+            "uq_documents_at_invoice_identity",
+            "user_id",
+            "at_invoice_identity",
+            unique=True,
+            postgresql_where=sql_text("deleted_at IS NULL"),
+            sqlite_where=sql_text("deleted_at IS NULL"),
+        ),
+    )
+
     # Relationships
     user = relationship("User", back_populates="documents")
     

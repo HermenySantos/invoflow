@@ -213,10 +213,23 @@ def test_hidden_receipt_stays_hidden(db: Session):
     result = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=_fixture())
     db.commit()
     db.refresh(photo)
-    assert photo.id in result.linked_existing
+    assert photo.id not in result.linked_existing
+    assert photo.id not in result.created
     assert photo.deleted_at is not None
-    link = db.query(EfaturaLink).filter(EfaturaLink.document_id == photo.id).one()
-    assert link.outcome == "linked_hidden"
+    live = (
+        db.query(Document)
+        .filter(
+            Document.user_id == user.id,
+            Document.deleted_at.is_(None),
+            Document.invoice_number == "FT A/123",
+        )
+        .one()
+    )
+    assert live.id != photo.id
+    assert live.mime_type == "application/vnd.invoflow.efatura+json"
+    link = db.query(EfaturaLink).filter(EfaturaLink.document_id == live.id).one()
+    assert link.outcome == "created"
+    assert db.query(EfaturaLink).filter(EfaturaLink.document_id == photo.id).count() == 0
 
 
 def test_efatura_module_does_not_name_the_upload_or_sales_paths():
