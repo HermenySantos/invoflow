@@ -17,8 +17,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
-from app.schemas.document import drop_accepted_series_mismatch
-from app.services.audit import log_auto_categorize, log_ocr_extraction
+from app.services.audit import drop_accepted_series_mismatch, log_auto_categorize, log_ocr_extraction
 from app.services.categorization import categorize_document
 from app.services.ocr import get_ocr_service
 from app.services.storage import get_storage_service
@@ -86,7 +85,7 @@ async def _read_into(db: Session, document: Document) -> None:
     # A QR that arrives after a printed-pair acceptance retires that acceptance.
     if _result_has_at_pair(result):
         drop_accepted_series_mismatch(
-            document, result.at_document_type or result.document_type
+            db, document, result.at_document_type or result.document_type, source="qr"
         )
     if result.error:
         return

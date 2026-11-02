@@ -14,6 +14,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
+from app.schemas.document import crosses_credit_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,61 @@ def log_series_mismatch_accepted(
             "accepted_at": {"old": None, "new": accepted_at},
         },
     )
+
+
+def log_series_mismatch_cleared(
+    db: Session,
+    *,
+    document_id: str,
+    user_id: str,
+    source: str,
+    document_type: Optional[str],
+    invoice_number: Optional[str],
+) -> AuditLog:
+    """Record that an accepted printed pair stopped being accepted.
+
+    source is "user" for an edit, "qr" for a QR read, "efatura" for an e-Fatura link.
+    """
+    cleared_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return log_event(
+        db,
+        entity_type="document",
+        entity_id=document_id,
+        user_id=user_id,
+        action="series_mismatch_cleared",
+        source=source,
+        changes={
+            "series_mismatch_accepted": {"old": True, "new": False},
+            "document_type": {"old": None, "new": document_type},
+            "invoice_number": {"old": None, "new": invoice_number},
+            "cleared_at": {"old": None, "new": cleared_at},
+        },
+    )
+
+
+def drop_accepted_series_mismatch(
+    db: Session, document, arriving_type: Optional[str], *, source: str
+) -> None:
+    """A QR or e-Fatura pair ends a printed-pair acceptance.
+
+    The acceptance entry stays, and a cleared entry is added when the flag was set.
+    A confirmed row whose type now crosses the credit/invoice boundary against
+    the arriving AT type goes back to review.
+    """
+    if document.series_mismatch_accepted:
+        log_series_mismatch_cleared(
+            db,
+            document_id=document.id,
+            user_id=document.user_id,
+            source=source,
+            document_type=document.document_type,
+            invoice_number=document.invoice_number,
+        )
+    document.series_mismatch_accepted = False
+    if document.status in ("ready", "accountant_review") and crosses_credit_boundary(
+        arriving_type, document.document_type
+    ):
+        document.status = "needs_review"
 
 
 def log_document_delete(db: Session, *, document_id: str, user_id: str) -> AuditLog:

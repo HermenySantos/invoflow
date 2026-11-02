@@ -259,19 +259,6 @@ def series_override_allowed(
     return prefix in INVOICE_FAMILY and prefix != document_type
 
 
-def drop_accepted_series_mismatch(document, arriving_type: Optional[str]) -> None:
-    """A QR or e-Fatura pair ends a printed-pair acceptance.
-
-    The audit row is left in place. A confirmed row whose type now crosses
-    the credit/invoice boundary against the arriving AT type goes back to review.
-    """
-    document.series_mismatch_accepted = False
-    if document.status in ("ready", "accountant_review") and crosses_credit_boundary(
-        arriving_type, document.document_type
-    ):
-        document.status = "needs_review"
-
-
 def keeps_at_issued_pair(
     merged_type: Optional[str],
     merged_number: Optional[str],

@@ -51,6 +51,7 @@ from app.services.audit import (
     log_document_update,
     log_document_delete,
     log_series_mismatch_accepted,
+    log_series_mismatch_cleared,
 )
 from app.services.validation import validate_document, detect_duplicates
 from app.services.iva_adjust import reading_is_fictional
@@ -591,6 +592,7 @@ async def update_document(
         # The flag is honoured only when the row has no QR pair, no e-Fatura
         # pair and no stored AT type, and only inside {FT, FS, FR}.
         override_applied = False
+        override_cleared = False
         before_type = document.document_type
         before_number = document.invoice_number
         before_accepted = bool(document.series_mismatch_accepted)
@@ -621,6 +623,7 @@ async def update_document(
                 override_applied = True
             elif before_accepted:
                 update_data["series_mismatch_accepted"] = False
+                override_cleared = True
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields
@@ -654,6 +657,15 @@ async def update_document(
                 previous_accepted=before_accepted,
                 previous_type=before_type,
                 previous_number=before_number,
+            )
+        if override_cleared:
+            log_series_mismatch_cleared(
+                db,
+                document_id=document.id,
+                user_id=user.id,
+                source="user",
+                document_type=document.document_type,
+                invoice_number=document.invoice_number,
             )
 
         db.commit()

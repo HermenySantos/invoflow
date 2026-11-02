@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
-from app.schemas.document import drop_accepted_series_mismatch
-from app.services.audit import log_auto_categorize, log_event
+from app.services.audit import drop_accepted_series_mismatch, log_auto_categorize, log_event
 from app.services.categorization import categorize_document
 
 DocumentType = Literal["FT", "FS", "FR", "NC", "ND", "PF", "OR", "RG", "GT"]
@@ -407,7 +406,7 @@ def _import_one(
                 "fields_copied": {"old": None, "new": False},
             },
         )
-        drop_accepted_series_mismatch(document, invoice.document_type)
+        drop_accepted_series_mismatch(db, document, invoice.document_type, source="efatura")
         return _Outcome("linked", source_key, outcome, document.id, warning)
 
     # A user-deleted AT row stays deleted, including when this invoice arrives
@@ -604,7 +603,7 @@ def _retire_printed_pair(db: Session, document_id: Optional[str], arriving_type:
     document = db.get(Document, document_id)
     if document is None:
         return
-    drop_accepted_series_mismatch(document, arriving_type)
+    drop_accepted_series_mismatch(db, document, arriving_type, source="efatura")
 
 
 _LINKED_SCAN_OUTCOMES = frozenset({"linked_existing", "linked_hidden"})
