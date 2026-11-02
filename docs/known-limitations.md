@@ -14,13 +14,11 @@ The e-Fatura identity uses the same separator rule. After the code, a separator 
 
 ## Retypes on linked rows
 
-A scan that an e-Fatura import linked to an AT invoice has an AT pair. The review screen shows the AT type, and the receipts list shows the AT number. The type is locked to the pair as follows:
+A scan that an e-Fatura import linked to an AT invoice has an AT pair. The review screen shows the AT type, and the receipts list shows the AT number.
 
-- A retype across the credit/invoice boundary is always refused. FT, FS or FR cannot become NC or ND, and NC or ND cannot become FT, FS or FR, even when the new number has no series code.
-- A retype inside FT, FS and FR is refused while the number still carries another code. For example, a row linked to `FT 2026/12` cannot be saved as FS with `FT 2026/12`.
-- The printed-pair confirmation is not offered on a linked row, so it cannot unlock either retype.
+Retypes are locked on linked rows. Any change to the document type (FT, FS, FR, NC or ND) is refused, whatever number the same edit sends. For example, a row linked to `FT 2026/12` cannot be saved as FS with `FT 2026/12`, `FS 2026/12` or `2026/12`. The API returns 422 with `O n.º do documento não corresponde ao tipo indicado.`, and the review screen shows the same message. The printed-pair confirmation is not offered on a linked row.
 
-This is a known gap. A retype inside FT, FS and FR is accepted when the same edit also changes the number to one with no series code or with the new code. For example, FS with `2026/12` or with `FS 2026/12` is saved on a row linked to `FT 2026/12`. The link stays in place.
+An edit that keeps the type, such as a number change, saves as before. A linked row that is still unclassified can take only the AT type, so it can still be confirmed. When the link no longer points at the row, the row can be retyped.
 
 Clearing an accepted printed pair writes a `series_mismatch_cleared` audit entry. Its source is `user` for an edit, `qr` for a QR read, and `efatura` for an e-Fatura link. The `series_mismatch_accepted` entry stays.
 

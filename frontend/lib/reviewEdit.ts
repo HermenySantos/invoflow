@@ -215,6 +215,20 @@ export function seriesBlocks(
   return !seriesAgrees(documentType, invoiceNumber);
 }
 
+/**
+ * A scan linked to an e-Fatura invoice keeps its type, whatever the number.
+ * An unclassified linked scan may take only the AT type. Same rule as the API.
+ */
+export function linkedRetypeBlocked(
+  linkedPair: { document_type: string | null } | null | undefined,
+  storedType: string | null | undefined,
+  chosenType: string | null | undefined,
+): boolean {
+  if (!linkedPair || !chosenType || chosenType === (storedType || 'unclassified')) return false;
+  if (isConcreteDocumentType(storedType)) return true;
+  return !!linkedPair.document_type && chosenType !== linkedPair.document_type;
+}
+
 /** Prefill the review form. A suggestion never fills the type or the number. */
 export function initialReviewEdit(document: {
   vendor_name?: string | null;

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
-import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
+import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { 
   getExpenseCategoryInfo,
@@ -291,12 +291,9 @@ export default function ReceiptDetailPage() {
       ? document.document_type!
       : confirmType;
     if (!isConcreteDocumentType(chosen)) return;
-    const mismatch = seriesBlocks(
-      chosen,
-      document.invoice_number,
-      document.at_document_type,
-      document.at_invoice_number,
-    );
+    const mismatch =
+      seriesBlocks(chosen, document.invoice_number, document.at_document_type, document.at_invoice_number) ||
+      linkedRetypeBlocked(document.linked_at_pair, document.document_type, chosen);
     const canOverride = seriesOverrideAllowed(
       chosen,
       document.invoice_number,
@@ -328,12 +325,13 @@ export default function ReceiptDetailPage() {
 
   const handleSaveEdit = async () => {
     if (!document || document.id !== routeId) return;
-    const mismatch = seriesBlocks(
-      editData.document_type,
-      editData.invoice_number,
-      document.at_document_type,
-      document.at_invoice_number,
-    );
+    const mismatch =
+      seriesBlocks(
+        editData.document_type,
+        editData.invoice_number,
+        document.at_document_type,
+        document.at_invoice_number,
+      ) || linkedRetypeBlocked(document.linked_at_pair, document.document_type, editData.document_type);
     const canOverride = seriesOverrideAllowed(
       editData.document_type,
       editData.invoice_number,
@@ -434,12 +432,13 @@ export default function ReceiptDetailPage() {
   };
 
   const editIsConcrete = isConcreteDocumentType(editData.document_type);
-  const editSeriesMismatch = seriesBlocks(
-    editData.document_type,
-    editData.invoice_number,
-    document?.at_document_type,
-    document?.at_invoice_number,
-  );
+  const editSeriesMismatch =
+    seriesBlocks(
+      editData.document_type,
+      editData.invoice_number,
+      document?.at_document_type,
+      document?.at_invoice_number,
+    ) || linkedRetypeBlocked(document?.linked_at_pair, document?.document_type, editData.document_type);
   const editCanOverride = seriesOverrideAllowed(
     editData.document_type,
     editData.invoice_number,
@@ -452,12 +451,13 @@ export default function ReceiptDetailPage() {
       : confirmType;
   const confirmSeriesMismatch =
     !!document &&
-    seriesBlocks(
+    (seriesBlocks(
       confirmChosen,
       document.invoice_number,
       document.at_document_type,
       document.at_invoice_number,
-    );
+    ) ||
+      linkedRetypeBlocked(document.linked_at_pair, document.document_type, confirmChosen));
   const confirmCanOverride =
     !!document &&
     seriesOverrideAllowed(

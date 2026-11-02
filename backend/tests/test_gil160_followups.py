@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from app.models.audit_log import AuditLog
+from app.models.efatura import EfaturaLink
 from app.schemas.document import SERIES_MISMATCH_DETAIL
 from app.services import processing
 from app.services.audit import log_series_mismatch_accepted
@@ -223,32 +224,93 @@ def _linked_scan(db, number="FT 2026/12"):
     return stored
 
 
-def test_linked_row_retypes_match_the_documented_lock(client, db, mock_user_headers):
+def test_linked_row_refuses_every_retype(client, db, mock_user_headers):
     stored = _linked_scan(db)
     refused = [
         {"document_type": "FS"},
+        {"document_type": "FS", "invoice_number": "FS 2026/12"},
+        {"document_type": "FS", "invoice_number": "2026/12"},
+        {"document_type": "FR", "invoice_number": "FR 2026/12", "status": "ready"},
         {"document_type": "FR", "accept_series_mismatch": True},
         {"document_type": "NC", "invoice_number": "2026/12"},
         {"document_type": "ND", "invoice_number": "ND 2026/12", "accept_series_mismatch": True},
+        {"document_type": "unclassified"},
     ]
     for body in refused:
         response = client.patch(f"/api/documents/{stored.id}", headers=mock_user_headers, json=body)
         assert response.status_code == 422, body
-        assert response.json()["detail"] == SERIES_MISMATCH_DETAIL
+        assert response.json() == {"detail": SERIES_MISMATCH_DETAIL}, body
     db.refresh(stored)
     assert (stored.document_type, stored.invoice_number) == ("FT", "FT 2026/12")
 
-    gap = client.patch(
+
+def test_linked_row_number_edit_with_the_same_type_still_saves(client, db, mock_user_headers):
+    stored = _linked_scan(db)
+    for body in (
+        {"invoice_number": "FT 2026/0012"},
+        {"document_type": "FT", "invoice_number": "FT 2026/12", "status": "ready"},
+    ):
+        response = client.patch(f"/api/documents/{stored.id}", headers=mock_user_headers, json=body)
+        assert response.status_code == 200, (body, response.json())
+    assert response.json()["document_type"] == "FT"
+    assert response.json()["linked_at_pair"]["invoice_number"] == "FT 2026/12"
+
+
+def test_unlinked_row_can_be_retyped(client, db, mock_user_headers):
+    stored = _linked_scan(db)
+    db.query(EfaturaLink).filter(EfaturaLink.document_id == stored.id).update(
+        {EfaturaLink.document_id: None}
+    )
+    db.commit()
+    response = client.patch(
         f"/api/documents/{stored.id}",
         headers=mock_user_headers,
         json={"document_type": "FS", "invoice_number": "FS 2026/12"},
     )
-    assert gap.status_code == 200, gap.json()
-    assert gap.json()["linked_at_pair"]["invoice_number"] == "FT 2026/12"
+    assert response.status_code == 200, response.json()
+    assert response.json()["document_type"] == "FS"
+    assert response.json()["linked_at_pair"] is None
+
+
+def test_unclassified_linked_row_takes_only_the_at_type(client, db, mock_user_headers):
+    stored = _stored_receipt(
+        db,
+        status="needs_review",
+        document_type="unclassified",
+        invoice_number="FT 2026/21",
+        vendor_nif="500829993",
+        at_document_type=None,
+        ocr_raw_response='{"ocr":"scan"}',
+    )
+    db.commit()
+    imported = import_purchases(
+        db,
+        user_id=stored.user_id,
+        taxpayer_nif="555555555",
+        invoices=[_efatura("FT", "FT 2026/21", "GIL160UNCL")],
+    )
+    db.commit()
+    assert imported.linked_existing == (stored.id,)
+    wrong = client.patch(
+        f"/api/documents/{stored.id}",
+        headers=mock_user_headers,
+        json={"document_type": "FS", "invoice_number": "2026/21"},
+    )
+    assert wrong.status_code == 422
+    assert wrong.json() == {"detail": SERIES_MISMATCH_DETAIL}
+    right = client.patch(
+        f"/api/documents/{stored.id}",
+        headers=mock_user_headers,
+        json={"document_type": "FT", "status": "ready"},
+    )
+    assert right.status_code == 200, right.json()
+    assert right.json()["document_type"] == "FT"
 
 
 def test_linked_row_lock_is_documented():
     limits = (_REPO / "docs/known-limitations.md").read_text()
     assert "## Retypes on linked rows" in limits
+    assert "Retypes are locked on linked rows." in limits
+    assert "known gap" not in limits
     assert "series_mismatch_cleared" in limits
     assert "## Migration 013" in limits

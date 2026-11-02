@@ -165,11 +165,11 @@ def _efatura_issued(document: Document, db: Optional[Session]) -> Optional[tuple
     return at_type, at_number
 
 
-def _linked_at_pairs(db: Session, document_ids: list[str]) -> dict[str, LinkedAtPair]:
-    """The newest e-Fatura invoice an import linked to each scan, by document id."""
+def _scan_links(db: Session, document_ids: list[str]) -> list[EfaturaLink]:
+    """Links an e-Fatura import made to these scans, newest first."""
     if not document_ids:
-        return {}
-    links = (
+        return []
+    return (
         db.query(EfaturaLink)
         .filter(
             EfaturaLink.document_id.in_(document_ids),
@@ -178,6 +178,26 @@ def _linked_at_pairs(db: Session, document_ids: list[str]) -> dict[str, LinkedAt
         .order_by(desc(EfaturaLink.created_at), desc(EfaturaLink.id))
         .all()
     )
+
+
+def _linked_retype_refused(db: Session, document: Document, new_type: Optional[str]) -> bool:
+    """A scan linked to an e-Fatura invoice keeps its type.
+
+    An unclassified linked scan may take only the AT type, so it can still be confirmed.
+    """
+    links = _scan_links(db, [document.id])
+    if not links:
+        return False
+    if document.document_type in CONCRETE_DOCUMENT_TYPES:
+        return True
+    payload = _json_object(links[0].payload_json) or {}
+    at_type = str(payload.get("document_type") or "").strip().upper() or None
+    return at_type is not None and new_type != at_type
+
+
+def _linked_at_pairs(db: Session, document_ids: list[str]) -> dict[str, LinkedAtPair]:
+    """The newest e-Fatura invoice an import linked to each scan, by document id."""
+    links = _scan_links(db, document_ids)
     pairs: dict[str, LinkedAtPair] = {}
     for link in links:
         if link.document_id in pairs:
@@ -587,6 +607,11 @@ async def update_document(
             "document_type" in update_data
             and update_data["document_type"] != document.document_type
         )
+        if type_changed and _linked_retype_refused(db, document, update_data["document_type"]):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=SERIES_MISMATCH_DETAIL,
+            )
         merged_net = update_data.get("net_amount", document.net_amount)
         merged_vat = update_data.get("vat_amount", document.vat_amount)
         merged_gross = update_data.get("gross_amount", document.gross_amount)

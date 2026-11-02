@@ -8,6 +8,7 @@ import {
   seriesAgrees,
   seriesBlocks,
   crossesCreditBoundary,
+  linkedRetypeBlocked,
   seriesOverrideAllowed,
 } from '@/lib/reviewEdit';
 
@@ -290,5 +291,27 @@ describe('series separators (GIL-160)', () => {
     ['frete 12', null],
   ])('keeps %s as %s', (number, prefix) => {
     expect(invoiceSeriesPrefix(number)).toBe(prefix);
+  });
+});
+
+describe('linkedRetypeBlocked', () => {
+  const pair = { document_type: 'FT' };
+
+  it('blocks any type change on a linked row with a stored type', () => {
+    for (const chosen of ['FS', 'FR', 'NC', 'ND', 'unclassified']) {
+      expect(linkedRetypeBlocked(pair, 'FT', chosen)).toBe(true);
+    }
+    expect(linkedRetypeBlocked(pair, 'FT', 'FT')).toBe(false);
+  });
+
+  it('lets an unclassified linked row take only the AT type', () => {
+    expect(linkedRetypeBlocked(pair, 'unclassified', 'FT')).toBe(false);
+    expect(linkedRetypeBlocked(pair, 'unclassified', 'FS')).toBe(true);
+    expect(linkedRetypeBlocked(pair, 'unclassified', 'unclassified')).toBe(false);
+  });
+
+  it('does not block an unlinked row', () => {
+    expect(linkedRetypeBlocked(null, 'FT', 'FS')).toBe(false);
+    expect(linkedRetypeBlocked(undefined, 'FT', 'NC')).toBe(false);
   });
 });
