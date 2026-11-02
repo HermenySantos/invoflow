@@ -29,6 +29,7 @@ AT_RAW = '{"source":"efatura"}'
 FTA_OLD = f"{NIF}|FT|ft a 2026/5"
 FTA_NEW = f"{NIF}|FT|fta 2026/5"
 FT_A_NEW = f"{NIF}|FT|ft a 2026/5"
+GLUED_012 = f"{NIF}|FT|ft a/12"
 NC_DOT_OLD = f"{NIF}|NC|nc . 2026/5"
 NC_NEW = f"{NIF}|NC|nc 2026/5"
 ND_DOT_OLD = f"{NIF}|ND|nd . 2026/4"
@@ -253,6 +254,17 @@ def _child() -> None:
             deleted=None,
             identity=FTA_OLD,
         )
+        glued_012 = _insert_document(
+            conn,
+            user_id=user_id,
+            number="FTA/12",
+            document_type="FT",
+            status="ready",
+            created=older,
+            updated=older,
+            deleted=None,
+            identity=GLUED_012,
+        )
         ft_a = _insert_document(
             conn,
             user_id=user_id,
@@ -367,7 +379,7 @@ def _child() -> None:
             source_key="doc:296123456:ND:nd. 2026/4",
         )
         _insert_user_audit(conn, user_id=user_id, document_id=nd_keeper, now=base)
-        stable_ids = (nc_keeper, nd_keeper, stable, scan)
+        stable_ids = (nc_keeper, nd_keeper, stable, scan, glued_012)
         changed_ids = (fta, ft_a, nc_loser, nd_loser, fs_deleted)
         xmin_before = {row_id: _xmin(conn, "documents", row_id) for row_id in stable_ids + changed_ids}
 
@@ -384,7 +396,9 @@ def _child() -> None:
                 )
             )
         }
-        assert len(rows) == 9
+        assert len(rows) == 10
+        assert rows[glued_012].at_invoice_identity == GLUED_012
+        assert rows[glued_012].deleted_at is None
         assert rows[fta].at_invoice_identity == FTA_NEW
         assert rows[fta].deleted_at is None
         assert rows[fta].updated_at == older
@@ -418,6 +432,7 @@ def _child() -> None:
         assert live == {
             "FTA 2026/5",
             "FT A 2026/5",
+            "FTA/12",
             "NC 2026/5",
             "ND 2026/4",
             "FT 2026/1",

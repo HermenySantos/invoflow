@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
+from app.schemas.document import parse_document_number
 from app.services.audit import drop_accepted_series_mismatch, log_auto_categorize, log_event
 from app.services.categorization import categorize_document
 
@@ -453,30 +454,19 @@ def normalise_nif(value: Optional[str]) -> str:
     return text.replace(" ", "")
 
 
-_TYPE_TOKEN_SEPARATOR = re.compile(r"^(ft|fs|fr|nc|nd)(?:[\W_]+(?=\w)|(?=\d))")
-
-
 def normalise_invoice_number(value: Optional[str]) -> str:
-    """Number identity.
+    """Number identity, built from parse_document_number, the series check's parse.
 
-    Inner spaces stay, collapsed to one, except the spaces next to ``/``, which
-    are removed. Leading zeros are removed only from the sequence after the
-    last ``/``. The series and every other digit run stay. ``FT A1/005`` and
-    ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
-
-    After a leading FT, FS, FR, NC or ND, a run of non-alphanumerics (º and °
-    included) or a glued digit becomes one space: ``NC. 2026/5``, ``NC;2026/5``,
-    ``NC°2026/5`` and ``NC2026/5`` are ``nc 2026/5``. A letter after the code is
-    the series, so ``FTA 2026/5`` and ``NCB/12`` keep ``fta`` and ``ncb``.
+    'FTA/5' and 'FT A/5' are both FT, series a, sequence 5: 'ft a/5'. Inner
+    spaces stay, collapsed to one, and the spaces next to '/' go. Leading
+    zeros come off only the sequence after the last '/'. 'FT A1/005' and
+    'FT A1/5' match. 'FT A01/5' and 'FT A1/5' do not.
     """
-    text = _prepare_identity_text(value)
-    text = re.sub(r"\s*/\s*", "/", text)
-    if "/" in text:
-        head, seq = text.rsplit("/", 1)
-        if seq.isdigit():
-            seq = seq.lstrip("0") or "0"
-        text = f"{head}/{seq}"
-    return _TYPE_TOKEN_SEPARATOR.sub(r"\1 ", text, count=1)
+    parsed = parse_document_number(value)
+    body = parsed.series if parsed.seq is None else f"{parsed.series}/{parsed.seq}"
+    if parsed.code is None:
+        return body
+    return f"{parsed.code.lower()} {body}".rstrip()
 
 
 def at_invoice_identity(

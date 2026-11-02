@@ -5,9 +5,9 @@ Revises: 012_at_invoice_identity
 Create Date: 2026-11-02
 
 Databases that ran 012 stored identities from the previous normaliser.
-After a leading FT, FS, FR, NC or ND, a run of non-alphanumerics or a
-glued digit becomes one space. A letter after the code stays in the
-series. º is mapped to ° before NFKC.
+The identity is now built from the series check's parse: code, series and
+sequence. 'FTA/5' and 'FT A/5' are one invoice, and so are 'NC. 2026/5'
+and 'NC 2026/5'. º is mapped to ° before NFKC.
 
 The upgrade adds at_invoice_identity when the column is missing and drops
 uq_documents_at_invoice_identity when that index is present. The drop
@@ -35,6 +35,7 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime
+from typing import NamedTuple, Optional
 
 import sqlalchemy as sa
 from alembic import op
@@ -101,18 +102,178 @@ def normalise_nif(value) -> str:
     return text.replace(" ", "")
 
 
-_TYPE_TOKEN_SEPARATOR = re.compile(r"^(ft|fs|fr|nc|nd)(?:[\W_]+(?=\w)|(?=\d))")
+CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
+_SERIES_SEPARATED = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)(?P<sep>[\W_]+|$)",
+    re.IGNORECASE,
+)
+# "NCA/5": the code, one extra letter, then / . or -. Whitespace does not count,
+# so "FRA 2026/12" is vendor numbering.
+_SERIES_GLUED_LETTER = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)[A-Za-z](?=[/.\-])",
+    re.IGNORECASE,
+)
+# Glued NC/ND digits. A separator after the digits always counts ("NC2026/5",
+# "NC1/5"). Two or more digits count with nothing after ("NC2026", "NC001",
+# "ND2026"). One digit counts only when whitespace continues the number
+# ("NC1 2026"). A bare "NC1" does not. FT/FS/FR glued to digits stay vendor
+# numbering ("FS2026/12", "FT2026/1").
+_SERIES_GLUED_DIGIT = re.compile(
+    r"^(?P<code>NC|ND)(?:\d+(?=[/.\-])|\d{2,}|\d(?=\s))",
+    re.IGNORECASE,
+)
+# "N/C", "N.C", "N-C", "N C A/5", "N.C. A/5".
+_SERIES_SPLIT = re.compile(
+    r"^(?P<c1>[A-Za-z])[\s./\-]+(?P<c2>[A-Za-z])(?=[\s/.\-]|$)",
+)
+_CONFUSABLES = str.maketrans(
+    {
+        chr(code): latin
+        for code, latin in (
+            (0x0391, "A"), (0x03B1, "a"),  # Greek alpha
+            (0x0392, "B"), (0x03B2, "b"),
+            (0x0395, "E"), (0x03B5, "e"),
+            (0x0396, "Z"), (0x03B6, "z"),
+            (0x0397, "H"), (0x03B7, "h"),
+            (0x0399, "I"), (0x03B9, "i"),
+            (0x039A, "K"), (0x03BA, "k"),
+            (0x039C, "M"), (0x03BC, "m"),
+            (0x039D, "N"), (0x03BD, "n"),
+            (0x039F, "O"), (0x03BF, "o"),
+            (0x03A1, "P"), (0x03C1, "p"),
+            (0x03A4, "T"), (0x03C4, "t"),
+            (0x03A5, "Y"), (0x03C5, "y"),
+            (0x03A7, "X"), (0x03C7, "x"),
+            (0x0410, "A"), (0x0430, "a"),  # Cyrillic a
+            (0x0412, "B"), (0x0432, "b"),
+            (0x0415, "E"), (0x0435, "e"),
+            (0x041A, "K"), (0x043A, "k"),
+            (0x041C, "M"), (0x043C, "m"),
+            (0x041D, "N"), (0x043D, "n"),  # Н, the H-shaped letter, read here as N
+            (0x041E, "O"), (0x043E, "o"),
+            (0x0420, "P"), (0x0440, "p"),
+            (0x0421, "C"), (0x0441, "c"),
+            (0x0422, "T"), (0x0442, "t"),
+            (0x0423, "Y"), (0x0443, "y"),
+            (0x0425, "X"), (0x0445, "x"),
+            (0x0406, "I"), (0x0456, "i"),
+            (0x0407, "I"), (0x0457, "i"),
+            (0x0408, "J"), (0x0458, "j"),
+            (0x0274, "N"),  # ɴ small capital n
+            (0x1D04, "C"),  # ᴄ small capital c
+            (0xA730, "F"),  # ꜰ
+            (0x1D1B, "T"),  # ᴛ
+            (0xA731, "S"),  # ꜱ
+            (0x0280, "R"),  # ʀ
+            (0x1D05, "D"),  # ᴅ
+            (0xA4E0, "N"),  # ꓠ Lisu na, the N lookalike
+            (0xA4DA, "C"),  # ꓚ Lisu ca, the C lookalike
+        )
+    }
+)
+_HYPHEN_SLASH = str.maketrans(
+    {
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\ufe58": "-",
+        "\ufe63": "-",
+        "\uff0d": "-",
+        "\u2044": "/",
+        "\u2215": "/",
+        "\u29f8": "/",
+        "\uff0f": "/",
+    }
+)
+
+
+def fold_series_text(value: Optional[str]) -> str:
+    """Normalise a document number before the series token is read.
+
+    º becomes ° before NFKC, which would turn it into the letter o. NFKC,
+    then format characters (zero-width space, BOM, soft hyphen) are
+    dropped. Greek, Cyrillic, small-cap and Lisu lookalikes fold to Latin.
+    Accents fold away (Ń/Ć). Unicode hyphens and slashes become ASCII.
+    """
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFKC", str(value).replace("\u00ba", "\u00b0"))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    text = text.translate(_CONFUSABLES)
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.translate(_HYPHEN_SLASH)
+    return text.strip()
+
+
+# A code glued to letters or digits ("FTA/5", "FT2026/12", "FTFT/1"). The
+# letters split off as the series unless whitespace ends the run, so
+# "FTA 2026/5" and "frete 12" keep their letters.
+_GLUED_CODE = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?P<run>[A-Za-z0-9]+)", re.IGNORECASE)
+
+
+class ParsedNumber(NamedTuple):
+    """A document number read once, for the series check and the e-Fatura identity.
+
+    code is FT, FS, FR, NC or ND when one is split off the front. series and seq
+    are casefolded, with inner whitespace collapsed and no spaces next to '/'.
+    seq is the part after the last '/', without leading zeros. is_series is True
+    when the series check reads code as the number's type. A code split off
+    vendor numbering ('FT2026/1', 'FTFT/1') has is_series False.
+    """
+
+    code: Optional[str]
+    series: str
+    seq: Optional[str]
+    is_series: bool
+
+
+def _split_code(text: str) -> tuple[Optional[str], str, bool]:
+    separated = _SERIES_SEPARATED.match(text)
+    if separated:
+        code = separated.group("code")
+        follows = text[separated.end():separated.end() + 1]
+        if code.isupper() or "." not in separated.group("sep") or follows.isalpha():
+            return code.upper(), text[separated.end():], True
+        return None, text, False
+    glued = _GLUED_CODE.match(text)
+    if glued:
+        counts = bool(_SERIES_GLUED_DIGIT.match(text) or _SERIES_GLUED_LETTER.match(text))
+        after_run = text[glued.end():glued.end() + 1]
+        if counts or glued.group("run")[0].isdigit() or not after_run.isspace():
+            return glued.group("code").upper(), text[glued.start("run"):], counts
+        return None, text, False
+    split = _SERIES_SPLIT.match(text)
+    if split:
+        code = (split.group("c1") + split.group("c2")).upper()
+        if code in CONCRETE_DOCUMENT_TYPES:
+            return code, re.sub(r"^[\W_]+", "", text[split.end():]), True
+    return None, text, False
+
+
+def parse_document_number(number: Optional[str]) -> ParsedNumber:
+    """Split a document number into code, series and sequence."""
+    code, rest, is_series = _split_code(fold_series_text(number))
+    rest = re.sub(r"\s+", " ", rest.casefold()).strip()
+    rest = re.sub(r"\s*/\s*", "/", rest)
+    if "/" not in rest:
+        return ParsedNumber(code, rest, None, is_series)
+    series, seq = rest.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return ParsedNumber(code, series, seq, is_series)
 
 
 def normalise_invoice_number(value) -> str:
-    text = _prepare_identity_text(value)
-    text = re.sub(r"\s*/\s*", "/", text)
-    if "/" in text:
-        head, seq = text.rsplit("/", 1)
-        if seq.isdigit():
-            seq = seq.lstrip("0") or "0"
-        text = f"{head}/{seq}"
-    return _TYPE_TOKEN_SEPARATOR.sub(r"\1 ", text, count=1)
+    parsed = parse_document_number(value)
+    body = parsed.series if parsed.seq is None else f"{parsed.series}/{parsed.seq}"
+    if parsed.code is None:
+        return body
+    return f"{parsed.code.lower()} {body}".rstrip()
 
 
 def at_invoice_identity(vendor_nif, document_type, invoice_number) -> str:

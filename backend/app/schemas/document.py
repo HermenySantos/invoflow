@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from dataclasses import dataclass
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
@@ -154,6 +155,65 @@ def fold_series_text(value: Optional[str]) -> str:
     return text.strip()
 
 
+# A code glued to letters or digits ("FTA/5", "FT2026/12", "FTFT/1"). The
+# letters split off as the series unless whitespace ends the run, so
+# "FTA 2026/5" and "frete 12" keep their letters.
+_GLUED_CODE = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?P<run>[A-Za-z0-9]+)", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ParsedNumber:
+    """A document number read once, for the series check and the e-Fatura identity.
+
+    code is FT, FS, FR, NC or ND when one is split off the front. series and seq
+    are casefolded, with inner whitespace collapsed and no spaces next to '/'.
+    seq is the part after the last '/', without leading zeros. is_series is True
+    when the series check reads code as the number's type. A code split off
+    vendor numbering ('FT2026/1', 'FTFT/1') has is_series False.
+    """
+
+    code: Optional[str]
+    series: str
+    seq: Optional[str]
+    is_series: bool
+
+
+def _split_code(text: str) -> tuple[Optional[str], str, bool]:
+    separated = _SERIES_SEPARATED.match(text)
+    if separated:
+        code = separated.group("code")
+        follows = text[separated.end():separated.end() + 1]
+        if code.isupper() or "." not in separated.group("sep") or follows.isalpha():
+            return code.upper(), text[separated.end():], True
+        return None, text, False
+    glued = _GLUED_CODE.match(text)
+    if glued:
+        counts = bool(_SERIES_GLUED_DIGIT.match(text) or _SERIES_GLUED_LETTER.match(text))
+        after_run = text[glued.end():glued.end() + 1]
+        if counts or glued.group("run")[0].isdigit() or not after_run.isspace():
+            return glued.group("code").upper(), text[glued.start("run"):], counts
+        return None, text, False
+    split = _SERIES_SPLIT.match(text)
+    if split:
+        code = (split.group("c1") + split.group("c2")).upper()
+        if code in CONCRETE_DOCUMENT_TYPES:
+            return code, re.sub(r"^[\W_]+", "", text[split.end():]), True
+    return None, text, False
+
+
+def parse_document_number(number: Optional[str]) -> ParsedNumber:
+    """Split a document number into code, series and sequence."""
+    code, rest, is_series = _split_code(fold_series_text(number))
+    rest = re.sub(r"\s+", " ", rest.casefold()).strip()
+    rest = re.sub(r"\s*/\s*", "/", rest)
+    if "/" not in rest:
+        return ParsedNumber(code, rest, None, is_series)
+    series, seq = rest.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return ParsedNumber(code, series, seq, is_series)
+
+
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     """FT, FS, FR, NC or ND as a token at the start of a document number.
 
@@ -172,29 +232,8 @@ def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     'FS2026/12', 'FT2026/1', 'FRA2026/12', 'FRA 2026/12'.
     A number with no recognisable prefix is allowed with any type.
     """
-    text = fold_series_text(number)
-    if not text:
-        return None
-    separated = _SERIES_SEPARATED.match(text)
-    if separated:
-        code = separated.group("code")
-        follows = text[separated.end():separated.end() + 1]
-        if code.isupper() or "." not in separated.group("sep") or follows.isalpha():
-            return code.upper()
-        return None
-    glued_digit = _SERIES_GLUED_DIGIT.match(text)
-    if glued_digit:
-        return glued_digit.group("code").upper()
-    glued = _SERIES_GLUED_LETTER.match(text)
-    if glued:
-        return glued.group("code").upper()
-    split = _SERIES_SPLIT.match(text)
-    if not split:
-        return None
-    code = (split.group("c1") + split.group("c2")).upper()
-    if code not in CONCRETE_DOCUMENT_TYPES:
-        return None
-    return code
+    parsed = parse_document_number(number)
+    return parsed.code if parsed.is_series else None
 
 
 def series_disagrees(document_type: Optional[str], invoice_number: Optional[str]) -> bool:
