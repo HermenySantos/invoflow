@@ -434,8 +434,8 @@ def _import_one(
 
 
 def _prepare_identity_text(value: Optional[str]) -> str:
-    """NFKC, NBSP becomes a space, outer trim, inner whitespace runs become one space."""
-    text = unicodedata.normalize("NFKC", value or "")
+    """º becomes °, NFKC, NBSP becomes a space, outer trim, inner whitespace runs become one space."""
+    text = unicodedata.normalize("NFKC", (value or "").replace("\u00ba", "\u00b0"))
     text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ")
     text = text.strip()
     text = re.sub(r"\s+", " ", text)
@@ -454,32 +454,30 @@ def normalise_nif(value: Optional[str]) -> str:
     return text.replace(" ", "")
 
 
-def _separate_type_token(text: str) -> str:
-    """``FT2026/12`` is ``FT 2026/12`` when the glued prefix is a known AT code."""
-    for token in ("ft", "fs", "fr", "nc", "nd"):
-        if len(text) > len(token) and text.startswith(token) and text[len(token)] not in " /":
-            return f"{token} {text[len(token):]}"
-    return text
+_TYPE_TOKEN_SEPARATOR = re.compile(r"^(ft|fs|fr|nc|nd)(?:[\W_]+(?=\w)|(?=\d))")
 
 
 def normalise_invoice_number(value: Optional[str]) -> str:
     """Number identity.
 
     Inner spaces stay, collapsed to one, except the spaces next to ``/``, which
-    are removed. A leading FT, FS, FR, NC or ND glued to the series is split off
-    with one space. Leading zeros are removed only from the sequence after the
+    are removed. Leading zeros are removed only from the sequence after the
     last ``/``. The series and every other digit run stay. ``FT A1/005`` and
     ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
+
+    After a leading FT, FS, FR, NC or ND, a run of non-alphanumerics (º and °
+    included) or a glued digit becomes one space: ``NC. 2026/5``, ``NC;2026/5``,
+    ``NC°2026/5`` and ``NC2026/5`` are ``nc 2026/5``. A letter after the code is
+    the series, so ``FTA 2026/5`` and ``NCB/12`` keep ``fta`` and ``ncb``.
     """
     text = _prepare_identity_text(value)
     text = re.sub(r"\s*/\s*", "/", text)
-    text = _separate_type_token(text)
-    if "/" not in text:
-        return text
-    head, seq = text.rsplit("/", 1)
-    if seq.isdigit():
-        seq = seq.lstrip("0") or "0"
-    return f"{head}/{seq}"
+    if "/" in text:
+        head, seq = text.rsplit("/", 1)
+        if seq.isdigit():
+            seq = seq.lstrip("0") or "0"
+        text = f"{head}/{seq}"
+    return _TYPE_TOKEN_SEPARATOR.sub(r"\1 ", text, count=1)
 
 
 def at_invoice_identity(

@@ -40,16 +40,14 @@ CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
 # The printed-pair flag may only cross codes inside this family.
 INVOICE_FAMILY = frozenset({"FT", "FS", "FR"})
-# A series token, then a boundary. A dot counts when a letter follows
-# ("NC.A/5", "fr.a"), in any case.
-_SERIES_TOKEN = re.compile(
-    r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))",
+# The code, then a run of non-alphanumerics or the end. Every such run is a
+# separator ("NC 2026/5", "NC. 2026/5", "NC;2026/5", "NC(2026)5", "NC°1"),
+# except a title-case or lowercase code whose run has a dot and is not followed
+# by a letter: "Fr.12", "Fr. 12" and "nd.2026" are abbreviations, "fr.a" is not.
+_SERIES_SEPARATED = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)(?P<sep>[\W_]+|$)",
     re.IGNORECASE,
 )
-# A dot then a digit is a series only when both code letters are uppercase
-# ("NC.2026/5", "NC.1", "FT.12", "ND.5/1"). Title case and lowercase stay
-# abbreviations ("Fr.12", "Fs.12", "Nc.12", "nd.2026"). Case is the distinction.
-_SERIES_DOT_DIGIT = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)\.(?=\d)")
 # "NCA/5": the code, one extra letter, then / . or -. Whitespace does not count,
 # so "FRA 2026/12" is vendor numbering.
 _SERIES_GLUED_LETTER = re.compile(
@@ -140,13 +138,14 @@ _HYPHEN_SLASH = str.maketrans(
 def fold_series_text(value: Optional[str]) -> str:
     """Normalise a document number before the series token is read.
 
-    NFKC, then format characters (zero-width space, BOM, soft hyphen) are
+    º becomes ° before NFKC, which would turn it into the letter o. NFKC,
+    then format characters (zero-width space, BOM, soft hyphen) are
     dropped. Greek, Cyrillic, small-cap and Lisu lookalikes fold to Latin.
     Accents fold away (Ń/Ć). Unicode hyphens and slashes become ASCII.
     """
     if value is None:
         return ""
-    text = unicodedata.normalize("NFKC", str(value))
+    text = unicodedata.normalize("NFKC", str(value).replace("\u00ba", "\u00b0"))
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
     text = text.translate(_CONFUSABLES)
     text = unicodedata.normalize("NFD", text)
@@ -158,29 +157,31 @@ def fold_series_text(value: Optional[str]) -> str:
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     """FT, FS, FR, NC or ND as a token at the start of a document number.
 
-    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a',
-    'NC2026/5', 'NC.2026/5', 'NC.1', 'FT.12', 'FT.2026/12', 'ND.5/1',
-    'NC2026', 'NC001', 'ND2026', 'NC1 2026'.
-    A dot then a letter is a series in any case. A dot then a digit is a
-    series only when both code letters are uppercase, so 'FT.12' and 'NC.1'
-    count and 'Fr.12', 'Fs.12', 'Nc.12' and 'nd.2026' do not. That case
-    split is what keeps the abbreviations off the credit/invoice check.
-    Glued NC/ND digits count when a separator follows, when there are two
-    or more digits, or when one digit is followed by a space ('NC1 2026').
-    A bare 'NC1' does not.
+    Every run of non-alphanumerics after the code is a separator, and so are
+    º and °: 'NC-A/5', 'NC.A/5', 'fr.a', 'NC.2026/5', 'NC. 2026/5',
+    'NC;2026/5', 'NC(2026)5', 'NC[1]', 'NCº1'. The one exception is a
+    title-case or lowercase code whose run holds a dot and is not followed by
+    a letter, so 'FT.12' and 'NC.1' count and 'Fr.12', 'Fr. 12', 'Nc.12' and
+    'nd.2026' do not. That case split keeps the abbreviations off the
+    credit/invoice check.
+    Also counts: 'NCA/5', 'N/C', 'N C A/5', 'NC2026/5', 'NC2026', 'NC001',
+    'ND2026', 'NC1 2026'. Glued NC/ND digits count when a separator follows,
+    when there are two or more digits, or when one digit is followed by a
+    space. A bare 'NC1' does not.
     Does not count: 'frete 12' (letters continue after the code), 'fr001',
-    'FS2026/12', 'FT2026/1', 'FRA2026/12', 'Fr. 12', 'FRA 2026/12'.
+    'FS2026/12', 'FT2026/1', 'FRA2026/12', 'FRA 2026/12'.
     A number with no recognisable prefix is allowed with any type.
     """
     text = fold_series_text(number)
     if not text:
         return None
-    token = _SERIES_TOKEN.match(text)
-    if token:
-        return token.group("code").upper()
-    dot_digit = _SERIES_DOT_DIGIT.match(text)
-    if dot_digit:
-        return dot_digit.group("code").upper()
+    separated = _SERIES_SEPARATED.match(text)
+    if separated:
+        code = separated.group("code")
+        follows = text[separated.end():separated.end() + 1]
+        if code.isupper() or "." not in separated.group("sep") or follows.isalpha():
+            return code.upper()
+        return None
     glued_digit = _SERIES_GLUED_DIGIT.match(text)
     if glued_digit:
         return glued_digit.group("code").upper()

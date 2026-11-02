@@ -20,11 +20,11 @@ export const SERIES_OVERRIDE_WARNING =
 
 export const PRINTED_PAIR_LABEL = 'Confirmo que este é o par impresso no documento.';
 
-// A dot counts when a letter follows ("NC.A/5", "fr.a"), in any case.
-const SERIES_TOKEN = /^(FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))/i;
-// A dot then a digit counts only when both code letters are uppercase
-// ("NC.2026/5", "FT.12"). "Fr.12", "Fs.12", "Nc.12" and "nd.2026" do not.
-const SERIES_DOT_DIGIT = /^(FT|FS|FR|NC|ND)\.(?=\d)/;
+// The code, then a run of non-alphanumerics or the end. Every such run is a
+// separator ("NC. 2026/5", "NC;2026/5", "NC(2026)5", "NC°1"), except a
+// title-case or lowercase code whose run has a dot and is not followed by a
+// letter: "Fr.12", "Fr. 12" and "nd.2026" are abbreviations, "fr.a" is not.
+const SERIES_SEPARATED = /^(FT|FS|FR|NC|ND)([^\p{L}\p{N}]+|$)/iu;
 // "NC2026/5" and "NC1/5" (separator). "NC2026" and "NC001" (two or more digits).
 // "NC1 2026" (one digit, then a space). A bare "NC1" does not.
 const SERIES_GLUED_DIGIT = /^(NC|ND)(?:\d+(?=[/.\-])|\d{2,}|\d(?=\s))/i;
@@ -79,10 +79,10 @@ const CONFUSABLES = new Map<number, string>([
 const UNICODE_HYPHEN = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g;
 const UNICODE_SLASH = /[\u2044\u2215\u29F8\uFF0F]/g;
 
-/** NFKC, drop format characters, fold lookalikes, accents, hyphens and slashes. */
+/** º to ° (NFKC would make it o), NFKC, drop format characters, fold lookalikes, accents, hyphens and slashes. */
 export function foldSeriesText(value: string | null | undefined): string {
   if (value == null || value === '') return '';
-  const nfkc = value.normalize('NFKC').replace(/\p{Cf}/gu, '');
+  const nfkc = value.replace(/\u00BA/g, '\u00B0').normalize('NFKC').replace(/\p{Cf}/gu, '');
   let folded = '';
   for (const ch of nfkc) {
     const code = ch.codePointAt(0);
@@ -103,19 +103,25 @@ export function isConcreteDocumentType(code: string | null | undefined): boolean
 
 /**
  * FT, FS, FR, NC or ND as a token at the start of a document number.
- * 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a', 'NC2026/5',
- * 'NC.2026/5', 'NC.1', 'FT.12', 'NC2026' and 'NC001' count.
- * A dot then a digit counts only when both code letters are uppercase, so
- * 'Fr.12', 'Fs.12', 'Nc.12' and 'nd.2026' do not. A bare 'NC1' does not.
- * 'frete 12', 'fr001', 'FS2026/12', 'Fr. 12' and 'FRA 2026/12' do not.
+ * Every run of non-alphanumerics after the code is a separator, º and °
+ * included: 'NC-A/5', 'NC.A/5', 'fr.a', 'NC.2026/5', 'NC. 2026/5',
+ * 'NC;2026/5', 'NC(2026)5', 'NC[1]', 'NCº1'. A title-case or lowercase code
+ * whose run holds a dot and is not followed by a letter is an abbreviation,
+ * so 'Fr.12', 'Fr. 12', 'Nc.12' and 'nd.2026' do not count.
+ * 'NCA/5', 'N/C', 'N C A/5', 'NC2026/5', 'NC2026' and 'NC001' count.
+ * A bare 'NC1', 'frete 12', 'fr001', 'FS2026/12' and 'FRA 2026/12' do not.
  */
 export function invoiceSeriesPrefix(number: string | null | undefined): string | null {
   const text = foldSeriesText(number);
   if (!text) return null;
-  const token = SERIES_TOKEN.exec(text);
-  if (token) return token[1].toUpperCase();
-  const dotDigit = SERIES_DOT_DIGIT.exec(text);
-  if (dotDigit) return dotDigit[1].toUpperCase();
+  const separated = SERIES_SEPARATED.exec(text);
+  if (separated) {
+    const code = separated[1];
+    const follows = text.charAt(separated[0].length);
+    const abbreviation =
+      code !== code.toUpperCase() && separated[2].includes('.') && !/\p{L}/u.test(follows);
+    return abbreviation ? null : code.toUpperCase();
+  }
   const gluedDigit = SERIES_GLUED_DIGIT.exec(text);
   if (gluedDigit) return gluedDigit[1].toUpperCase();
   const glued = SERIES_GLUED_LETTER.exec(text);

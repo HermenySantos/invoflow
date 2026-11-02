@@ -257,3 +257,38 @@ describe('saveEditPayload drafts', () => {
     expect(payload.net_amount).toBe('10.00');
   });
 });
+
+describe('series separators (GIL-160)', () => {
+  const creditNotes = [
+    'NC. 2026/5',
+    'NC..2026/5',
+    'NC;2026/5',
+    "NC'2026/5",
+    'NC*2026/5',
+    'NC+2026/5',
+    'NC(2026)5',
+    'NC[1]',
+    'NC\u00BA1',
+    'NC\u00B01',
+  ];
+
+  it.each(creditNotes)('reads %s as an NC series and blocks it on an FT', (number) => {
+    expect(invoiceSeriesPrefix(number)).toBe('NC');
+    expect(seriesBlocks('FT', number)).toBe(true);
+    expect(seriesBlocks('NC', number)).toBe(false);
+  });
+
+  it.each([
+    ['Fr. 12', null],
+    ['Fr.12', null],
+    ['nd..2026', null],
+    ['Nc. 12', null],
+    ['fr.a', 'FR'],
+    ['nc;5', 'NC'],
+    ['FTA 2026/5', null],
+    ['NCB/12', 'NC'],
+    ['frete 12', null],
+  ])('keeps %s as %s', (number, prefix) => {
+    expect(invoiceSeriesPrefix(number)).toBe(prefix);
+  });
+});
