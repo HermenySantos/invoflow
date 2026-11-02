@@ -375,6 +375,14 @@ def _import_one(
         )
         return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
+    if len(matches) == 1:
+        # A concurrent retype holds this row lock. Re-read the row after it
+        # commits, so an NC scan is not linked to an FT.
+        _lock_documents_then_links(db, [matches[0].id], [])
+        db.refresh(matches[0])
+        if not _type_compatible(matches[0], invoice):
+            matches = []
+
     if len(matches) == 1 and not _matched_same_invoice(matches[0], invoice):
         # A loose match must not swallow a different invoice. Store it instead.
         matches = []

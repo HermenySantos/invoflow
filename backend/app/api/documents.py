@@ -575,6 +575,8 @@ async def update_document(
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
     
+    # Lock the scan before reading its links, the same order as delete and
+    # import, so a link cannot land between the retype check and the commit.
     document = (
         db.query(Document)
         .filter(
@@ -582,6 +584,7 @@ async def update_document(
             Document.user_id == user.id,
             Document.deleted_at.is_(None),
         )
+        .with_for_update()
         .first()
     )
     
