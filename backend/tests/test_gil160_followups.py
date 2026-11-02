@@ -158,3 +158,40 @@ def test_linking_a_row_that_was_never_accepted_writes_no_cleared_entry(db):
     db.commit()
     assert stored.id in imported.linked_existing
     assert _cleared(db, stored.id) == []
+
+
+def test_list_shows_the_linked_at_pair_only_on_linked_scans(client, db, mock_user_headers):
+    linked = _stored_receipt(
+        db,
+        status="ready",
+        document_type="FT",
+        invoice_number="FT2026/15",
+        vendor_nif="500829993",
+        at_document_type=None,
+        ocr_raw_response='{"ocr":"scan"}',
+    )
+    db.commit()
+    imported = import_purchases(
+        db,
+        user_id=linked.user_id,
+        taxpayer_nif="555555555",
+        invoices=[
+            _efatura("FT", "FT 2026/15", "GIL160LIST"),
+            _efatura("FT", "FT 2026/16", "GIL160NEW"),
+        ],
+    )
+    db.commit()
+    assert imported.linked_existing == (linked.id,)
+    assert len(imported.created) == 1
+
+    listed = client.get("/api/documents", headers=mock_user_headers)
+    assert listed.status_code == 200
+    by_id = {row["id"]: row for row in listed.json()["documents"]}
+    assert by_id[linked.id]["linked_at_pair"] == {
+        "document_type": "FT",
+        "invoice_number": "FT 2026/15",
+    }
+    assert by_id[imported.created[0]]["linked_at_pair"] is None
+
+    detail = client.get(f"/api/documents/{linked.id}", headers=mock_user_headers)
+    assert detail.json()["linked_at_pair"] == by_id[linked.id]["linked_at_pair"]

@@ -28,6 +28,7 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    LinkedAtPair,
     AMOUNT_MISMATCH_DETAIL,
     CONCRETE_DOCUMENT_TYPES,
     NULL_TYPE_DETAIL,
@@ -164,6 +165,32 @@ def _efatura_issued(document: Document, db: Optional[Session]) -> Optional[tuple
     return at_type, at_number
 
 
+def _linked_at_pairs(db: Session, document_ids: list[str]) -> dict[str, LinkedAtPair]:
+    """The newest e-Fatura invoice an import linked to each scan, by document id."""
+    if not document_ids:
+        return {}
+    links = (
+        db.query(EfaturaLink)
+        .filter(
+            EfaturaLink.document_id.in_(document_ids),
+            EfaturaLink.outcome.in_(("linked_existing", "linked_hidden")),
+        )
+        .order_by(desc(EfaturaLink.created_at), desc(EfaturaLink.id))
+        .all()
+    )
+    pairs: dict[str, LinkedAtPair] = {}
+    for link in links:
+        if link.document_id in pairs:
+            continue
+        payload = _json_object(link.payload_json) or {}
+        number = str(payload.get("invoice_number") or "").strip()
+        if not number:
+            continue
+        at_type = str(payload.get("document_type") or "").strip().upper() or None
+        pairs[link.document_id] = LinkedAtPair(document_type=at_type, invoice_number=number)
+    return pairs
+
+
 def _column_at_type(document: Document) -> Optional[str]:
     """Stored AT code, including a legacy row whose QR payload is gone."""
     raw = getattr(document, "at_document_type", None)
@@ -198,8 +225,14 @@ def build_document_response(
     document: Document,
     file_url: Optional[str] = None,
     db: Optional[Session] = None,
+    linked_at_pair: Optional[LinkedAtPair] = None,
 ) -> DocumentResponse:
-    """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings."""
+    """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings.
+
+    With db, the linked e-Fatura pair is read here. A list passes it in from one query.
+    """
+    if db is not None:
+        linked_at_pair = _linked_at_pairs(db, [document.id]).get(document.id)
     field_confidence = parse_field_confidence(
         document.ocr_raw_response, 
         float(document.ocr_confidence) if document.ocr_confidence else None
@@ -246,6 +279,7 @@ def build_document_response(
         suggested_invoice_number=getattr(document, "suggested_invoice_number", None),
         at_document_type=issued_type or getattr(document, "at_document_type", None),
         at_invoice_number=issued_number,
+        linked_at_pair=linked_at_pair,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -463,10 +497,13 @@ async def list_documents(
     )
     
     # Generate URLs and response
+    linked_pairs = _linked_at_pairs(db, [doc.id for doc in documents])
     doc_responses = []
     for doc in documents:
         file_url = storage.get_download_url(doc.storage_key)
-        doc_responses.append(build_document_response(doc, file_url))
+        doc_responses.append(
+            build_document_response(doc, file_url, linked_at_pair=linked_pairs.get(doc.id))
+        )
     
     return DocumentListResponse(
         documents=doc_responses,

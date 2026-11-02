@@ -342,6 +342,12 @@ class FieldConfidence(BaseModel):
     vat_rate: Optional[float] = None
 
 
+class LinkedAtPair(BaseModel):
+    """Type and number of the e-Fatura invoice an import linked to this scan."""
+    document_type: Optional[str] = None
+    invoice_number: str
+
+
 class DocumentResponse(BaseModel):
     """Document response with all fields."""
     id: str
@@ -361,6 +367,7 @@ class DocumentResponse(BaseModel):
     suggested_invoice_number: Optional[str] = None
     at_document_type: Optional[str] = None
     at_invoice_number: Optional[str] = None
+    linked_at_pair: Optional[LinkedAtPair] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]
