@@ -52,6 +52,7 @@ def _corpus() -> list[str]:
                 numbers += _parametrized_numbers(getattr(module, name))
     numbers += [number for _nif, _kind, number in test_migration_013_identity._CORPUS if number]
     numbers += ["FTA/5", "ftA/5", "FSA/7", "FRB/3", "FTX/1", "FTFT/1", "FTA/12", "FT A/12"]
+    numbers += ["FTA 2026/5", "FT A 2026/5", "FSA 2026/7", "FS A 2026/7", "FRB 2026/3", "FR B 2026/3"]
     return sorted(set(numbers))
 
 
@@ -84,6 +85,16 @@ def test_identity_parts_equal_the_series_check_parse(number):
     if series_code is not None:
         assert parsed.code == series_code
         assert parsed.is_series
+
+
+def test_strings_that_share_an_identity_share_code_and_sequence():
+    by_identity: dict[str, set] = {}
+    for number in CORPUS:
+        parsed = parse_document_number(number)
+        by_identity.setdefault(normalise_invoice_number(number), set()).add((parsed.code, parsed.seq))
+    clashes = {identity: parts for identity, parts in by_identity.items() if len(parts) > 1}
+    assert clashes == {}
+    assert len(by_identity) > 50
 
 
 @pytest.mark.parametrize(

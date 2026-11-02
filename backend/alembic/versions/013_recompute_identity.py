@@ -210,9 +210,9 @@ def fold_series_text(value: Optional[str]) -> str:
     return text.strip()
 
 
-# A code glued to letters or digits ("FTA/5", "FT2026/12", "FTFT/1"). The
-# letters split off as the series unless whitespace ends the run, so
-# "FTA 2026/5" and "frete 12" keep their letters.
+# A code glued to letters or digits ("FTA/5", "FTA 2026/5", "FT2026/12",
+# "FTFT/1"). The identity always splits it off. The series check counts it
+# only under its glued-digit and glued-letter rules.
 _GLUED_CODE = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?P<run>[A-Za-z0-9]+)", re.IGNORECASE)
 
 
@@ -243,10 +243,7 @@ def _split_code(text: str) -> tuple[Optional[str], str, bool]:
     glued = _GLUED_CODE.match(text)
     if glued:
         counts = bool(_SERIES_GLUED_DIGIT.match(text) or _SERIES_GLUED_LETTER.match(text))
-        after_run = text[glued.end():glued.end() + 1]
-        if counts or glued.group("run")[0].isdigit() or not after_run.isspace():
-            return glued.group("code").upper(), text[glued.start("run"):], counts
-        return None, text, False
+        return glued.group("code").upper(), text[glued.start("run"):], counts
     split = _SERIES_SPLIT.match(text)
     if split:
         code = (split.group("c1") + split.group("c2")).upper()

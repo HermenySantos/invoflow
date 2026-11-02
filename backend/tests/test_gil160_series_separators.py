@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from decimal import Decimal
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.schemas.document import SERIES_MISMATCH_DETAIL, invoice_series_prefix, series_disagrees
 from app.services.efatura import at_invoice_identity, import_purchases, normalise_invoice_number
 from tests.test_efatura_import import TAXPAYER
-from tests.test_gil160_linked_delete import _purchase, _scan, _user
+from tests.test_gil160_linked_delete import _counted_vat, _purchase, _scan, _user, _visible
 from tests.test_qa_gate_ocr import _stored_receipt
 
 CREDIT_NOTES_WITH_SEPARATORS = (
@@ -89,9 +92,7 @@ def test_identity_reads_a_separator_run_as_one_space(number):
 
 def test_identity_keeps_real_series_zeros_spaces_and_type():
     nif = "296123456"
-    assert normalise_invoice_number("FTA 2026/5") == "fta 2026/5"
     assert normalise_invoice_number("NCB/12") == "nc b/12"
-    assert at_invoice_identity(nif, "FT", "FTA 2026/5") != at_invoice_identity(nif, "FT", "FT A 2026/5")
     assert at_invoice_identity(nif, "NC", "NCB/12") == at_invoice_identity(nif, "NC", "NC B/12")
     assert at_invoice_identity(nif, "FT", "FT. A01/5") != at_invoice_identity(nif, "FT", "FT A1/5")
     assert at_invoice_identity(nif, "NC", "NC;007/1") != at_invoice_identity(nif, "NC", "NC 7/1")
@@ -119,18 +120,37 @@ def test_import_links_a_scan_written_with_a_separator_run(db: Session):
     assert result.created == ()
 
 
-def test_import_does_not_link_a_glued_letter_series_to_a_spaced_one(db: Session):
+@pytest.mark.parametrize(
+    ("kind", "scan_number", "at_number"),
+    [
+        ("FT", "FTA 2026/5", "FT A 2026/5"),
+        ("FS", "FSA 2026/7", "FS A 2026/7"),
+        ("FR", "FRB 2026/3", "FR B 2026/3"),
+    ],
+)
+def test_glued_series_letter_before_a_year_links_to_the_spaced_at_invoice(
+    db: Session, kind, scan_number, at_number
+):
     user, _headers = _user(db)
     scan = _scan(db, user)
     scan.vendor_nif = "296123456"
-    scan.invoice_number = "FTA 2026/12"
+    scan.document_type = kind
+    scan.invoice_number = scan_number
+    scan.net_amount = Decimal("10.00")
+    scan.vat_amount = Decimal("2.30")
+    scan.gross_amount = Decimal("12.30")
     db.commit()
+    assert at_invoice_identity("296123456", kind, scan_number) == at_invoice_identity(
+        "296123456", kind, at_number
+    )
     result = import_purchases(
         db,
         user_id=user.id,
         taxpayer_nif=TAXPAYER,
-        invoices=[_purchase("FT A 2026/12")],
+        invoices=[replace(_purchase(at_number), document_type=kind)],
     )
     db.commit()
-    assert result.linked_existing == ()
-    assert len(result.created) == 1
+    assert result.linked_existing == (scan.id,)
+    assert result.created == ()
+    assert [row.id for row in _visible(db, user)] == [scan.id]
+    assert _counted_vat(db, user) == [Decimal("2.30")]

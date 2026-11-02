@@ -27,7 +27,6 @@ AT_MIME = "application/vnd.invoflow.efatura+json"
 AT_RAW = '{"source":"efatura"}'
 
 FTA_OLD = f"{NIF}|FT|ft a 2026/5"
-FTA_NEW = f"{NIF}|FT|fta 2026/5"
 FT_A_NEW = f"{NIF}|FT|ft a 2026/5"
 GLUED_012 = f"{NIF}|FT|ft a/12"
 NC_DOT_OLD = f"{NIF}|NC|nc . 2026/5"
@@ -241,8 +240,9 @@ def _child() -> None:
     with engine.begin() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == BEFORE
         user_id = _insert_user(conn, base)
-        # The old FTA key is the same string as a real "FT A" series. Both cannot
-        # be live under 012's partial unique index, so the spaced row starts unset.
+        # "FTA 2026/5" and "FT A 2026/5" share one key, as on main. Both cannot be
+        # live under 012's partial unique index, so the spaced row starts unset and
+        # 013 collapses the pair onto the newer row.
         fta = _insert_document(
             conn,
             user_id=user_id,
@@ -272,7 +272,7 @@ def _child() -> None:
             document_type="FT",
             status="needs_review",
             created=older,
-            updated=older,
+            updated=newer,
             deleted=None,
             identity=None,
         )
@@ -399,12 +399,10 @@ def _child() -> None:
         assert len(rows) == 10
         assert rows[glued_012].at_invoice_identity == GLUED_012
         assert rows[glued_012].deleted_at is None
-        assert rows[fta].at_invoice_identity == FTA_NEW
-        assert rows[fta].deleted_at is None
-        assert rows[fta].updated_at == older
+        assert rows[fta].at_invoice_identity == FT_A_NEW
+        assert rows[fta].deleted_at is not None
         assert rows[ft_a].at_invoice_identity == FT_A_NEW
         assert rows[ft_a].deleted_at is None
-        assert rows[fta].at_invoice_identity != rows[ft_a].at_invoice_identity
         assert rows[nc_keeper].at_invoice_identity == NC_NEW
         assert rows[nc_keeper].deleted_at is None
         assert rows[nc_keeper].updated_at == older
@@ -430,7 +428,6 @@ def _child() -> None:
             if row.deleted_at is None
         }
         assert live == {
-            "FTA 2026/5",
             "FT A 2026/5",
             "FTA/12",
             "NC 2026/5",
@@ -467,10 +464,11 @@ def _child() -> None:
                 "FROM audit_logs WHERE action = 'efatura_dedupe'"
             )
         ).mappings().all()
-        assert len(audits) == 2
+        assert len(audits) == 3
         by_entity = {row["entity_id"]: row for row in audits}
-        assert set(by_entity) == {nc_loser, nd_loser}
+        assert set(by_entity) == {fta, nc_loser, nd_loser}
         expected = {
+            fta: (ft_a, FT_A_NEW),
             nc_loser: (nc_keeper, NC_NEW),
             nd_loser: (nd_keeper, ND_NEW),
         }
@@ -506,7 +504,7 @@ def _child() -> None:
         assert _indexdef(conn) == index_before
         assert conn.execute(
             text("SELECT count(*) FROM audit_logs WHERE action = 'efatura_dedupe'")
-        ).scalar() == 2
+        ).scalar() == 3
     engine.dispose()
     print("migration 013 child passed")
 
