@@ -1,11 +1,13 @@
-"""GIL-160 items 3 and 4. Clearing an accepted pair is audited. The list shows a linked AT pair."""
+"""GIL-160 items 3 to 5. Clearing an accepted pair is audited, the list shows a linked AT pair, and the linked-row lock is documented."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 from app.models.audit_log import AuditLog
+from app.schemas.document import SERIES_MISMATCH_DETAIL
 from app.services import processing
 from app.services.audit import log_series_mismatch_accepted
 from app.services.efatura import import_purchases
@@ -13,6 +15,8 @@ from app.services.ocr import OCRResult, _apply_invoice_qr
 from tests.conftest import TestingSessionLocal
 from tests.test_pr32_v8 import _efatura, _qr
 from tests.test_qa_gate_ocr import _stored_receipt
+
+_REPO = Path(__file__).resolve().parents[2]
 
 
 def _accepted_row(db, *, status="needs_review"):
@@ -195,3 +199,56 @@ def test_list_shows_the_linked_at_pair_only_on_linked_scans(client, db, mock_use
 
     detail = client.get(f"/api/documents/{linked.id}", headers=mock_user_headers)
     assert detail.json()["linked_at_pair"] == by_id[linked.id]["linked_at_pair"]
+
+
+def _linked_scan(db, number="FT 2026/12"):
+    stored = _stored_receipt(
+        db,
+        status="needs_review",
+        document_type="FT",
+        invoice_number=number,
+        vendor_nif="500829993",
+        at_document_type=None,
+        ocr_raw_response='{"ocr":"scan"}',
+    )
+    db.commit()
+    imported = import_purchases(
+        db,
+        user_id=stored.user_id,
+        taxpayer_nif="555555555",
+        invoices=[_efatura("FT", number, "GIL160LOCK")],
+    )
+    db.commit()
+    assert imported.linked_existing == (stored.id,)
+    return stored
+
+
+def test_linked_row_retypes_match_the_documented_lock(client, db, mock_user_headers):
+    stored = _linked_scan(db)
+    refused = [
+        {"document_type": "FS"},
+        {"document_type": "FR", "accept_series_mismatch": True},
+        {"document_type": "NC", "invoice_number": "2026/12"},
+        {"document_type": "ND", "invoice_number": "ND 2026/12", "accept_series_mismatch": True},
+    ]
+    for body in refused:
+        response = client.patch(f"/api/documents/{stored.id}", headers=mock_user_headers, json=body)
+        assert response.status_code == 422, body
+        assert response.json()["detail"] == SERIES_MISMATCH_DETAIL
+    db.refresh(stored)
+    assert (stored.document_type, stored.invoice_number) == ("FT", "FT 2026/12")
+
+    gap = client.patch(
+        f"/api/documents/{stored.id}",
+        headers=mock_user_headers,
+        json={"document_type": "FS", "invoice_number": "FS 2026/12"},
+    )
+    assert gap.status_code == 200, gap.json()
+    assert gap.json()["linked_at_pair"]["invoice_number"] == "FT 2026/12"
+
+
+def test_linked_row_lock_is_documented():
+    limits = (_REPO / "docs/known-limitations.md").read_text()
+    assert "## Retypes on linked rows" in limits
+    assert "series_mismatch_cleared" in limits
+    assert "## Migration 013" in limits

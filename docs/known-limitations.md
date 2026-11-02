@@ -12,6 +12,22 @@ The e-Fatura identity uses the same separator rule. After the code, a separator 
 
 `NC` or `ND` glued to digits is a series when `/`, `.` or `-` follows (`NC2026/5`, `NC1/5`), when there are two or more digits (`NC2026`, `NC001`, `ND2026`), or when one digit is followed by a space (`NC1 2026`). A bare `NC1` is not a series. `FT` and `FS` glued to digits (`FT2026/1`, `FS2026/12`) stay vendor numbering.
 
+## Retypes on linked rows
+
+A scan that an e-Fatura import linked to an AT invoice has an AT pair. The review screen shows the AT type, and the receipts list shows the AT number. The type is locked to the pair as follows:
+
+- A retype across the credit/invoice boundary is always refused. FT, FS or FR cannot become NC or ND, and NC or ND cannot become FT, FS or FR, even when the new number has no series code.
+- A retype inside FT, FS and FR is refused while the number still carries another code. For example, a row linked to `FT 2026/12` cannot be saved as FS with `FT 2026/12`.
+- The printed-pair confirmation is not offered on a linked row, so it cannot unlock either retype.
+
+This is a known gap. A retype inside FT, FS and FR is accepted when the same edit also changes the number to one with no series code or with the new code. For example, FS with `2026/12` or with `FS 2026/12` is saved on a row linked to `FT 2026/12`. The link stays in place.
+
+Clearing an accepted printed pair writes a `series_mismatch_cleared` audit entry. Its source is `user` for an edit, `qr` for a QR read, and `efatura` for an e-Fatura link. The `series_mismatch_accepted` entry stays.
+
+## Migration 013
+
+Migration 013 recomputes the e-Fatura identity on every AT row with the current normaliser. It then soft-deletes live duplicates with the same ranking as 012, moves their links, and writes an `efatura_dedupe` entry for each removed row. A second run changes nothing. Downgrading 013 leaves the identities and the removed rows as they are.
+
 ## Migration 010
 
 Downgrading migration 010 drops `series_mismatch_accepted`. Rows that had been accepted come back as false and leave the accepted-mismatch list in the summary, the projection, `summary.pdf` and `pares_aceites.csv`. The `series_mismatch_accepted` audit entries are not stored in that column, so they remain.
