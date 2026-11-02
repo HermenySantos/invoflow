@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from dataclasses import dataclass
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
@@ -40,16 +41,14 @@ CONCRETE_DOCUMENT_TYPES = ("FT", "FR", "FS", "ND", "NC")
 DOCUMENT_TYPES = (*CONCRETE_DOCUMENT_TYPES, "unclassified")
 # The printed-pair flag may only cross codes inside this family.
 INVOICE_FAMILY = frozenset({"FT", "FS", "FR"})
-# A series token, then a boundary. A dot counts when a letter follows
-# ("NC.A/5", "fr.a"), in any case.
-_SERIES_TOKEN = re.compile(
-    r"^(?P<code>FT|FS|FR|NC|ND)(?=[\s/\-]|$|\.(?=[A-Za-z]))",
+# The code, then a run of non-alphanumerics or the end. Every such run is a
+# separator ("NC 2026/5", "NC. 2026/5", "NC;2026/5", "NC(2026)5", "NC°1"),
+# except a title-case or lowercase code whose run has a dot and is not followed
+# by a letter: "Fr.12", "Fr. 12" and "nd.2026" are abbreviations, "fr.a" is not.
+_SERIES_SEPARATED = re.compile(
+    r"^(?P<code>FT|FS|FR|NC|ND)(?P<sep>[\W_]+|$)",
     re.IGNORECASE,
 )
-# A dot then a digit is a series only when both code letters are uppercase
-# ("NC.2026/5", "NC.1", "FT.12", "ND.5/1"). Title case and lowercase stay
-# abbreviations ("Fr.12", "Fs.12", "Nc.12", "nd.2026"). Case is the distinction.
-_SERIES_DOT_DIGIT = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)\.(?=\d)")
 # "NCA/5": the code, one extra letter, then / . or -. Whitespace does not count,
 # so "FRA 2026/12" is vendor numbering.
 _SERIES_GLUED_LETTER = re.compile(
@@ -140,13 +139,14 @@ _HYPHEN_SLASH = str.maketrans(
 def fold_series_text(value: Optional[str]) -> str:
     """Normalise a document number before the series token is read.
 
-    NFKC, then format characters (zero-width space, BOM, soft hyphen) are
+    º becomes ° before NFKC, which would turn it into the letter o. NFKC,
+    then format characters (zero-width space, BOM, soft hyphen) are
     dropped. Greek, Cyrillic, small-cap and Lisu lookalikes fold to Latin.
     Accents fold away (Ń/Ć). Unicode hyphens and slashes become ASCII.
     """
     if value is None:
         return ""
-    text = unicodedata.normalize("NFKC", str(value))
+    text = unicodedata.normalize("NFKC", str(value).replace("\u00ba", "\u00b0"))
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
     text = text.translate(_CONFUSABLES)
     text = unicodedata.normalize("NFD", text)
@@ -155,45 +155,82 @@ def fold_series_text(value: Optional[str]) -> str:
     return text.strip()
 
 
+# A code glued to letters or digits ("FTA/5", "FTA 2026/5", "FT2026/12",
+# "FTFT/1"). The identity always splits it off. The series check counts it
+# only under its glued-digit and glued-letter rules.
+_GLUED_CODE = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?P<run>[A-Za-z0-9]+)", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ParsedNumber:
+    """A document number read once, for the series check and the e-Fatura identity.
+
+    code is FT, FS, FR, NC or ND when one is split off the front. series and seq
+    are casefolded, with inner whitespace collapsed and no spaces next to '/'.
+    seq is the part after the last '/', without leading zeros. is_series is True
+    when the series check reads code as the number's type. A code split off
+    vendor numbering ('FT2026/1', 'FTFT/1') has is_series False.
+    """
+
+    code: Optional[str]
+    series: str
+    seq: Optional[str]
+    is_series: bool
+
+
+def _split_code(text: str) -> tuple[Optional[str], str, bool]:
+    separated = _SERIES_SEPARATED.match(text)
+    if separated:
+        code = separated.group("code")
+        follows = text[separated.end():separated.end() + 1]
+        if code.isupper() or "." not in separated.group("sep") or follows.isalpha():
+            return code.upper(), text[separated.end():], True
+        return None, text, False
+    glued = _GLUED_CODE.match(text)
+    if glued:
+        counts = bool(_SERIES_GLUED_DIGIT.match(text) or _SERIES_GLUED_LETTER.match(text))
+        return glued.group("code").upper(), text[glued.start("run"):], counts
+    split = _SERIES_SPLIT.match(text)
+    if split:
+        code = (split.group("c1") + split.group("c2")).upper()
+        if code in CONCRETE_DOCUMENT_TYPES:
+            return code, re.sub(r"^[\W_]+", "", text[split.end():]), True
+    return None, text, False
+
+
+def parse_document_number(number: Optional[str]) -> ParsedNumber:
+    """Split a document number into code, series and sequence."""
+    code, rest, is_series = _split_code(fold_series_text(number))
+    rest = re.sub(r"\s+", " ", rest.casefold()).strip()
+    rest = re.sub(r"\s*/\s*", "/", rest)
+    if "/" not in rest:
+        return ParsedNumber(code, rest, None, is_series)
+    series, seq = rest.rsplit("/", 1)
+    if seq.isdigit():
+        seq = seq.lstrip("0") or "0"
+    return ParsedNumber(code, series, seq, is_series)
+
+
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
     """FT, FS, FR, NC or ND as a token at the start of a document number.
 
-    Counts: 'NC-A/5', 'NCA/5', 'N/C', 'N C A/5', 'NC.A/5', 'fr.a',
-    'NC2026/5', 'NC.2026/5', 'NC.1', 'FT.12', 'FT.2026/12', 'ND.5/1',
-    'NC2026', 'NC001', 'ND2026', 'NC1 2026'.
-    A dot then a letter is a series in any case. A dot then a digit is a
-    series only when both code letters are uppercase, so 'FT.12' and 'NC.1'
-    count and 'Fr.12', 'Fs.12', 'Nc.12' and 'nd.2026' do not. That case
-    split is what keeps the abbreviations off the credit/invoice check.
-    Glued NC/ND digits count when a separator follows, when there are two
-    or more digits, or when one digit is followed by a space ('NC1 2026').
-    A bare 'NC1' does not.
+    Every run of non-alphanumerics after the code is a separator, and so are
+    º and °: 'NC-A/5', 'NC.A/5', 'fr.a', 'NC.2026/5', 'NC. 2026/5',
+    'NC;2026/5', 'NC(2026)5', 'NC[1]', 'NCº1'. The one exception is a
+    title-case or lowercase code whose run holds a dot and is not followed by
+    a letter, so 'FT.12' and 'NC.1' count and 'Fr.12', 'Fr. 12', 'Nc.12' and
+    'nd.2026' do not. That case split keeps the abbreviations off the
+    credit/invoice check.
+    Also counts: 'NCA/5', 'N/C', 'N C A/5', 'NC2026/5', 'NC2026', 'NC001',
+    'ND2026', 'NC1 2026'. Glued NC/ND digits count when a separator follows,
+    when there are two or more digits, or when one digit is followed by a
+    space. A bare 'NC1' does not.
     Does not count: 'frete 12' (letters continue after the code), 'fr001',
-    'FS2026/12', 'FT2026/1', 'FRA2026/12', 'Fr. 12', 'FRA 2026/12'.
+    'FS2026/12', 'FT2026/1', 'FRA2026/12', 'FRA 2026/12'.
     A number with no recognisable prefix is allowed with any type.
     """
-    text = fold_series_text(number)
-    if not text:
-        return None
-    token = _SERIES_TOKEN.match(text)
-    if token:
-        return token.group("code").upper()
-    dot_digit = _SERIES_DOT_DIGIT.match(text)
-    if dot_digit:
-        return dot_digit.group("code").upper()
-    glued_digit = _SERIES_GLUED_DIGIT.match(text)
-    if glued_digit:
-        return glued_digit.group("code").upper()
-    glued = _SERIES_GLUED_LETTER.match(text)
-    if glued:
-        return glued.group("code").upper()
-    split = _SERIES_SPLIT.match(text)
-    if not split:
-        return None
-    code = (split.group("c1") + split.group("c2")).upper()
-    if code not in CONCRETE_DOCUMENT_TYPES:
-        return None
-    return code
+    parsed = parse_document_number(number)
+    return parsed.code if parsed.is_series else None
 
 
 def series_disagrees(document_type: Optional[str], invoice_number: Optional[str]) -> bool:
@@ -256,19 +293,6 @@ def series_override_allowed(
         return False
     prefix = invoice_series_prefix(invoice_number)
     return prefix in INVOICE_FAMILY and prefix != document_type
-
-
-def drop_accepted_series_mismatch(document, arriving_type: Optional[str]) -> None:
-    """A QR or e-Fatura pair ends a printed-pair acceptance.
-
-    The audit row is left in place. A confirmed row whose type now crosses
-    the credit/invoice boundary against the arriving AT type goes back to review.
-    """
-    document.series_mismatch_accepted = False
-    if document.status in ("ready", "accountant_review") and crosses_credit_boundary(
-        arriving_type, document.document_type
-    ):
-        document.status = "needs_review"
 
 
 def keeps_at_issued_pair(
@@ -354,6 +378,12 @@ class FieldConfidence(BaseModel):
     vat_rate: Optional[float] = None
 
 
+class LinkedAtPair(BaseModel):
+    """Type and number of the e-Fatura invoice an import linked to this scan."""
+    document_type: Optional[str] = None
+    invoice_number: str
+
+
 class DocumentResponse(BaseModel):
     """Document response with all fields."""
     id: str
@@ -373,6 +403,7 @@ class DocumentResponse(BaseModel):
     suggested_invoice_number: Optional[str] = None
     at_document_type: Optional[str] = None
     at_invoice_number: Optional[str] = None
+    linked_at_pair: Optional[LinkedAtPair] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]

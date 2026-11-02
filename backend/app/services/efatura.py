@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
-from app.schemas.document import drop_accepted_series_mismatch
-from app.services.audit import log_auto_categorize, log_event
+from app.schemas.document import parse_document_number
+from app.services.audit import drop_accepted_series_mismatch, log_auto_categorize, log_event
 from app.services.categorization import categorize_document
 
 DocumentType = Literal["FT", "FS", "FR", "NC", "ND", "PF", "OR", "RG", "GT"]
@@ -375,6 +375,14 @@ def _import_one(
         )
         return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
+    if len(matches) == 1:
+        # A concurrent retype holds this row lock. Re-read the row after it
+        # commits, so an NC scan is not linked to an FT.
+        _lock_documents_then_links(db, [matches[0].id], [])
+        db.refresh(matches[0])
+        if not _type_compatible(matches[0], invoice):
+            matches = []
+
     if len(matches) == 1 and not _matched_same_invoice(matches[0], invoice):
         # A loose match must not swallow a different invoice. Store it instead.
         matches = []
@@ -407,7 +415,7 @@ def _import_one(
                 "fields_copied": {"old": None, "new": False},
             },
         )
-        drop_accepted_series_mismatch(document, invoice.document_type)
+        drop_accepted_series_mismatch(db, document, invoice.document_type, source="efatura")
         return _Outcome("linked", source_key, outcome, document.id, warning)
 
     # A user-deleted AT row stays deleted, including when this invoice arrives
@@ -434,8 +442,8 @@ def _import_one(
 
 
 def _prepare_identity_text(value: Optional[str]) -> str:
-    """NFKC, NBSP becomes a space, outer trim, inner whitespace runs become one space."""
-    text = unicodedata.normalize("NFKC", value or "")
+    """º becomes °, NFKC, NBSP becomes a space, outer trim, inner whitespace runs become one space."""
+    text = unicodedata.normalize("NFKC", (value or "").replace("\u00ba", "\u00b0"))
     text = text.replace("\u00a0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ")
     text = text.strip()
     text = re.sub(r"\s+", " ", text)
@@ -454,32 +462,19 @@ def normalise_nif(value: Optional[str]) -> str:
     return text.replace(" ", "")
 
 
-def _separate_type_token(text: str) -> str:
-    """``FT2026/12`` is ``FT 2026/12`` when the glued prefix is a known AT code."""
-    for token in ("ft", "fs", "fr", "nc", "nd"):
-        if len(text) > len(token) and text.startswith(token) and text[len(token)] not in " /":
-            return f"{token} {text[len(token):]}"
-    return text
-
-
 def normalise_invoice_number(value: Optional[str]) -> str:
-    """Number identity.
+    """Number identity, built from parse_document_number, the series check's parse.
 
-    Inner spaces stay, collapsed to one, except the spaces next to ``/``, which
-    are removed. A leading FT, FS, FR, NC or ND glued to the series is split off
-    with one space. Leading zeros are removed only from the sequence after the
-    last ``/``. The series and every other digit run stay. ``FT A1/005`` and
-    ``FT A1/5`` match. ``FT A01/5`` and ``FT A1/5`` do not.
+    'FTA/5' and 'FT A/5' are both FT, series a, sequence 5: 'ft a/5'. Inner
+    spaces stay, collapsed to one, and the spaces next to '/' go. Leading
+    zeros come off only the sequence after the last '/'. 'FT A1/005' and
+    'FT A1/5' match. 'FT A01/5' and 'FT A1/5' do not.
     """
-    text = _prepare_identity_text(value)
-    text = re.sub(r"\s*/\s*", "/", text)
-    text = _separate_type_token(text)
-    if "/" not in text:
-        return text
-    head, seq = text.rsplit("/", 1)
-    if seq.isdigit():
-        seq = seq.lstrip("0") or "0"
-    return f"{head}/{seq}"
+    parsed = parse_document_number(value)
+    body = parsed.series if parsed.seq is None else f"{parsed.series}/{parsed.seq}"
+    if parsed.code is None:
+        return body
+    return f"{parsed.code.lower()} {body}".rstrip()
 
 
 def at_invoice_identity(
@@ -606,7 +601,7 @@ def _retire_printed_pair(db: Session, document_id: Optional[str], arriving_type:
     document = db.get(Document, document_id)
     if document is None:
         return
-    drop_accepted_series_mismatch(document, arriving_type)
+    drop_accepted_series_mismatch(db, document, arriving_type, source="efatura")
 
 
 _LINKED_SCAN_OUTCOMES = frozenset({"linked_existing", "linked_hidden"})

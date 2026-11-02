@@ -8,6 +8,7 @@ import {
   seriesAgrees,
   seriesBlocks,
   crossesCreditBoundary,
+  linkedRetypeBlocked,
   seriesOverrideAllowed,
 } from '@/lib/reviewEdit';
 
@@ -255,5 +256,62 @@ describe('saveEditPayload drafts', () => {
     expect(payload.document_type).toBe('unclassified');
     expect(payload.status).toBe('needs_review');
     expect(payload.net_amount).toBe('10.00');
+  });
+});
+
+describe('series separators (GIL-160)', () => {
+  const creditNotes = [
+    'NC. 2026/5',
+    'NC..2026/5',
+    'NC;2026/5',
+    "NC'2026/5",
+    'NC*2026/5',
+    'NC+2026/5',
+    'NC(2026)5',
+    'NC[1]',
+    'NC\u00BA1',
+    'NC\u00B01',
+  ];
+
+  it.each(creditNotes)('reads %s as an NC series and blocks it on an FT', (number) => {
+    expect(invoiceSeriesPrefix(number)).toBe('NC');
+    expect(seriesBlocks('FT', number)).toBe(true);
+    expect(seriesBlocks('NC', number)).toBe(false);
+  });
+
+  it.each([
+    ['Fr. 12', null],
+    ['Fr.12', null],
+    ['nd..2026', null],
+    ['Nc. 12', null],
+    ['fr.a', 'FR'],
+    ['nc;5', 'NC'],
+    ['FTA 2026/5', null],
+    ['NCB/12', 'NC'],
+    ['frete 12', null],
+  ])('keeps %s as %s', (number, prefix) => {
+    expect(invoiceSeriesPrefix(number)).toBe(prefix);
+  });
+});
+
+describe('linkedRetypeBlocked', () => {
+  const pair = { document_type: 'FT' };
+
+  it('blocks any type change on a linked row with a stored type', () => {
+    for (const chosen of ['FS', 'FR', 'NC', 'ND', 'unclassified']) {
+      expect(linkedRetypeBlocked(pair, 'FT', chosen)).toBe(true);
+    }
+    expect(linkedRetypeBlocked(pair, 'FT', 'FT')).toBe(false);
+  });
+
+  it('lets an unclassified linked row take only the AT type', () => {
+    expect(linkedRetypeBlocked(pair, 'unclassified', 'FT')).toBe(false);
+    expect(linkedRetypeBlocked(pair, 'unclassified', 'FS')).toBe(true);
+    expect(linkedRetypeBlocked(pair, 'unclassified', 'unclassified')).toBe(false);
+  });
+
+  it('does not block an unlinked row', () => {
+    expect(linkedRetypeBlocked(null, 'FT', 'FS')).toBe(false);
+    expect(linkedRetypeBlocked(undefined, 'FT', 'NC')).toBe(false);
   });
 });

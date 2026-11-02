@@ -4,9 +4,27 @@ Suggestions on a receipt are inert text. They never set the document type or the
 
 ## Series token
 
-A code followed by `.` and then a digit is a series only when both letters of the code are uppercase: `NC.2026/5`, `NC.1`, `ND.5/1`, `FT.12`, `FT.2026/12`. Title case and lowercase are abbreviations, not a series: `Fr.12`, `Fs.12`, `Nc.12`, `nd.2026`. That case split is what keeps those abbreviations from being treated as a credit note or an invoice series. `frete 12` is a word: letters continue after `fr`, so it is not a series.
+After a leading `FT`, `FS`, `FR`, `NC` or `ND`, every run of characters that are not letters or digits is a separator, and so are `º` and `°`. `NC. 2026/5`, `NC..2026/5`, `NC;2026/5`, `NC'2026/5`, `NC*2026/5`, `NC+2026/5`, `NC(2026)5`, `NC[1]`, `NCº1` and `NC°1` are all the NC series. `º` is read before NFKC, because NFKC turns it into the letter `o`.
+
+There is one exception. When the code is in title case or lowercase, a run that holds a dot and is not followed by a letter is an abbreviation, not a series: `Fr.12`, `Fr. 12`, `Fs.12`, `Nc.12`, `nd.2026`. In uppercase it is a series: `NC.2026/5`, `NC.1`, `ND.5/1`, `FT.12`, `FT.2026/12`. A dot then a letter is a series in any case (`fr.a`). That case split is what keeps those abbreviations from being treated as a credit note or an invoice series. `frete 12` is a word: letters continue after `fr`, so it is not a series.
+
+The e-Fatura identity is built from the same parse as the series check. It splits a number into code, series and sequence. `FTA/5` and `FT A/5` are both FT, series A, sequence 5, so they are one invoice. `NCB/12` is NC, series B, and matches `NC B/12`. `NC; 2026/005` and `NC 2026/5` are one invoice. A code glued to digits or letters is always split off for the identity. `FT2026/12` matches `FT 2026/12`, and `FTFT/1` matches `FT FT/1`, but the series check still reads them as vendor numbering. `FTA 2026/5` matches `FT A 2026/5` the same way, as on main, though the series check reads `FTA 2026/5` as vendor numbering. Leading zeros still come off only the sequence after the last `/`, and inner spaces stay.
 
 `NC` or `ND` glued to digits is a series when `/`, `.` or `-` follows (`NC2026/5`, `NC1/5`), when there are two or more digits (`NC2026`, `NC001`, `ND2026`), or when one digit is followed by a space (`NC1 2026`). A bare `NC1` is not a series. `FT` and `FS` glued to digits (`FT2026/1`, `FS2026/12`) stay vendor numbering.
+
+## Retypes on linked rows
+
+A scan that an e-Fatura import linked to an AT invoice has an AT pair. The review screen shows the AT type, and the receipts list shows the AT number.
+
+Retypes are locked on linked rows. Any change to the document type (FT, FS, FR, NC or ND) is refused, whatever number the same edit sends. For example, a row linked to `FT 2026/12` cannot be saved as FS with `FT 2026/12`, `FS 2026/12` or `2026/12`. The API returns 422 with `O n.º do documento não corresponde ao tipo indicado.`, and the review screen shows the same message. The printed-pair confirmation is not offered on a linked row.
+
+An edit that keeps the type, such as a number change, saves as before. A linked row that is still unclassified can take only the AT type, so it can still be confirmed. When the link no longer points at the row, the row can be retyped.
+
+Clearing an accepted printed pair writes a `series_mismatch_cleared` audit entry. Its source is `user` for an edit, `qr` for a QR read, and `efatura` for an e-Fatura link. The `series_mismatch_accepted` entry stays.
+
+## Migration 013
+
+Migration 013 recomputes the e-Fatura identity on every AT row with the current normaliser. It then soft-deletes live duplicates with the same ranking as 012, moves their links, and writes an `efatura_dedupe` entry for each removed row. A second run changes nothing. Downgrading 013 leaves the identities and the removed rows as they are.
 
 ## Migration 010
 
@@ -34,8 +52,7 @@ These are not folded:
 
 - Coptic `ⲚⲤ`, Cherokee `Ꮯ`, `Ƈ`, `Ɲ`
 - middle dot `N·C` and `N⸱C`
-- backslash `N\C` and `NC\A/5`, box slash `N╱C`
-- `NC⁃A/5`, `NC⸺A/5`, `NCーA/5`
+- backslash `N\C`, box slash `N╱C`
+- `NCーA/5`: the long vowel mark is a letter, so it is not a separator
 - Hangul filler and braille blank
-- `NC_A/5`, `NC:5`, `NC#5`, `NC,5`, `NC|A/5`, `NC~A/5`
 - a leading `Nº`, `N.º` or `Doc` before `NC A/5`

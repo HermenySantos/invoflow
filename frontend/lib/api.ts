@@ -324,6 +324,10 @@ export interface Document {
   suggested_invoice_number?: string | null;
   at_document_type?: string | null;
   at_invoice_number?: string | null;
+  linked_at_pair?: {
+    document_type: string | null;
+    invoice_number: string;
+  } | null;
   document_date: string | null;
   net_amount: string | null;
   vat_amount: string | null;

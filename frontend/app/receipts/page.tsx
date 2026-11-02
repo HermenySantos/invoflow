@@ -15,6 +15,7 @@ import {
   Clock,
   XCircle,
   ChevronRight,
+  Link2,
   RefreshCw,
   Search,
   Tag,
@@ -354,13 +355,17 @@ export default function ReceiptsPage() {
                   doc.validation_warnings?.some(
                     (w) => w.severity === "warning",
                   );
+                const linkedAtPair = doc.linked_at_pair;
+                const linkedAtAria = linkedAtPair
+                  ? `, e-Fatura n.º ${linkedAtPair.invoice_number}`
+                  : "";
 
                 return (
                   <li key={doc.id}>
                     <Link
                       href={`/receipts/${doc.id}`}
                       className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
-                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}`}
+                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}${linkedAtAria}`}
                     >
                       {/* Category icon */}
                       <div
@@ -394,16 +399,32 @@ export default function ReceiptsPage() {
                             />
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <span>{date}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-medium text-gray-700">
-                            {amount}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span className={`${catInfo.textColor} text-xs`}>
-                            {catInfo.label}
-                          </span>
+                        <div className="text-sm text-gray-500 sm:flex sm:items-start sm:gap-x-2">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 sm:flex-shrink-0">
+                            <span>{date}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-medium text-gray-700">
+                              {amount}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className={`${catInfo.textColor} text-xs`}>
+                              {catInfo.label}
+                            </span>
+                          </div>
+                          {linkedAtPair ? (
+                            <span className="mt-1 flex w-full min-w-0 basis-full items-start gap-1 text-xs text-gray-500 sm:mt-0 sm:w-auto sm:max-w-full sm:basis-auto">
+                              <span className="hidden flex-shrink-0 sm:inline" aria-hidden="true">
+                                ·
+                              </span>
+                              <Link2
+                                className="w-3.5 h-3.5 flex-shrink-0"
+                                aria-hidden="true"
+                              />
+                              <span className="min-w-0 break-words">
+                                e-Fatura {linkedAtPair.invoice_number}
+                              </span>
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 

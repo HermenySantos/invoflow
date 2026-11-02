@@ -21,7 +21,7 @@ from sqlalchemy.engine import make_url
 
 
 BACKEND = Path(__file__).resolve().parents[1]
-HEAD = "012_at_invoice_identity"
+HEAD = "013_recompute_identity"
 STAMP = "011_restore_orphaned_efatura"
 BEFORE = "010_series_mismatch_accepted"
 

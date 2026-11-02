@@ -28,6 +28,7 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    LinkedAtPair,
     AMOUNT_MISMATCH_DETAIL,
     CONCRETE_DOCUMENT_TYPES,
     NULL_TYPE_DETAIL,
@@ -51,6 +52,7 @@ from app.services.audit import (
     log_document_update,
     log_document_delete,
     log_series_mismatch_accepted,
+    log_series_mismatch_cleared,
 )
 from app.services.validation import validate_document, detect_duplicates
 from app.services.iva_adjust import reading_is_fictional
@@ -163,6 +165,52 @@ def _efatura_issued(document: Document, db: Optional[Session]) -> Optional[tuple
     return at_type, at_number
 
 
+def _scan_links(db: Session, document_ids: list[str]) -> list[EfaturaLink]:
+    """Links an e-Fatura import made to these scans, newest first."""
+    if not document_ids:
+        return []
+    return (
+        db.query(EfaturaLink)
+        .filter(
+            EfaturaLink.document_id.in_(document_ids),
+            EfaturaLink.outcome.in_(("linked_existing", "linked_hidden")),
+        )
+        .order_by(desc(EfaturaLink.created_at), desc(EfaturaLink.id))
+        .all()
+    )
+
+
+def _linked_retype_refused(db: Session, document: Document, new_type: Optional[str]) -> bool:
+    """A scan linked to an e-Fatura invoice keeps its type.
+
+    An unclassified linked scan may take only the AT type, so it can still be confirmed.
+    """
+    links = _scan_links(db, [document.id])
+    if not links:
+        return False
+    if document.document_type in CONCRETE_DOCUMENT_TYPES:
+        return True
+    payload = _json_object(links[0].payload_json) or {}
+    at_type = str(payload.get("document_type") or "").strip().upper() or None
+    return at_type is not None and new_type != at_type
+
+
+def _linked_at_pairs(db: Session, document_ids: list[str]) -> dict[str, LinkedAtPair]:
+    """The newest e-Fatura invoice an import linked to each scan, by document id."""
+    links = _scan_links(db, document_ids)
+    pairs: dict[str, LinkedAtPair] = {}
+    for link in links:
+        if link.document_id in pairs:
+            continue
+        payload = _json_object(link.payload_json) or {}
+        number = str(payload.get("invoice_number") or "").strip()
+        if not number:
+            continue
+        at_type = str(payload.get("document_type") or "").strip().upper() or None
+        pairs[link.document_id] = LinkedAtPair(document_type=at_type, invoice_number=number)
+    return pairs
+
+
 def _column_at_type(document: Document) -> Optional[str]:
     """Stored AT code, including a legacy row whose QR payload is gone."""
     raw = getattr(document, "at_document_type", None)
@@ -197,8 +245,14 @@ def build_document_response(
     document: Document,
     file_url: Optional[str] = None,
     db: Optional[Session] = None,
+    linked_at_pair: Optional[LinkedAtPair] = None,
 ) -> DocumentResponse:
-    """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings."""
+    """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings.
+
+    With db, the linked e-Fatura pair is read here. A list passes it in from one query.
+    """
+    if db is not None:
+        linked_at_pair = _linked_at_pairs(db, [document.id]).get(document.id)
     field_confidence = parse_field_confidence(
         document.ocr_raw_response, 
         float(document.ocr_confidence) if document.ocr_confidence else None
@@ -245,6 +299,7 @@ def build_document_response(
         suggested_invoice_number=getattr(document, "suggested_invoice_number", None),
         at_document_type=issued_type or getattr(document, "at_document_type", None),
         at_invoice_number=issued_number,
+        linked_at_pair=linked_at_pair,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -462,10 +517,13 @@ async def list_documents(
     )
     
     # Generate URLs and response
+    linked_pairs = _linked_at_pairs(db, [doc.id for doc in documents])
     doc_responses = []
     for doc in documents:
         file_url = storage.get_download_url(doc.storage_key)
-        doc_responses.append(build_document_response(doc, file_url))
+        doc_responses.append(
+            build_document_response(doc, file_url, linked_at_pair=linked_pairs.get(doc.id))
+        )
     
     return DocumentListResponse(
         documents=doc_responses,
@@ -517,6 +575,8 @@ async def update_document(
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
     
+    # Lock the scan before reading its links, the same order as delete and
+    # import, so a link cannot land between the retype check and the commit.
     document = (
         db.query(Document)
         .filter(
@@ -524,6 +584,7 @@ async def update_document(
             Document.user_id == user.id,
             Document.deleted_at.is_(None),
         )
+        .with_for_update()
         .first()
     )
     
@@ -549,6 +610,11 @@ async def update_document(
             "document_type" in update_data
             and update_data["document_type"] != document.document_type
         )
+        if type_changed and _linked_retype_refused(db, document, update_data["document_type"]):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=SERIES_MISMATCH_DETAIL,
+            )
         merged_net = update_data.get("net_amount", document.net_amount)
         merged_vat = update_data.get("vat_amount", document.vat_amount)
         merged_gross = update_data.get("gross_amount", document.gross_amount)
@@ -591,6 +657,7 @@ async def update_document(
         # The flag is honoured only when the row has no QR pair, no e-Fatura
         # pair and no stored AT type, and only inside {FT, FS, FR}.
         override_applied = False
+        override_cleared = False
         before_type = document.document_type
         before_number = document.invoice_number
         before_accepted = bool(document.series_mismatch_accepted)
@@ -621,6 +688,7 @@ async def update_document(
                 override_applied = True
             elif before_accepted:
                 update_data["series_mismatch_accepted"] = False
+                override_cleared = True
         before_state = {field: getattr(document, field, None) for field in update_data}
 
         # Update fields
@@ -654,6 +722,15 @@ async def update_document(
                 previous_accepted=before_accepted,
                 previous_type=before_type,
                 previous_number=before_number,
+            )
+        if override_cleared:
+            log_series_mismatch_cleared(
+                db,
+                document_id=document.id,
+                user_id=user.id,
+                source="user",
+                document_type=document.document_type,
+                invoice_number=document.invoice_number,
             )
 
         db.commit()

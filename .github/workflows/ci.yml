@@ -82,10 +82,14 @@ jobs:
         run: python scripts/check_migration_010.py
       - name: Migration 011 restores an orphaned e-Fatura invoice on Postgres 16
         run: python scripts/check_migration_011.py
+      - name: Migration 013 recomputes stale e-Fatura identities on Postgres 16
+        run: python scripts/check_migration_013.py
       - name: Parallel deletes of a linked scan restore one AT invoice
         run: python scripts/check_concurrent_delete.py
       - name: Delete overlapping an e-Fatura pull does not deadlock
         run: python scripts/check_delete_vs_pull.py
+      - name: Retype overlapping an e-Fatura link does not cross types
+        run: python scripts/check_retype_vs_link.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base
