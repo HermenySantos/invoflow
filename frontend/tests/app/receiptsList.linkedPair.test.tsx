@@ -114,4 +114,31 @@ describe('receipts list linked e-Fatura pair', () => {
     expect(within(plain).queryByText('FT 2026/16')).not.toBeInTheDocument();
     expect(plain).not.toHaveAccessibleName(/e-Fatura/);
   });
+
+  it('puts the linked number on its own row on narrow screens without truncating it', async () => {
+    renderPage();
+
+    const linked = await screen.findByRole('link', { name: /Café Central/ });
+    const pair = within(linked).getByText('e-Fatura FT 2026/15');
+
+    let node: HTMLElement | null = pair;
+    while (node) {
+      expect(node.classList.contains('truncate')).toBe(false);
+      if (node === linked) break;
+      node = node.parentElement;
+    }
+
+    const wrapper = pair.parentElement;
+    expect(wrapper).not.toBeNull();
+    expect(
+      wrapper!.classList.contains('basis-full') || wrapper!.classList.contains('w-full'),
+    ).toBe(true);
+    expect(
+      wrapper!.classList.contains('sm:basis-auto') || wrapper!.classList.contains('sm:w-auto'),
+    ).toBe(true);
+
+    const dot = within(wrapper!).getByText('·');
+    expect(dot.classList.contains('hidden')).toBe(true);
+    expect(dot.classList.contains('sm:inline')).toBe(true);
+  });
 });

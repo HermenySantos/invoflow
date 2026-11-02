@@ -399,31 +399,31 @@ export default function ReceiptsPage() {
                             />
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <span>{date}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-medium text-gray-700">
-                            {amount}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span className={`${catInfo.textColor} text-xs`}>
-                            {catInfo.label}
-                          </span>
+                        <div className="text-sm text-gray-500 sm:flex sm:items-start sm:gap-x-2">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 sm:flex-shrink-0">
+                            <span>{date}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-medium text-gray-700">
+                              {amount}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className={`${catInfo.textColor} text-xs`}>
+                              {catInfo.label}
+                            </span>
+                          </div>
                           {linkedAtPair ? (
-                            <>
-                              <span className="flex-shrink-0" aria-hidden="true">
+                            <span className="mt-1 flex w-full min-w-0 basis-full items-start gap-1 text-xs text-gray-500 sm:mt-0 sm:w-auto sm:max-w-full sm:basis-auto">
+                              <span className="hidden flex-shrink-0 sm:inline" aria-hidden="true">
                                 ·
                               </span>
-                              <span className="flex items-center gap-1 min-w-0 text-xs text-gray-500">
-                                <Link2
-                                  className="w-3.5 h-3.5 flex-shrink-0"
-                                  aria-hidden="true"
-                                />
-                                <span className="truncate min-w-0">
-                                  e-Fatura {linkedAtPair.invoice_number}
-                                </span>
+                              <Link2
+                                className="w-3.5 h-3.5 flex-shrink-0"
+                                aria-hidden="true"
+                              />
+                              <span className="min-w-0 break-words">
+                                e-Fatura {linkedAtPair.invoice_number}
                               </span>
-                            </>
+                            </span>
                           ) : null}
                         </div>
                       </div>
