@@ -15,6 +15,7 @@ import {
   Clock,
   XCircle,
   ChevronRight,
+  Link2,
   RefreshCw,
   Search,
   Tag,
@@ -354,13 +355,17 @@ export default function ReceiptsPage() {
                   doc.validation_warnings?.some(
                     (w) => w.severity === "warning",
                   );
+                const linkedAtPair = doc.linked_at_pair;
+                const linkedAtAria = linkedAtPair
+                  ? `, e-Fatura n.º ${linkedAtPair.invoice_number}`
+                  : "";
 
                 return (
                   <li key={doc.id}>
                     <Link
                       href={`/receipts/${doc.id}`}
                       className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
-                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}`}
+                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}${linkedAtAria}`}
                     >
                       {/* Category icon */}
                       <div
@@ -404,6 +409,22 @@ export default function ReceiptsPage() {
                           <span className={`${catInfo.textColor} text-xs`}>
                             {catInfo.label}
                           </span>
+                          {linkedAtPair ? (
+                            <>
+                              <span className="flex-shrink-0" aria-hidden="true">
+                                ·
+                              </span>
+                              <span className="flex items-center gap-1 min-w-0 text-xs text-gray-500">
+                                <Link2
+                                  className="w-3.5 h-3.5 flex-shrink-0"
+                                  aria-hidden="true"
+                                />
+                                <span className="truncate min-w-0">
+                                  e-Fatura {linkedAtPair.invoice_number}
+                                </span>
+                              </span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
 
