@@ -140,19 +140,16 @@ def _state(url: str):
     engine = create_engine(url)
     with engine.connect() as conn:
         rows = conn.execute(
-            text(
-                "SELECT invoice_number, vat_amount FROM documents "
-                "WHERE deleted_at IS NULL ORDER BY invoice_number"
-            )
+            text("SELECT invoice_number, vat_amount FROM documents WHERE deleted_at IS NULL")
         ).all()
         links = conn.execute(
             text(
                 "SELECT l.source_key, d.invoice_number FROM efatura_links l "
-                "JOIN documents d ON d.id = l.document_id ORDER BY l.source_key"
+                "JOIN documents d ON d.id = l.document_id"
             )
         ).all()
     engine.dispose()
-    return [(number, Decimal(vat)) for number, vat in rows], [tuple(link) for link in links]
+    return sorted((number, Decimal(vat)) for number, vat in rows), [tuple(link) for link in links]
 
 
 def main() -> None:
