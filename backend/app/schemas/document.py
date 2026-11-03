@@ -399,6 +399,13 @@ class LinkedAtPair(BaseModel):
     invoice_number: str
 
 
+class EfaturaReview(BaseModel):
+    """The receipt an e-Fatura row held for review may duplicate."""
+    related_document_id: str
+    related_invoice_number: Optional[str] = None
+    related_vendor_name: Optional[str] = None
+
+
 class DocumentResponse(BaseModel):
     """Document response with all fields."""
     id: str
@@ -419,6 +426,7 @@ class DocumentResponse(BaseModel):
     at_document_type: Optional[str] = None
     at_invoice_number: Optional[str] = None
     linked_at_pair: Optional[LinkedAtPair] = None
+    efatura_review: Optional[EfaturaReview] = None
     document_date: Optional[date]
     net_amount: Optional[Decimal]
     vat_amount: Optional[Decimal]

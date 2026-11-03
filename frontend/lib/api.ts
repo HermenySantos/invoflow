@@ -328,6 +328,12 @@ export interface Document {
     document_type: string | null;
     invoice_number: string;
   } | null;
+  /** Set while an e-Fatura row is held for review next to a receipt it may duplicate. */
+  efatura_review?: {
+    related_document_id: string;
+    related_invoice_number: string | null;
+    related_vendor_name: string | null;
+  } | null;
   document_date: string | null;
   net_amount: string | null;
   vat_amount: string | null;

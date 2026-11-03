@@ -40,6 +40,13 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Briefcase, Megaphone, Wrench, Monitor, Tag,
 };
 
+function reviewHoldText(review: NonNullable<Document["efatura_review"]>): string {
+  const parts = [review.related_invoice_number, review.related_vendor_name].filter(Boolean);
+  const receipt =
+    parts.length === 2 ? `${parts[0]} (${parts[1]})` : parts[0] ?? "sem número";
+  return `Pode corresponder ao recibo ${receipt}. Reveja os dois.`;
+}
+
 export default function ReceiptsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -359,13 +366,17 @@ export default function ReceiptsPage() {
                 const linkedAtAria = linkedAtPair
                   ? `, e-Fatura n.º ${linkedAtPair.invoice_number}`
                   : "";
+                const reviewNote = doc.efatura_review
+                  ? reviewHoldText(doc.efatura_review)
+                  : null;
+                const reviewAria = reviewNote ? `, Em revisão: ${reviewNote}` : "";
 
                 return (
                   <li key={doc.id}>
                     <Link
                       href={`/receipts/${doc.id}`}
                       className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
-                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}${linkedAtAria}`}
+                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}${linkedAtAria}${reviewAria}`}
                     >
                       {/* Category icon */}
                       <div
@@ -426,6 +437,14 @@ export default function ReceiptsPage() {
                             </span>
                           ) : null}
                         </div>
+                        {reviewNote ? (
+                          <p className="mt-1 flex flex-wrap items-start gap-x-2 gap-y-1 text-xs text-amber-800">
+                            <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-medium">
+                              Em revisão
+                            </span>
+                            <span className="min-w-0 break-words">{reviewNote}</span>
+                          </p>
+                        ) : null}
                       </div>
 
                       <ChevronRight
