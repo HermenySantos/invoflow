@@ -407,7 +407,7 @@ def test_identity_keeps_series_digits_and_inner_spaces():
     assert at_invoice_identity(nif, "FT", "FT  1   23/4") == at_invoice_identity(
         nif, "FT", "FT 1 23/4"
     )
-    assert "ft a01/5" in at_invoice_identity(nif, "FT", "FT A01/5")
+    assert "ft A01/5" in at_invoice_identity(nif, "FT", "FT A01/5")
     assert at_invoice_identity(nif, "FT", "FT 1 23/4").endswith("|ft 1 23/4")
     assert at_invoice_identity("123456002", "FT", "FT2026/12") == at_invoice_identity(
         "123 456 002", "FT", "FT 2026 / 12"

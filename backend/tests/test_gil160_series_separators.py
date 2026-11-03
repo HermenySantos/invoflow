@@ -92,13 +92,13 @@ def test_identity_reads_a_separator_run_as_one_space(number):
 
 def test_identity_keeps_real_series_zeros_spaces_and_type():
     nif = "296123456"
-    assert normalise_invoice_number("NCB/12") == "nc b/12"
+    assert normalise_invoice_number("NCB/12") == "nc B/12"
     assert at_invoice_identity(nif, "NC", "NCB/12") == at_invoice_identity(nif, "NC", "NC B/12")
     assert at_invoice_identity(nif, "FT", "FT. A01/5") != at_invoice_identity(nif, "FT", "FT A1/5")
     assert at_invoice_identity(nif, "NC", "NC;007/1") != at_invoice_identity(nif, "NC", "NC 7/1")
     assert normalise_invoice_number("NC;007/001") == "nc 007/1"
     assert at_invoice_identity(nif, "FT", "FT;A 1/5") != at_invoice_identity(nif, "FT", "FT A1/5")
-    assert normalise_invoice_number("FT;A 1/5") == "ft a 1/5"
+    assert normalise_invoice_number("FT;A 1/5") == "ft A 1/5"
     assert normalise_invoice_number("FT 2026/5") != normalise_invoice_number("NC 2026/5")
     assert at_invoice_identity(nif, "FT", "FT 2026/5") != at_invoice_identity(nif, "NC", "NC 2026/5")
 

@@ -28,6 +28,7 @@ from app.schemas.document import (
     UploadUrlRequest,
     UploadUrlResponse,
     FieldConfidence,
+    EfaturaReview,
     LinkedAtPair,
     AMOUNT_MISMATCH_DETAIL,
     CONCRETE_DOCUMENT_TYPES,
@@ -44,7 +45,12 @@ from app.schemas.document import (
 )
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
-from app.services.efatura import at_invoice_identity, detach_deleted_scan, is_pg_deadlock
+from app.services.efatura import (
+    at_invoice_identity,
+    detach_deleted_scan,
+    is_pg_deadlock,
+    review_receipt_id,
+)
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
 from app.services.audit import (
@@ -211,6 +217,40 @@ def _linked_at_pairs(db: Session, document_ids: list[str]) -> dict[str, LinkedAt
     return pairs
 
 
+def _efatura_reviews(db: Session, documents: list[Document]) -> dict[str, EfaturaReview]:
+    """The receipt each e-Fatura row in review may duplicate, from its link's warning."""
+    held = [document.id for document in documents if document.status == "needs_review"]
+    if not held:
+        return {}
+    related: dict[str, str] = {}
+    for link in (
+        db.query(EfaturaLink)
+        .filter(EfaturaLink.document_id.in_(held), EfaturaLink.warning.isnot(None))
+        .order_by(desc(EfaturaLink.updated_at), desc(EfaturaLink.id))
+    ):
+        receipt_id = review_receipt_id(link.warning)
+        if receipt_id and link.document_id not in related:
+            related[link.document_id] = receipt_id
+    owners = {document.id: document.user_id for document in documents}
+    receipts = {
+        receipt.id: receipt
+        for receipt in db.query(Document).filter(
+            Document.id.in_(set(related.values())), Document.deleted_at.is_(None)
+        )
+    }
+    reviews: dict[str, EfaturaReview] = {}
+    for document_id, receipt_id in related.items():
+        receipt = receipts.get(receipt_id)
+        if receipt is None or receipt.user_id != owners[document_id]:
+            continue
+        reviews[document_id] = EfaturaReview(
+            related_document_id=receipt.id,
+            related_invoice_number=receipt.invoice_number,
+            related_vendor_name=receipt.vendor_name,
+        )
+    return reviews
+
+
 def _column_at_type(document: Document) -> Optional[str]:
     """Stored AT code, including a legacy row whose QR payload is gone."""
     raw = getattr(document, "at_document_type", None)
@@ -246,13 +286,16 @@ def build_document_response(
     file_url: Optional[str] = None,
     db: Optional[Session] = None,
     linked_at_pair: Optional[LinkedAtPair] = None,
+    efatura_review: Optional[EfaturaReview] = None,
 ) -> DocumentResponse:
     """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings.
 
-    With db, the linked e-Fatura pair is read here. A list passes it in from one query.
+    With db, the linked e-Fatura pair and the review hold are read here. A list
+    passes them in from one query each.
     """
     if db is not None:
         linked_at_pair = _linked_at_pairs(db, [document.id]).get(document.id)
+        efatura_review = _efatura_reviews(db, [document]).get(document.id)
     field_confidence = parse_field_confidence(
         document.ocr_raw_response, 
         float(document.ocr_confidence) if document.ocr_confidence else None
@@ -300,6 +343,7 @@ def build_document_response(
         at_document_type=issued_type or getattr(document, "at_document_type", None),
         at_invoice_number=issued_number,
         linked_at_pair=linked_at_pair,
+        efatura_review=efatura_review,
         document_date=document.document_date,
         net_amount=document.net_amount,
         vat_amount=document.vat_amount,
@@ -518,11 +562,17 @@ async def list_documents(
     
     # Generate URLs and response
     linked_pairs = _linked_at_pairs(db, [doc.id for doc in documents])
+    reviews = _efatura_reviews(db, documents)
     doc_responses = []
     for doc in documents:
         file_url = storage.get_download_url(doc.storage_key)
         doc_responses.append(
-            build_document_response(doc, file_url, linked_at_pair=linked_pairs.get(doc.id))
+            build_document_response(
+                doc,
+                file_url,
+                linked_at_pair=linked_pairs.get(doc.id),
+                efatura_review=reviews.get(doc.id),
+            )
         )
     
     return DocumentListResponse(

@@ -21,7 +21,7 @@ from sqlalchemy.engine import make_url
 
 
 BACKEND = Path(__file__).resolve().parents[1]
-HEAD = "013_recompute_identity"
+HEAD = "014_series_case_identity"
 STAMP = "011_restore_orphaned_efatura"
 BEFORE = "010_series_mismatch_accepted"
 
@@ -762,7 +762,7 @@ def _legacy_011() -> None:
         assert rows["FT 5/9"]["at_invoice_identity"] == "123456002|FT|ft 5/9"
         assert rows["FT A1/5"]["deleted_at"] is not None
         assert rows["FT A1/005"]["deleted_at"] is None
-        assert rows["FT A1/5"]["at_invoice_identity"] == "123456002|FT|ft a1/5"
+        assert rows["FT A1/5"]["at_invoice_identity"] == "123456002|FT|ft A1/5"
         assert rows["FT A1/005"]["at_invoice_identity"] == rows["FT A1/5"]["at_invoice_identity"]
         indexdef = conn.execute(
             text(

@@ -155,9 +155,9 @@ def test_glued_row_with_a_012_identity_does_not_split_on_the_next_pull(db: Sessi
     )
     db.commit()
     row = db.get(Document, created.created[0])
-    merged_by_012 = "296123456|FT|ft a/12"
-    assert row.at_invoice_identity == merged_by_012
-    assert at_invoice_identity("296123456", "FT", "FT A/12") == merged_by_012
+    glued_identity = "296123456|FT|ft A/12"
+    assert row.at_invoice_identity == glued_identity
+    assert at_invoice_identity("296123456", "FT", "FT A/12") == glued_identity
 
     spaced = replace(_purchase("FT A/12"), atcud="SPACED-A12")
     again = import_purchases(db, user_id=user.id, taxpayer_nif=TAXPAYER, invoices=[spaced])

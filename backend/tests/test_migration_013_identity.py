@@ -93,7 +93,15 @@ def test_migration_013_does_not_import_the_app():
     assert "from app." not in source
 
 
+def _series_folded(identity: str) -> str:
+    nif, kind, number = identity.split("|", 2)
+    return f"{nif}|{kind}|{number.casefold()}"
+
+
 @pytest.mark.parametrize(("nif", "kind", "number"), _CORPUS)
-def test_migration_013_identity_matches_the_app(frozen_identity, nif, kind, number):
+def test_migration_013_identity_matches_the_app_up_to_series_case(
+    frozen_identity, nif, kind, number
+):
+    # 013 casefolded the series. Migration 014 recomputes with the series' case kept.
     assert frozen_identity.__module__ != at_invoice_identity.__module__
-    assert frozen_identity(nif, kind, number) == at_invoice_identity(nif, kind, number)
+    assert frozen_identity(nif, kind, number) == _series_folded(at_invoice_identity(nif, kind, number))
