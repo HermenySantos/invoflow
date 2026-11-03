@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.efatura import EfaturaLink
-from app.services.efatura import at_invoice_identity, import_purchases
+from app.services.efatura import at_invoice_identity, import_purchases, review_receipt_id
 from tests.test_efatura_import import TAXPAYER
 from tests.test_gil160_linked_delete import _counted_vat, _purchase, _scan, _user, _visible
 from tests.test_migration_013_identity import _frozen as _identity_013
@@ -174,12 +174,22 @@ def test_loose_scan_link_moves_off_when_the_exact_invoice_arrives(db: Session):
     moved = db.query(EfaturaLink).filter(EfaturaLink.source_key == "atcud:LOOSE-LOWER").one()
     lower = next(row for row in _visible(db, user) if row.id == moved.document_id)
     assert (lower.invoice_number, lower.status) == ("FT a/5", "needs_review")
-    assert scan.id in moved.warning
+    assert review_receipt_id(moved.warning) == scan.id
     assert sorted(_counted_vat(db, user)) == [Decimal("2.30"), Decimal("4.60")]
 
     again = _pull(db, user, _at("FT a/5", "LOOSE-LOWER", vat="4.60"), _at("FT A/5", "EXACT-UPPER"))
     assert again.created == ()
     assert len(_visible(db, user)) == 2
+
+
+def test_scan_linked_to_one_type_is_not_linked_again_to_the_other_type(db: Session):
+    user, _headers = _user(db)
+    scan = _scan_numbered(db, user, "A/5")
+    first = _pull(db, user, _at("A/5", "TYPE-FT"))
+    assert first.linked_existing == (scan.id,)
+    second = _pull(db, user, _at("A/5", "TYPE-FS", kind="FS", vat="4.60"))
+    assert second.linked_existing == ()
+    assert sorted(_counted_vat(db, user)) == [Decimal("2.30"), Decimal("4.60")]
 
 
 def test_scan_linked_to_one_series_is_not_linked_again_to_the_other_case(db: Session):
@@ -366,3 +376,13 @@ def test_held_row_names_its_receipt_in_the_list_until_it_is_confirmed(client, db
     reviews = {row["invoice_number"]: row["efatura_review"] for row in listed.json()["documents"]}
     assert reviews["FT A/5"] is None
     assert reviews["FT a/5"] == expected
+
+
+def test_held_row_does_not_name_a_deleted_receipt(client, db: Session):
+    user, headers = _user(db)
+    scan = _scan_numbered(db, user, "ft a/5")
+    _pull(db, user, _at("FT A/5", "GONE-UPPER"), _at("FT a/5", "GONE-LOWER"))
+    assert client.delete(f"/api/documents/{scan.id}", headers=headers).status_code == 204
+    listed = client.get("/api/documents", headers=headers).json()["documents"]
+    assert len(listed) == 2
+    assert [row["efatura_review"] for row in listed] == [None, None]

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink
-from app.services.efatura import _payload, import_purchases
+from app.services.efatura import _payload, import_purchases, review_receipt_id
 from tests.test_efatura_import import TAXPAYER
 from tests.test_gil160_linked_delete import _counted_vat, _purchase, _user, _visible
 from tests.test_migration_014_identity import load_migration_014
@@ -268,10 +268,7 @@ def test_at_row_whose_number_was_edited_is_not_split(db: Session, migration):
     assert _snapshot(db) == before
 
 
-# U-A: on main, 'FT A/5' and 'FT a/5' without an ATCUD shared the doc key
-# doc:<nif>:FT:ft a/5, so the second pull overwrote the link's payload. The
-# link still points at the row or scan made for 'FT A/5'.
-MAIN_DOC_KEY = f"doc:{NIF}:FT:ft a/5"
+LOWERCASED_DOC_KEY = f"doc:{NIF}:FT:ft a/5"
 
 
 def _re_pull(db: Session, user, *numbers_and_vat):
@@ -293,17 +290,17 @@ _BOTH_ORDERS = (
 
 
 @pytest.mark.parametrize("order", _BOTH_ORDERS)
-def test_main_doc_key_pair_without_a_scan_gives_one_row_per_invoice(db: Session, migration, order):
+def test_doc_key_overwritten_by_the_other_case_gives_one_row_per_invoice(db: Session, migration, order):
     user, _headers = _user(db)
     upper = _at_row(db, user, "FT A/5", FOLDED)
-    _link(db, user, upper, "FT a/5", MAIN_DOC_KEY, vat="4.60")
+    _link(db, user, upper, "FT a/5", LOWERCASED_DOC_KEY, vat="4.60")
 
     assert _run(db, migration) == (1, 0, 1)
     lower = next(row for row in _visible(db, user) if row.invoice_number == "FT a/5")
     assert lower.status == "needs_review"
     assert lower.vat_amount == Decimal("4.60")
     moved = db.query(EfaturaLink).filter(EfaturaLink.document_id == lower.id).one()
-    assert upper.id in moved.warning
+    assert review_receipt_id(moved.warning) == upper.id
 
     for _ in range(2):
         again = _re_pull(db, user, *order)
@@ -319,10 +316,10 @@ def test_main_doc_key_pair_without_a_scan_gives_one_row_per_invoice(db: Session,
 
 
 @pytest.mark.parametrize("order", _BOTH_ORDERS)
-def test_main_doc_key_pair_next_to_a_scan_is_not_counted_twice(db: Session, migration, order):
+def test_doc_key_overwritten_by_the_other_case_next_to_a_scan_is_not_counted_twice(db: Session, migration, order):
     user, _headers = _user(db)
     scan = _scan_row(db, user, "FT A/5")
-    _link(db, user, scan, "FT a/5", MAIN_DOC_KEY, outcome="linked_existing", vat="4.60")
+    _link(db, user, scan, "FT a/5", LOWERCASED_DOC_KEY, outcome="linked_existing", vat="4.60")
 
     _run(db, migration)
     for _ in range(2):
@@ -335,4 +332,13 @@ def test_main_doc_key_pair_next_to_a_scan_is_not_counted_twice(db: Session, migr
         scan_links = db.query(EfaturaLink).filter(EfaturaLink.document_id == scan.id).all()
         assert [json.loads(link.payload_json)["invoice_number"] for link in scan_links] == ["FT A/5"]
     lower_link = db.query(EfaturaLink).filter(EfaturaLink.document_id == at_rows[0].id).one()
-    assert scan.id in lower_link.warning
+    assert review_receipt_id(lower_link.warning) == scan.id
+
+
+def test_at_row_whose_number_a_user_edited_only_in_case_is_not_split(db: Session, migration):
+    user, _headers = _user(db)
+    edited = _at_row(db, user, "FT a/5", FOLDED)
+    _link(db, user, edited, "FT A/5", LOWERCASED_DOC_KEY)
+    _audit(db, user, edited, "update", "user", {"invoice_number": {"old": "FT A/5", "new": "FT a/5"}}, BASE)
+    _run(db, migration)
+    assert [row.invoice_number for row in _visible(db, user)] == ["FT a/5"]
