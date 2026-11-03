@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink
-from app.services.efatura import _payload
+from app.services.efatura import _payload, import_purchases
+from tests.test_efatura_import import TAXPAYER
 from tests.test_gil160_linked_delete import _counted_vat, _purchase, _user, _visible
 from tests.test_migration_014_identity import load_migration_014
 
@@ -82,7 +83,9 @@ def _scan_row(db: Session, user, number: str) -> Document:
     return row
 
 
-def _link(db: Session, user, document: Document, number: str, key: str, *, outcome="created", at=BASE):
+def _link(
+    db: Session, user, document: Document, number: str, key: str, *, outcome="created", at=BASE, vat="2.30"
+):
     link = EfaturaLink(
         id=str(uuid.uuid4()),
         user_id=user.id,
@@ -91,7 +94,7 @@ def _link(db: Session, user, document: Document, number: str, key: str, *, outco
         outcome=outcome,
         document_id=document.id,
         fiscal_status="normal",
-        payload_json=_payload(_purchase(number)),
+        payload_json=_payload(_purchase(number, vat=vat)),
         created_at=at,
         updated_at=at,
     )
@@ -263,3 +266,73 @@ def test_at_row_whose_number_was_edited_is_not_split(db: Session, migration):
     before = _snapshot(db)
     assert _run(db, migration) == (0, 0, 0)
     assert _snapshot(db) == before
+
+
+# U-A: on main, 'FT A/5' and 'FT a/5' without an ATCUD shared the doc key
+# doc:<nif>:FT:ft a/5, so the second pull overwrote the link's payload. The
+# link still points at the row or scan made for 'FT A/5'.
+MAIN_DOC_KEY = f"doc:{NIF}:FT:ft a/5"
+
+
+def _re_pull(db: Session, user, *numbers_and_vat):
+    result = import_purchases(
+        db,
+        user_id=user.id,
+        taxpayer_nif=TAXPAYER,
+        invoices=[_purchase(number, vat=vat) for number, vat in numbers_and_vat],
+    )
+    db.commit()
+    db.expire_all()
+    return result
+
+
+_BOTH_ORDERS = (
+    (("FT A/5", "2.30"), ("FT a/5", "4.60")),
+    (("FT a/5", "4.60"), ("FT A/5", "2.30")),
+)
+
+
+@pytest.mark.parametrize("order", _BOTH_ORDERS)
+def test_main_doc_key_pair_without_a_scan_gives_one_row_per_invoice(db: Session, migration, order):
+    user, _headers = _user(db)
+    upper = _at_row(db, user, "FT A/5", FOLDED)
+    _link(db, user, upper, "FT a/5", MAIN_DOC_KEY, vat="4.60")
+
+    assert _run(db, migration) == (1, 0, 1)
+    lower = next(row for row in _visible(db, user) if row.invoice_number == "FT a/5")
+    assert lower.status == "needs_review"
+    assert lower.vat_amount == Decimal("4.60")
+    moved = db.query(EfaturaLink).filter(EfaturaLink.document_id == lower.id).one()
+    assert upper.id in moved.warning
+
+    for _ in range(2):
+        again = _re_pull(db, user, *order)
+        assert again.created == ()
+        assert sorted((row.invoice_number, row.vat_amount) for row in _visible(db, user)) == [
+            ("FT A/5", Decimal("2.30")),
+            ("FT a/5", Decimal("4.60")),
+        ]
+        assert sorted(_counted_vat(db, user)) == [Decimal("2.30"), Decimal("4.60")]
+    after = _snapshot(db)
+    assert _run(db, migration) == (0, 0, 0)
+    assert _snapshot(db) == after
+
+
+@pytest.mark.parametrize("order", _BOTH_ORDERS)
+def test_main_doc_key_pair_next_to_a_scan_is_not_counted_twice(db: Session, migration, order):
+    user, _headers = _user(db)
+    scan = _scan_row(db, user, "FT A/5")
+    _link(db, user, scan, "FT a/5", MAIN_DOC_KEY, outcome="linked_existing", vat="4.60")
+
+    _run(db, migration)
+    for _ in range(2):
+        _re_pull(db, user, *order)
+        visible = _visible(db, user)
+        at_rows = [row for row in visible if row.mime_type == AT_MIME]
+        assert [row.invoice_number for row in at_rows] == ["FT a/5"]
+        assert at_rows[0].status == "needs_review"
+        assert sorted(_counted_vat(db, user)) == [Decimal("2.30"), Decimal("4.60")]
+        scan_links = db.query(EfaturaLink).filter(EfaturaLink.document_id == scan.id).all()
+        assert [json.loads(link.payload_json)["invoice_number"] for link in scan_links] == ["FT A/5"]
+    lower_link = db.query(EfaturaLink).filter(EfaturaLink.document_id == at_rows[0].id).one()
+    assert scan.id in lower_link.warning

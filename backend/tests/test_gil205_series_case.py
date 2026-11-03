@@ -151,6 +151,37 @@ def test_lowercase_scan_with_both_case_series_known_links_only_its_exact_invoice
     assert _counted_vat(db, user) == [Decimal("2.30"), Decimal("2.30")]
 
 
+def test_lowercase_ocr_scan_is_held_for_review_when_both_case_series_are_known(db: Session):
+    user, _headers = _user(db)
+    scan = _scan_numbered(db, user, "ft a/5")
+    result = _pull(db, user, _at("FT A/5", "OCR-UPPER"), _at("FT a/5", "OCR-LOWER"))
+    assert result.linked_existing == ()
+    assert len(result.created) == 2
+    assert len([warning for warning in result.warnings if scan.id in warning]) == 2
+    assert db.query(EfaturaLink).filter(EfaturaLink.document_id == scan.id).count() == 0
+
+
+def test_loose_scan_link_moves_off_when_the_exact_invoice_arrives(db: Session):
+    user, _headers = _user(db)
+    scan = _scan_numbered(db, user, "FT A/5")
+    first = _pull(db, user, _at("FT a/5", "LOOSE-LOWER", vat="4.60"))
+    assert first.linked_existing == (scan.id,)
+
+    second = _pull(db, user, _at("FT A/5", "EXACT-UPPER"))
+    assert second.linked_existing == (scan.id,)
+    scan_links = db.query(EfaturaLink).filter(EfaturaLink.document_id == scan.id).all()
+    assert [link.source_key for link in scan_links] == ["atcud:EXACT-UPPER"]
+    moved = db.query(EfaturaLink).filter(EfaturaLink.source_key == "atcud:LOOSE-LOWER").one()
+    lower = next(row for row in _visible(db, user) if row.id == moved.document_id)
+    assert (lower.invoice_number, lower.status) == ("FT a/5", "needs_review")
+    assert scan.id in moved.warning
+    assert sorted(_counted_vat(db, user)) == [Decimal("2.30"), Decimal("4.60")]
+
+    again = _pull(db, user, _at("FT a/5", "LOOSE-LOWER", vat="4.60"), _at("FT A/5", "EXACT-UPPER"))
+    assert again.created == ()
+    assert len(_visible(db, user)) == 2
+
+
 def test_scan_linked_to_one_series_is_not_linked_again_to_the_other_case(db: Session):
     user, _headers = _user(db)
     scan = _scan_numbered(db, user, "FT A/5")
