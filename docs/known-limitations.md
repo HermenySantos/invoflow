@@ -18,11 +18,23 @@ A scan links when its number has the same identity as the AT invoice. When none 
 
 A code glued to two or more characters can be read two ways. `FRA2026/12` is FR series `A2026` or the vendor code FRA with series `2026`. Such a scan is not linked when another known AT invoice from the same supplier reads the same with its spaces and case dropped. Known invoices are the ones in this pull, the stored AT rows and earlier link payloads. A scan with one glued letter (`FTA/5`) has only one reading and links as before. A scan already linked to one AT invoice is not linked to a second one.
 
+A scan number with no upper case letter (`ft a/5`, as OCR often reads it) says nothing about the series' case. It links only on the looser key. When both `FT A/5` and `FT a/5` are known, neither is linked to it and both are held for review.
+
 When a link is refused, the AT invoice is stored as its own row in review, and the import warns with the receipt id. When an invoice arrives after its scan was linked to the supplier's other reading, the new row gets the same warning. The earlier link is not undone.
+
+There is one exception. When the arriving invoice has exactly the scan's number (`FT A/5` on a scan of `FT A/5`), an invoice linked earlier only on the looser key (`FT a/5`) moves off the scan to its own AT row in review, with a warning naming the scan. Without the move, one of the two would be lost or counted twice. A glued scan linked to one reading keeps that link, because both readings match it exactly.
+
+## Rows held for review
+
+On the receipts list, an e-Fatura row held for review shows an "Em revisão" badge and names the receipt it may duplicate: "Pode corresponder ao recibo FT A/5 (Loja). Reveja os dois." The badge goes away when the row is confirmed. There is no e-Fatura screen and no action to link the two by hand yet.
+
+How a held row counts today: it is in `total_vat`, next to the receipt it may duplicate, until the user resolves it. The deductible estimate counts only confirmed receipts, so a held row is in the pending figure, with its warning. Whether held rows should count is a product decision that is still open.
 
 ## Migration 014
 
-Migration 014 recomputes the e-Fatura identity on every AT row with the series' case kept. A row that 012 or 013 soft-deleted as a duplicate is restored when its new identity differs from the kept row and no live row has it. A document whose links carry more than one invoice under the new identity keeps the matching invoice; each other invoice moves to its AT row (a row the user deleted stays deleted), or to a new AT row in review. A document with links for a single invoice is never changed, even when the scan's number differs only in case. Each restored or new row gets an `efatura_split` entry. A second run changes nothing, and downgrading 014 leaves everything as it is.
+Migration 014 recomputes the e-Fatura identity on every AT row with the series' case kept. A row that 012 or 013 soft-deleted as a duplicate is restored when its new identity differs from the kept row and no live row has it. A document whose links carry more than one invoice under the new identity keeps the matching invoice; each other invoice moves to its AT row (a row the user deleted stays deleted), or to a new AT row in review. A document with links for a single invoice is never changed, even when the scan's number differs only in case. Each restored or new row gets an `efatura_split` entry, and each moved link a warning naming the document it left.
+
+On main, `FT A/5` and `FT a/5` without an ATCUD shared one link key, so the later pull overwrote the link's invoice. On an AT row 014 can see this: the row is `FT A/5` and its link now says `FT a/5`. 014 keeps `FT A/5` on that row and splits `FT a/5` off to a new row in review. On a scan it cannot: a scan of `FT A/5` linked to `FT a/5` is also what main did, correctly, when `FT a/5` was the only invoice. 014 leaves such a scan alone. The next pull that brings `FT A/5` moves `FT a/5` to its own row (see the exception above). Until then, `FT a/5` has no row of its own and its VAT is missing. If that period is never pulled again, it stays missing. A second run changes nothing, and downgrading 014 leaves everything as it is.
 
 `NC` or `ND` glued to digits is a series when `/`, `.` or `-` follows (`NC2026/5`, `NC1/5`), when there are two or more digits (`NC2026`, `NC001`, `ND2026`), or when one digit is followed by a space (`NC1 2026`). A bare `NC1` is not a series. `FT` and `FS` glued to digits (`FT2026/1`, `FS2026/12`) stay vendor numbering.
 
