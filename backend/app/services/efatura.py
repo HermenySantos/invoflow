@@ -316,12 +316,7 @@ def _import_one(
     invoice: EFaturaInvoice,
     known: set[_KnownInvoice],
 ) -> _Outcome:
-    source_key = _source_key(invoice)
-    existing = (
-        db.query(EfaturaLink)
-        .filter(EfaturaLink.user_id == user_id, EfaturaLink.source_key == source_key)
-        .one_or_none()
-    )
+    source_key, existing = _resolve_source_key(db, user_id, invoice)
     if existing is not None:
         # Documents first, then this link. Delete uses the same order.
         _lock_documents_then_links(
@@ -852,6 +847,35 @@ def _source_key(invoice: EFaturaInvoice) -> str:
         return f"atcud:{invoice.atcud}"
     number = invoice.invoice_number.strip().lower()
     return f"doc:{invoice.issuer_nif}:{invoice.document_type}:{number}"
+
+
+def _link_by_key(db: Session, user_id: str, source_key: str) -> Optional[EfaturaLink]:
+    return (
+        db.query(EfaturaLink)
+        .filter(EfaturaLink.user_id == user_id, EfaturaLink.source_key == source_key)
+        .one_or_none()
+    )
+
+
+def _resolve_source_key(
+    db: Session, user_id: str, invoice: EFaturaInvoice
+) -> tuple[str, Optional[EfaturaLink]]:
+    """The link key for this invoice and the link that already holds it.
+
+    A doc key lowercases the number, so 'FT A/5' and 'FT a/5' share one. When
+    that key holds a different invoice, this one keeps its number's case.
+    """
+    source_key = _source_key(invoice)
+    existing = _link_by_key(db, user_id, source_key)
+    if invoice.atcud or existing is None:
+        return source_key, existing
+    payload = _payload_number(existing)
+    if payload is None or normalise_invoice_number(payload[1]) == normalise_invoice_number(
+        invoice.invoice_number
+    ):
+        return source_key, existing
+    exact_key = f"doc:{invoice.issuer_nif}:{invoice.document_type}:{invoice.invoice_number.strip()}"
+    return exact_key, _link_by_key(db, user_id, exact_key)
 
 
 def _role(invoice: EFaturaInvoice, taxpayer_nif: str) -> PartyRole:
