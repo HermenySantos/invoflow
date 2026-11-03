@@ -27,10 +27,10 @@ The upgrade, in order:
    deleted AT row (which stays deleted), else a new AT row built from the
    link payload in needs_review. A document with links for one invoice is
    never touched, with one exception: an AT row whose doc-key link now
-   carries the other case of its number ('FT A/5' row, 'FT a/5' payload).
-   A doc key lowercased the number, so the later pull overwrote the
-   payload. That row keeps its own invoice and the payload's invoice is
-   split off. Every moved link gets a warning naming the document it left.
+   carries the other case of its number ('FT A/5' row, 'FT a/5' payload),
+   unless a user edited the row's number. That row keeps its own invoice
+   and the payload's invoice is split off. Every moved link gets a warning
+   naming the document it left.
 4. Checks that live AT rows still have unique identities, then recreates
    the partial unique index.
 
@@ -490,7 +490,8 @@ def _apply(bind, now) -> tuple[int, int, int]:
         return None
 
     restored = _restore_dedupes(bind, rows, identities, live_row, now)
-    split = _split_links(bind, rows, identities, live_row, deleted_row, now)
+    edited = _edited_numbers(bind)
+    split = _split_links(bind, rows, identities, live_row, deleted_row, edited, now)
 
     seen: dict[tuple, str] = {}
     for row_id, identity in identities.items():
@@ -550,7 +551,23 @@ def _restore_dedupes(bind, rows, identities, live_row, now) -> int:
     return restored
 
 
-def _split_links(bind, rows, identities, live_row, deleted_row, now) -> int:
+def _edited_numbers(bind) -> set:
+    edited = set()
+    for audit in bind.execute(
+        sa.select(audits.c.entity_id, audits.c.changes_json).where(
+            audits.c.entity_type == "document", audits.c.action == "update"
+        )
+    ).mappings():
+        try:
+            changes = json.loads(audit["changes_json"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(changes, dict) and "invoice_number" in changes:
+            edited.add(audit["entity_id"])
+    return edited
+
+
+def _split_links(bind, rows, identities, live_row, deleted_row, edited, now) -> int:
     by_document: dict[str, list] = {}
     for link in bind.execute(
         sa.select(
@@ -578,7 +595,12 @@ def _split_links(bind, rows, identities, live_row, deleted_row, now) -> int:
             groups.setdefault(item[0], []).append(item)
         document = rows[document_id]
         own = identities.get(document_id)
-        if own is not None and own not in groups and any(_overwritten(document, item) for item in items):
+        if (
+            own is not None
+            and own not in groups
+            and document_id not in edited
+            and any(_overwritten(document, item) for item in items)
+        ):
             groups[own] = []
         if len(groups) < 2:
             continue
@@ -625,8 +647,7 @@ def _split_links(bind, rows, identities, live_row, deleted_row, now) -> int:
 
 
 def _overwritten(document, item) -> bool:
-    """A doc key lowercased the number, so a pull of 'FT a/5' overwrote the
-    payload of the link that made the 'FT A/5' row. The row is still 'FT A/5'."""
+    """True when a doc-key link's payload is the row's number in the other letter case."""
     _identity, _kind, payload, link = item
     return (link["source_key"] or "").startswith("doc:") and (
         payload["invoice_number"].strip().lower() == (document["invoice_number"] or "").strip().lower()

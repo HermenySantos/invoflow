@@ -238,8 +238,7 @@ def _child() -> None:
             conn, user_id=user_id, document_id=scan, number="FT c/9", key="atcud:c9",
             outcome="linked_existing", now=later,
         )
-        # U-A: main's doc key lowercased the number, so a pull of 'FT e/3'
-        # overwrote the payload of the link that made the 'FT E/3' row.
+        # The doc-key link that made the 'FT E/3' row now carries 'FT e/3'.
         overwritten = _document(conn, user_id=user_id, number="FT E/3", identity=f"{NIF}|FT|ft e/3", created=base)
         overwritten_link = _link(
             conn, user_id=user_id, document_id=overwritten, number="FT e/3", key=f"doc:{NIF}:FT:ft e/3",

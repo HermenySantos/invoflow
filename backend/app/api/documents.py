@@ -234,7 +234,9 @@ def _efatura_reviews(db: Session, documents: list[Document]) -> dict[str, Efatur
     owners = {document.id: document.user_id for document in documents}
     receipts = {
         receipt.id: receipt
-        for receipt in db.query(Document).filter(Document.id.in_(set(related.values())))
+        for receipt in db.query(Document).filter(
+            Document.id.in_(set(related.values())), Document.deleted_at.is_(None)
+        )
     }
     reviews: dict[str, EfaturaReview] = {}
     for document_id, receipt_id in related.items():

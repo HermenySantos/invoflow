@@ -520,11 +520,7 @@ def _reads_two_ways(value: Optional[str]) -> bool:
     return len(parse_document_number(value).glued_run) >= 2
 
 
-def _keeps_case(value: Optional[str]) -> bool:
-    """False for a number with no upper case letter, such as OCR's 'ft a/5'.
-
-    Its series case says nothing, so it matches only on the looser scan key.
-    """
+def _has_upper_case(value: Optional[str]) -> bool:
     return any(ch.isupper() for ch in value or "")
 
 
@@ -1054,13 +1050,15 @@ def _unsafe_link_warning(
         return None
     if invoice.atcud and _qr_atcud(document) == invoice.atcud:
         return None
+    identity = at_invoice_identity(invoice.issuer_nif, _stored_type(invoice), invoice.invoice_number)
     nif = normalise_nif(invoice.issuer_nif)
     number = normalise_invoice_number(invoice.invoice_number)
     for link in db.query(EfaturaLink).filter(EfaturaLink.document_id == document.id).all():
-        payload = _payload_number(link)
-        if payload is None:
+        try:
+            linked = _parse_invoice(json.loads(link.payload_json))
+        except (TypeError, ValueError, json.JSONDecodeError):
             continue
-        if (normalise_nif(payload[0]), normalise_invoice_number(payload[1])) != (nif, number):
+        if at_invoice_identity(linked.issuer_nif, _stored_type(linked), linked.invoice_number) != identity:
             return (
                 f"Not linked to receipt {document.id}: it is already linked to another "
                 "e-Fatura document. Review both."
@@ -1068,7 +1066,7 @@ def _unsafe_link_warning(
     printed = document.invoice_number or ""
     if not printed.strip():
         return None
-    exact = normalise_invoice_number(printed) == number and _keeps_case(printed)
+    exact = normalise_invoice_number(printed) == number and _has_upper_case(printed)
     if exact and not _reads_two_ways(printed):
         return None
     glue = _glue_key(printed)
@@ -1084,15 +1082,13 @@ def _unsafe_link_warning(
 def _release_loose_links(db: Session, document: Document, invoice: EFaturaInvoice) -> None:
     """Move invoices that match this receipt only on the looser key to their own AT rows.
 
-    The receipt's number is this invoice's exactly, so 'FT a/5', linked to a
-    scan of 'FT A/5' before 'FT A/5' was known, is not the receipt's. Main's
-    shared doc key left the same state on AT rows and scans. Each moved
-    invoice goes to its AT row, or a new one in review, with a warning.
+    The receipt's number is this invoice's exactly. Each moved invoice goes
+    to its AT row, or a new one in review, with a warning naming the receipt.
     """
     printed = document.invoice_number or ""
     nif = normalise_nif(document.vendor_nif)
     number = normalise_invoice_number(printed)
-    if _is_scan(document) and not _keeps_case(printed):
+    if _is_scan(document) and not _has_upper_case(printed):
         return
     if nif != normalise_nif(invoice.issuer_nif) or number != normalise_invoice_number(
         invoice.invoice_number
