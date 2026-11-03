@@ -153,6 +153,22 @@ def test_g1_two_rows_whose_numbers_a_user_swapped_both_keep_their_invoices(clien
     assert _vat(db, user) == EXPECTED
 
 
+def test_g1_an_edited_row_that_cannot_get_its_identity_back_warns_instead_of_dropping(client, db: Session):
+    user, headers = _user(db)
+    edited_id = _pull(db, user, _at("FT a/5", "BLOCK-LOWER", vat="4.60")).created[0]
+    _patch(client, headers, edited_id, invoice_number="FT A/5")
+    _at_row(db, user, "FT a/5", LOWER)
+
+    result = _pull(db, user, _at("FT A/5", "BLOCK-UPPER"))
+
+    assert result.created == ()
+    assert [(skip.source_key, skip.outcome) for skip in result.skipped] == [
+        ("atcud:BLOCK-UPPER", "ambiguous_duplicate")
+    ]
+    assert review_receipt_id(result.skipped[0].warning) == edited_id
+    assert db.get(Document, edited_id).at_invoice_identity == UPPER
+
+
 # G-2: main merged FT A/5 (2.30) and FT a/5 (4.60) on one doc key; a user edited the row to FT a/5.
 
 

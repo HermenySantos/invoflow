@@ -438,6 +438,26 @@ def _import_one(
     )
     if _identity_row(db, user_id, identity, live=False) is not None:
         return _Outcome("unchanged", source_key, "unchanged")
+    # Only an edited row whose own invoice another row holds keeps this
+    # identity unmatched. Inserting would hit the unique index silently.
+    holder = _identity_row(db, user_id, identity, live=True)
+    if holder is not None:
+        warning = (
+            f"Not stored: receipt {holder.id} has this e-Fatura document's number after a "
+            "user edit, and another row holds the invoice it came from. Review both."
+        )
+        _add_link(
+            db,
+            user_id=user_id,
+            source_key=source_key,
+            role=role,
+            outcome="ambiguous_duplicate",
+            document_id=None,
+            fiscal_status=invoice.fiscal_status,
+            warning=warning,
+            payload=payload,
+        )
+        return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
     if review_warning is None:
         review_warning = _similar_scan_warning(db, user_id, invoice) or _edited_number_warning(
