@@ -337,3 +337,32 @@ def test_glued_scans_are_never_auto_linked_to_the_other_reading(db: Session):
         result = _pull(db, user, *rng.sample([plain, vendor], 2))
         assert result.linked_existing == (), (scan.invoice_number, result)
         assert len(result.created) == 2
+
+
+# U-B: a row held for review names the receipt it relates to
+
+
+def test_held_row_names_its_receipt_in_the_list_until_it_is_confirmed(client, db: Session):
+    user, headers = _user(db)
+    scan = _scan_numbered(db, user, "ft a/5")
+    scan.vendor_name = "Loja do Bairro"
+    db.commit()
+    _pull(db, user, _at("FT A/5", "LIST-UPPER"), _at("FT a/5", "LIST-LOWER"))
+
+    listed = client.get("/api/documents", headers=headers)
+    assert listed.status_code == 200, listed.text
+    reviews = {row["invoice_number"]: row["efatura_review"] for row in listed.json()["documents"]}
+    expected = {
+        "related_document_id": scan.id,
+        "related_invoice_number": "ft a/5",
+        "related_vendor_name": "Loja do Bairro",
+    }
+    assert reviews == {"ft a/5": None, "FT A/5": expected, "FT a/5": expected}
+
+    held = next(row for row in _visible(db, user) if row.invoice_number == "FT A/5")
+    held.status = "ready"
+    db.commit()
+    listed = client.get("/api/documents", headers=headers)
+    reviews = {row["invoice_number"]: row["efatura_review"] for row in listed.json()["documents"]}
+    assert reviews["FT A/5"] is None
+    assert reviews["FT a/5"] == expected
