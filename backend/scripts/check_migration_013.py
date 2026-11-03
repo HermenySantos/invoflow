@@ -497,7 +497,7 @@ def _child() -> None:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == BEFORE
         assert _snapshot(conn) == snap
         assert _indexdef(conn) == index_before
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, HEAD)
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == HEAD
         assert _snapshot(conn) == snap
@@ -513,7 +513,7 @@ def _empty() -> None:
     from alembic import command
 
     cfg = _cfg()
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, HEAD)
     engine = create_engine(os.environ["DATABASE_URL"])
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == HEAD
@@ -527,7 +527,7 @@ def _empty() -> None:
         _indexdef(conn)
         assert conn.execute(text("SELECT count(*) FROM documents")).scalar() == 0
     command.downgrade(cfg, "base")
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, HEAD)
     with engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == HEAD
         _indexdef(conn)
