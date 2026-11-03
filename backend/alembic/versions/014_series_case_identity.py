@@ -26,7 +26,11 @@ The upgrade, in order:
    its oldest link. Every other invoice moves to its live AT row, else its
    deleted AT row (which stays deleted), else a new AT row built from the
    link payload in needs_review. A document with links for one invoice is
-   never touched.
+   never touched, with one exception: an AT row whose doc-key link now
+   carries the other case of its number ('FT A/5' row, 'FT a/5' payload).
+   A doc key lowercased the number, so the later pull overwrote the
+   payload. That row keeps its own invoice and the payload's invoice is
+   split off. Every moved link gets a warning naming the document it left.
 4. Checks that live AT rows still have unique identities, then recreates
    the partial unique index.
 
@@ -572,10 +576,13 @@ def _split_links(bind, rows, identities, live_row, deleted_row, now) -> int:
         groups: dict[str, list] = {}
         for item in items:
             groups.setdefault(item[0], []).append(item)
+        document = rows[document_id]
+        own = identities.get(document_id)
+        if own is not None and own not in groups and any(_overwritten(document, item) for item in items):
+            groups[own] = []
         if len(groups) < 2:
             continue
-        document = rows[document_id]
-        keep = _kept_identity(document, identities.get(document_id), groups, items)
+        keep = _kept_identity(document, own, groups, items)
         for identity, group in groups.items():
             if identity == keep:
                 continue
@@ -593,7 +600,15 @@ def _split_links(bind, rows, identities, live_row, deleted_row, now) -> int:
             bind.execute(
                 links.update()
                 .where(links.c.id.in_([item[3]["id"] for item in group]))
-                .values(document_id=target, outcome="created", warning=None, updated_at=now)
+                .values(
+                    document_id=target,
+                    outcome="created",
+                    warning=(
+                        f"Split off receipt {document_id}: the series' letter case "
+                        "makes it another e-Fatura document. Review both."
+                    ),
+                    updated_at=now,
+                )
             )
             _audit(
                 bind,
@@ -607,6 +622,15 @@ def _split_links(bind, rows, identities, live_row, deleted_row, now) -> int:
                 now=now,
             )
     return split
+
+
+def _overwritten(document, item) -> bool:
+    """A doc key lowercased the number, so a pull of 'FT a/5' overwrote the
+    payload of the link that made the 'FT A/5' row. The row is still 'FT A/5'."""
+    _identity, _kind, payload, link = item
+    return (link["source_key"] or "").startswith("doc:") and (
+        payload["invoice_number"].strip().lower() == (document["invoice_number"] or "").strip().lower()
+    )
 
 
 def _kept_identity(document, own_identity, groups, items) -> str:

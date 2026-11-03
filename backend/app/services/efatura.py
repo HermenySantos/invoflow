@@ -390,6 +390,7 @@ def _import_one(
 
     review_warning = None
     if len(matches) == 1:
+        _release_loose_links(db, matches[0], invoice)
         review_warning = _unsafe_link_warning(db, matches[0], invoice, known)
         if review_warning is not None:
             matches = []
@@ -517,6 +518,14 @@ def _reads_two_ways(value: Optional[str]) -> bool:
     2026. 'FTA/5' has one glued letter and only reads as FT series A.
     """
     return len(parse_document_number(value).glued_run) >= 2
+
+
+def _keeps_case(value: Optional[str]) -> bool:
+    """False for a number with no upper case letter, such as OCR's 'ft a/5'.
+
+    Its series case says nothing, so it matches only on the looser scan key.
+    """
+    return any(ch.isupper() for ch in value or "")
 
 
 def at_invoice_identity(
@@ -688,7 +697,7 @@ def _place_at_invoice(
     db: Session,
     link: EfaturaLink,
     invoice: EFaturaInvoice,
-    scan: Document,
+    scan: Optional[Document],
 ) -> tuple[Document, bool]:
     """Return the one AT row for this invoice, creating it only when none exists.
 
@@ -1035,10 +1044,11 @@ def _unsafe_link_warning(
     """Why this scan must not be linked to this invoice, or None.
 
     A scan already linked to a different AT invoice is not linked to a second
-    one. A scan whose number matched only on the looser key, or whose code is
-    glued to two or more characters, is not linked when another AT invoice
-    from the same supplier reads the same with its spaces and case dropped.
-    The invoice is then stored on its own row for review.
+    one. A scan whose number matched only on the looser key, is written
+    without an upper case letter, or has its code glued to two or more
+    characters is not linked when another AT invoice from the same supplier
+    reads the same with its spaces and case dropped. The invoice is then
+    stored on its own row for review.
     """
     if not _is_scan(document):
         return None
@@ -1058,7 +1068,7 @@ def _unsafe_link_warning(
     printed = document.invoice_number or ""
     if not printed.strip():
         return None
-    exact = normalise_invoice_number(printed) == number
+    exact = normalise_invoice_number(printed) == number and _keeps_case(printed)
     if exact and not _reads_two_ways(printed):
         return None
     glue = _glue_key(printed)
@@ -1069,6 +1079,64 @@ def _unsafe_link_warning(
                 "e-Fatura document from this supplier. Review both."
             )
     return None
+
+
+def _release_loose_links(db: Session, document: Document, invoice: EFaturaInvoice) -> None:
+    """Move invoices that match this receipt only on the looser key to their own AT rows.
+
+    The receipt's number is this invoice's exactly, so 'FT a/5', linked to a
+    scan of 'FT A/5' before 'FT A/5' was known, is not the receipt's. Main's
+    shared doc key left the same state on AT rows and scans. Each moved
+    invoice goes to its AT row, or a new one in review, with a warning.
+    """
+    printed = document.invoice_number or ""
+    nif = normalise_nif(document.vendor_nif)
+    number = normalise_invoice_number(printed)
+    if _is_scan(document) and not _keeps_case(printed):
+        return
+    if nif != normalise_nif(invoice.issuer_nif) or number != normalise_invoice_number(
+        invoice.invoice_number
+    ):
+        return
+    links = (
+        db.query(EfaturaLink)
+        .filter(EfaturaLink.document_id == document.id)
+        .order_by(EfaturaLink.id)
+        .with_for_update()
+        .all()
+    )
+    for link in links:
+        try:
+            other = _parse_invoice(json.loads(link.payload_json))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if normalise_nif(other.issuer_nif) != nif:
+            continue
+        if normalise_invoice_number(other.invoice_number) == number:
+            continue
+        if _scan_number(other.invoice_number) != _scan_number(printed):
+            continue
+        if other.atcud and _qr_atcud(document) == other.atcud:
+            continue
+        row, _created = _place_at_invoice(db, link, other, None)
+        link.document_id = row.id
+        link.outcome = "created"
+        link.warning = (
+            f"Moved off receipt {document.id}: the receipt's number is another "
+            "e-Fatura document. Review both."
+        )
+        link.updated_at = datetime.utcnow()
+        _log_unlink(db, document, row, link.source_key, "efatura")
+    db.flush()
+
+
+_REVIEW_RECEIPT = re.compile(r"\b[Rr]eceipt (?P<id>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\b.*Review both\.$")
+
+
+def review_receipt_id(warning: Optional[str]) -> Optional[str]:
+    """The receipt a review warning names, or None for any other warning."""
+    match = _REVIEW_RECEIPT.search(warning or "")
+    return match.group("id") if match else None
 
 
 def _similar_scan_warning(db: Session, user_id: str, invoice: EFaturaInvoice) -> Optional[str]:

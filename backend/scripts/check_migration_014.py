@@ -238,6 +238,13 @@ def _child() -> None:
             conn, user_id=user_id, document_id=scan, number="FT c/9", key="atcud:c9",
             outcome="linked_existing", now=later,
         )
+        # U-A: main's doc key lowercased the number, so a pull of 'FT e/3'
+        # overwrote the payload of the link that made the 'FT E/3' row.
+        overwritten = _document(conn, user_id=user_id, number="FT E/3", identity=f"{NIF}|FT|ft e/3", created=base)
+        overwritten_link = _link(
+            conn, user_id=user_id, document_id=overwritten, number="FT e/3", key=f"doc:{NIF}:FT:ft e/3",
+            outcome="created", now=later,
+        )
         # Left alone: a plain AT row, and a lowercase scan with one invoice.
         stable = _document(conn, user_id=user_id, number="FT 2026/1", identity=f"{NIF}|FT|ft 2026/1", created=base)
         _link(conn, user_id=user_id, document_id=stable, number="FT 2026/1", key="atcud:S1", outcome="created", now=base)
@@ -259,8 +266,10 @@ def _child() -> None:
             )
         ).mappings().all()
         numbers = sorted(row["invoice_number"] for row in live)
-        assert numbers == sorted(["FT A/5", "FT a/5", "FT B/7", "FT b/7", "FT c/9", "FT C/9", "FT 2026/1", "ft d/1"]), numbers
-        assert sum((row["vat_amount"] for row in live), Decimal("0")) == Decimal("18.40")
+        assert numbers == sorted(
+            ["FT A/5", "FT a/5", "FT B/7", "FT b/7", "FT c/9", "FT C/9", "FT E/3", "FT e/3", "FT 2026/1", "ft d/1"]
+        ), numbers
+        assert sum((row["vat_amount"] for row in live), Decimal("0")) == Decimal("23.00")
         identity = {row["invoice_number"]: row["at_invoice_identity"] for row in live}
         assert identity["FT A/5"] == f"{NIF}|FT|ft A/5"
         assert identity["FT a/5"] == f"{NIF}|FT|ft a/5"
@@ -281,13 +290,19 @@ def _child() -> None:
         assert target(dropped_link) == dropped
         assert target(scan_right) == scan
         assert target(scan_wrong) == by_number["FT C/9"] != scan
+        assert by_number["FT E/3"] == overwritten
+        assert target(overwritten_link) == by_number["FT e/3"] != overwritten
+        split_warning = conn.execute(
+            text("SELECT warning FROM efatura_links WHERE id = :id"), {"id": overwritten_link}
+        ).scalar()
+        assert overwritten in split_warning and split_warning.endswith("Review both.")
         for row_id, xmin in xmin_stable.items():
             assert conn.execute(
                 text("SELECT xmin::text FROM documents WHERE id = :id"), {"id": row_id}
             ).scalar() == xmin
         assert conn.execute(
             text("SELECT count(*) FROM audit_logs WHERE action = 'efatura_split'")
-        ).scalar() == 4
+        ).scalar() == 5
         snap = _snapshot(conn)
         index_before = _indexdef(conn)
 
