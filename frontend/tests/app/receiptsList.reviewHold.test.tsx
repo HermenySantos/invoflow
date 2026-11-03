@@ -103,6 +103,35 @@ describe('receipts list row held for review', () => {
     expect(within(plain).queryByText('Em revisão')).not.toBeInTheDocument();
   });
 
+  it('shows the held row its own number next to the related receipt', async () => {
+    vi.mocked(api.getDocuments).mockResolvedValue(
+      list([
+        receipt({
+          id: 'doc-held',
+          invoice_number: 'FT A/5',
+          efatura_review: {
+            related_document_id: 'at-edited',
+            related_invoice_number: 'FT A/5',
+            related_vendor_name: 'Loja do Bairro',
+          },
+        }),
+        receipt({ id: 'doc-plain', vendor_name: 'Oficina do Bairro', invoice_number: 'FT B/9' }),
+      ]),
+    );
+    renderPage();
+
+    const held = await screen.findByRole('link', { name: /Em revisão/ });
+    const line = within(held).getByText('Em revisão').parentElement!;
+    expect(within(line).getByText('e-Fatura FT A/5')).toBeVisible();
+    expect(within(line).getByText(/Pode corresponder ao recibo FT A\/5 \(Loja do Bairro\)/)).toBeVisible();
+    expect(held).toHaveAccessibleName(
+      /e-Fatura n\.º FT A\/5, Em revisão: Pode corresponder ao recibo FT A\/5 \(Loja do Bairro\)/,
+    );
+
+    const plain = screen.getByRole('link', { name: /Oficina do Bairro/ });
+    expect(within(plain).queryByText(/e-Fatura FT B\/9/)).not.toBeInTheDocument();
+  });
+
   it('puts the review note on its own wrapping line on narrow screens', async () => {
     renderPage();
 
