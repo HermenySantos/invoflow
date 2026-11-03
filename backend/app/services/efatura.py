@@ -234,6 +234,7 @@ def import_purchases(
     skipped: list[Skipped] = []
     warnings: list[str] = []
 
+    known = _known_at_invoices(db, user_id, invoices)
     for invoice in invoices:
         outcome = None
         key = _source_key(invoice)
@@ -241,7 +242,11 @@ def import_purchases(
             try:
                 with db.begin_nested():
                     outcome = _import_one(
-                        db, user_id=user_id, taxpayer_nif=taxpayer_nif, invoice=invoice
+                        db,
+                        user_id=user_id,
+                        taxpayer_nif=taxpayer_nif,
+                        invoice=invoice,
+                        known=known,
                     )
                     db.flush()
                     if after_invoice is not None:
@@ -282,7 +287,7 @@ def import_purchases(
             unchanged.append(outcome.source_key)
         elif outcome.kind == "skipped":
             skipped.append(Skipped(outcome.source_key, outcome.outcome, outcome.warning))
-        if outcome.warning and outcome.kind in ("linked", "skipped", "unchanged"):
+        if outcome.warning and outcome.kind in ("linked", "skipped", "unchanged", "created"):
             warnings.append(outcome.warning)
 
     return ImportResult(
@@ -309,6 +314,7 @@ def _import_one(
     user_id: str,
     taxpayer_nif: str,
     invoice: EFaturaInvoice,
+    known: set[_KnownInvoice],
 ) -> _Outcome:
     source_key = _source_key(invoice)
     existing = (
@@ -387,6 +393,12 @@ def _import_one(
         # A loose match must not swallow a different invoice. Store it instead.
         matches = []
 
+    review_warning = None
+    if len(matches) == 1:
+        review_warning = _unsafe_link_warning(db, matches[0], invoice, known)
+        if review_warning is not None:
+            matches = []
+
     if len(matches) == 1:
         document = matches[0]
         hidden = document.deleted_at is not None
@@ -426,6 +438,8 @@ def _import_one(
     if _identity_row(db, user_id, identity, live=False) is not None:
         return _Outcome("unchanged", source_key, "unchanged")
 
+    if review_warning is None:
+        review_warning = _similar_scan_warning(db, user_id, invoice)
     document = _new_purchase(db, user_id=user_id, source_key=source_key, invoice=invoice)
     _add_link(
         db,
@@ -435,10 +449,10 @@ def _import_one(
         outcome="created",
         document_id=document.id,
         fiscal_status=invoice.fiscal_status,
-        warning=None,
+        warning=review_warning,
         payload=payload,
     )
-    return _Outcome("created", source_key, "created", document.id)
+    return _Outcome("created", source_key, "created", document.id, review_warning)
 
 
 def _prepare_identity_text(value: Optional[str]) -> str:
@@ -465,16 +479,49 @@ def normalise_nif(value: Optional[str]) -> str:
 def normalise_invoice_number(value: Optional[str]) -> str:
     """Number identity, built from parse_document_number, the series check's parse.
 
-    'FTA/5' and 'FT A/5' are both FT, series a, sequence 5: 'ft a/5'. Inner
-    spaces stay, collapsed to one, and the spaces next to '/' go. Leading
-    zeros come off only the sequence after the last '/'. 'FT A1/005' and
-    'FT A1/5' match. 'FT A01/5' and 'FT A1/5' do not.
+    'FTA/5' and 'FT A/5' are both FT, series A, sequence 5: 'ft A/5'. The
+    type code ignores case and the series does not, so 'FT a/5' is
+    'ft a/5', a different invoice. Inner spaces stay, collapsed to one, and
+    the spaces next to '/' go. Leading zeros come off only the sequence after
+    the last '/'. 'FT A1/005' and 'FT A1/5' match. 'FT A01/5' and 'FT A1/5'
+    do not. 'FT -A/5' keeps its '-'.
     """
     parsed = parse_document_number(value)
     body = parsed.series if parsed.seq is None else f"{parsed.series}/{parsed.seq}"
     if parsed.code is None:
         return body
     return f"{parsed.code.lower()} {body}".rstrip()
+
+
+def _scan_number(value: Optional[str]) -> str:
+    """A looser key a scan may link on: case folded, leading series marks dropped.
+
+    'ft a/5' and 'FT -A/5' share it with 'FT A/5'. It is only used when no
+    number matches exactly and no other known AT invoice shares the key.
+    """
+    parsed = parse_document_number(value)
+    series = re.sub(r"^[\W_]+", "", parsed.series)
+    body = series if parsed.seq is None else f"{series}/{parsed.seq}"
+    head = f"{parsed.code.lower()} " if parsed.code else ""
+    return f"{head}{body}".strip().casefold()
+
+
+def _glue_key(value: Optional[str]) -> str:
+    """The scan key with every space before the sequence removed.
+
+    Every way of reading a number that lost its spaces shares it:
+    'FRA2026/12', 'FRA 2026/12' and 'FR A2026/12' are all 'fra2026/12'.
+    """
+    return _scan_number(value).replace(" ", "")
+
+
+def _reads_two_ways(value: Optional[str]) -> bool:
+    """True when the code is glued to two or more characters.
+
+    'FRA2026/12' can be FR series A2026 or the vendor code FRA with series
+    2026. 'FTA/5' has one glued letter and only reads as FT series A.
+    """
+    return len(parse_document_number(value).glued_run) >= 2
 
 
 def at_invoice_identity(
@@ -886,18 +933,146 @@ def _matched_same_invoice(document: Document, invoice: EFaturaInvoice) -> bool:
     """A numbered row links only when it is this invoice.
 
     An unnumbered scan matched by date and amount stays a link. ATCUD is the
-    same invoice even when the printed number differs. A different number is
-    stored on its own row instead of being reported as a link and dropped.
+    same invoice even when the printed number differs. A scan may also match
+    on the looser scan key. A different number is stored on its own row
+    instead of being reported as a link and dropped.
     """
     if invoice.atcud and _qr_atcud(document) == invoice.atcud:
         return True
     if not (document.invoice_number or "").strip():
         return True
-    return (
-        normalise_nif(document.vendor_nif) == normalise_nif(invoice.issuer_nif)
-        and normalise_invoice_number(document.invoice_number)
-        == normalise_invoice_number(invoice.invoice_number)
+    if normalise_nif(document.vendor_nif) != normalise_nif(invoice.issuer_nif):
+        return False
+    if normalise_invoice_number(document.invoice_number) == normalise_invoice_number(
+        invoice.invoice_number
+    ):
+        return True
+    return _is_scan(document) and _scan_number(document.invoice_number) == _scan_number(
+        invoice.invoice_number
     )
+
+
+@dataclass(frozen=True)
+class _KnownInvoice:
+    nif: str
+    number: str
+    glue: str
+
+
+def _known_invoice(nif: Optional[str], number: Optional[str]) -> Optional[_KnownInvoice]:
+    if not (number or "").strip():
+        return None
+    return _KnownInvoice(normalise_nif(nif), normalise_invoice_number(number), _glue_key(number))
+
+
+def _known_at_invoices(
+    db: Session, user_id: str, invoices: Sequence[EFaturaInvoice]
+) -> set[_KnownInvoice]:
+    """Every AT invoice this account has seen: this pull, AT rows and link payloads."""
+    known: set[_KnownInvoice] = set()
+    for invoice in invoices:
+        entry = _known_invoice(invoice.issuer_nif, invoice.invoice_number)
+        if entry:
+            known.add(entry)
+    for document in db.query(Document).filter(Document.user_id == user_id).all():
+        if _is_scan(document):
+            continue
+        entry = _known_invoice(document.vendor_nif, document.invoice_number)
+        if entry:
+            known.add(entry)
+    for link in db.query(EfaturaLink).filter(EfaturaLink.user_id == user_id).all():
+        payload = _payload_number(link)
+        if payload is not None:
+            entry = _known_invoice(*payload)
+            if entry:
+                known.add(entry)
+    return known
+
+
+def _payload_number(link: EfaturaLink) -> Optional[tuple[Optional[str], Optional[str]]]:
+    try:
+        payload = json.loads(link.payload_json or "")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    nif, number = payload.get("issuer_nif"), payload.get("invoice_number")
+    if not isinstance(nif, str) or not isinstance(number, str):
+        return None
+    return nif, number
+
+
+def _unsafe_link_warning(
+    db: Session,
+    document: Document,
+    invoice: EFaturaInvoice,
+    known: set[_KnownInvoice],
+) -> Optional[str]:
+    """Why this scan must not be linked to this invoice, or None.
+
+    A scan already linked to a different AT invoice is not linked to a second
+    one. A scan whose number matched only on the looser key, or whose code is
+    glued to two or more characters, is not linked when another AT invoice
+    from the same supplier reads the same with its spaces and case dropped.
+    The invoice is then stored on its own row for review.
+    """
+    if not _is_scan(document):
+        return None
+    if invoice.atcud and _qr_atcud(document) == invoice.atcud:
+        return None
+    nif = normalise_nif(invoice.issuer_nif)
+    number = normalise_invoice_number(invoice.invoice_number)
+    for link in db.query(EfaturaLink).filter(EfaturaLink.document_id == document.id).all():
+        payload = _payload_number(link)
+        if payload is None:
+            continue
+        if (normalise_nif(payload[0]), normalise_invoice_number(payload[1])) != (nif, number):
+            return (
+                f"Not linked to receipt {document.id}: it is already linked to another "
+                "e-Fatura document. Review both."
+            )
+    printed = document.invoice_number or ""
+    if not printed.strip():
+        return None
+    exact = normalise_invoice_number(printed) == number
+    if exact and not _reads_two_ways(printed):
+        return None
+    glue = _glue_key(printed)
+    for other in known:
+        if other.nif == nif and other.number != number and other.glue == glue:
+            return (
+                f"Not linked to receipt {document.id}: its number could also be another "
+                "e-Fatura document from this supplier. Review both."
+            )
+    return None
+
+
+def _similar_scan_warning(db: Session, user_id: str, invoice: EFaturaInvoice) -> Optional[str]:
+    """A live scan whose glued number could also be this invoice, or None.
+
+    Catches a scan that an earlier pull linked to the supplier's other
+    invoice: 'FRA2026/12' linked to 'FR A2026/12' before 'FRA 2026/12' arrived.
+    """
+    nif = normalise_nif(invoice.issuer_nif)
+    number = normalise_invoice_number(invoice.invoice_number)
+    glue = _glue_key(invoice.invoice_number)
+    for document in (
+        db.query(Document)
+        .filter(Document.user_id == user_id, Document.deleted_at.is_(None))
+        .order_by(Document.created_at.asc(), Document.id.asc())
+        .all()
+    ):
+        printed = document.invoice_number or ""
+        if not _is_scan(document) or not printed.strip():
+            continue
+        if normalise_nif(document.vendor_nif) != nif or not _reads_two_ways(printed):
+            continue
+        if _glue_key(printed) == glue and normalise_invoice_number(printed) != number:
+            return (
+                f"Receipt {document.id} has a number that could also be this e-Fatura "
+                "document. Review both."
+            )
+    return None
 
 
 def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list[Document]:
@@ -925,6 +1100,17 @@ def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list
         ]
         if by_number:
             return by_number
+        loose = _scan_number(invoice.invoice_number)
+        by_scan_number = [
+            document
+            for document in documents
+            if _is_scan(document)
+            and normalise_nif(document.vendor_nif) == incoming_nif
+            and document.invoice_number
+            and _scan_number(document.invoice_number) == loose
+        ]
+        if by_scan_number:
+            return by_scan_number
 
     matched: list[Document] = []
     for document in documents:

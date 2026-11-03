@@ -165,50 +165,65 @@ _GLUED_CODE = re.compile(r"^(?P<code>FT|FS|FR|NC|ND)(?P<run>[A-Za-z0-9]+)", re.I
 class ParsedNumber:
     """A document number read once, for the series check and the e-Fatura identity.
 
-    code is FT, FS, FR, NC or ND when one is split off the front. series and seq
-    are casefolded, with inner whitespace collapsed and no spaces next to '/'.
-    seq is the part after the last '/', without leading zeros. is_series is True
-    when the series check reads code as the number's type. A code split off
-    vendor numbering ('FT2026/1', 'FTFT/1') has is_series False.
+    code is FT, FS, FR, NC or ND when one is split off the front (always
+    upper case). series and seq keep their letter case, because AT allows
+    both 'A' and 'a' as distinct series. Inner whitespace is collapsed and
+    there are no spaces next to '/'. seq is the part after the last '/',
+    without leading zeros. is_series is True when the series check reads code
+    as the number's type. A code split off vendor numbering ('FT2026/1',
+    'FTFT/1') has is_series False. glued_run is the letters and digits glued
+    to the code ('A2026' for 'FRA2026/12'), empty when a separator follows
+    the code.
     """
 
     code: Optional[str]
     series: str
     seq: Optional[str]
     is_series: bool
+    glued_run: str = ""
 
 
-def _split_code(text: str) -> tuple[Optional[str], str, bool]:
+# Punctuation that follows a space after the code starts the series:
+# 'FT -A/5' is series '-A', not 'A'. 'FT-A/5' and 'FT - A/5' still split.
+_SERIES_LEADING_MARK = re.compile(r"\s+(?P<mark>[^\s/]+)$")
+
+
+def _split_code(text: str) -> tuple[Optional[str], str, bool, str]:
     separated = _SERIES_SEPARATED.match(text)
     if separated:
         code = separated.group("code")
+        sep = separated.group("sep")
         follows = text[separated.end():separated.end() + 1]
-        if code.isupper() or "." not in separated.group("sep") or follows.isalpha():
-            return code.upper(), text[separated.end():], True
-        return None, text, False
+        if code.isupper() or "." not in sep or follows.isalpha():
+            rest = text[separated.end():]
+            mark = _SERIES_LEADING_MARK.fullmatch(sep)
+            if mark and follows.isalnum():
+                rest = mark.group("mark") + rest
+            return code.upper(), rest, True, ""
+        return None, text, False, ""
     glued = _GLUED_CODE.match(text)
     if glued:
         counts = bool(_SERIES_GLUED_DIGIT.match(text) or _SERIES_GLUED_LETTER.match(text))
-        return glued.group("code").upper(), text[glued.start("run"):], counts
+        return glued.group("code").upper(), text[glued.start("run"):], counts, glued.group("run")
     split = _SERIES_SPLIT.match(text)
     if split:
         code = (split.group("c1") + split.group("c2")).upper()
         if code in CONCRETE_DOCUMENT_TYPES:
-            return code, re.sub(r"^[\W_]+", "", text[split.end():]), True
-    return None, text, False
+            return code, re.sub(r"^[\W_]+", "", text[split.end():]), True, ""
+    return None, text, False, ""
 
 
 def parse_document_number(number: Optional[str]) -> ParsedNumber:
     """Split a document number into code, series and sequence."""
-    code, rest, is_series = _split_code(fold_series_text(number))
-    rest = re.sub(r"\s+", " ", rest.casefold()).strip()
+    code, rest, is_series, glued_run = _split_code(fold_series_text(number))
+    rest = re.sub(r"\s+", " ", rest).strip()
     rest = re.sub(r"\s*/\s*", "/", rest)
     if "/" not in rest:
-        return ParsedNumber(code, rest, None, is_series)
+        return ParsedNumber(code, rest, None, is_series, glued_run)
     series, seq = rest.rsplit("/", 1)
     if seq.isdigit():
         seq = seq.lstrip("0") or "0"
-    return ParsedNumber(code, series, seq, is_series)
+    return ParsedNumber(code, series, seq, is_series, glued_run)
 
 
 def invoice_series_prefix(number: Optional[str]) -> Optional[str]:
