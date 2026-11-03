@@ -369,7 +369,10 @@ export default function ReceiptsPage() {
                 const reviewNote = doc.efatura_review
                   ? reviewHoldText(doc.efatura_review)
                   : null;
-                const reviewAria = reviewNote ? `, Em revisão: ${reviewNote}` : "";
+                const heldNumber = reviewNote ? doc.invoice_number?.trim() || null : null;
+                const reviewAria = reviewNote
+                  ? `${heldNumber ? `, e-Fatura n.º ${heldNumber}` : ""}, Em revisão: ${reviewNote}`
+                  : "";
 
                 return (
                   <li key={doc.id}>
@@ -442,6 +445,11 @@ export default function ReceiptsPage() {
                             <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-medium">
                               Em revisão
                             </span>
+                            {heldNumber ? (
+                              <span className="min-w-0 break-words font-medium">
+                                e-Fatura {heldNumber}
+                              </span>
+                            ) : null}
                             <span className="min-w-0 break-words">{reviewNote}</span>
                           </p>
                         ) : null}
