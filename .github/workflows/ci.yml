@@ -94,6 +94,8 @@ jobs:
         run: python scripts/check_retype_vs_link.py
       - name: Concurrent pulls of a series-case pair keep one row each
         run: python scripts/check_concurrent_pulls.py
+      - name: A user-edited AT number keeps both invoices' VAT on Postgres 16
+        run: python scripts/check_edited_at_rows.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base
