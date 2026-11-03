@@ -23,9 +23,10 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
-from app.schemas.document import parse_document_number
+from app.schemas.document import fold_series_text, parse_document_number
 from app.services.audit import drop_accepted_series_mismatch, log_auto_categorize, log_event
 from app.services.categorization import categorize_document
 
@@ -234,7 +235,9 @@ def import_purchases(
     skipped: list[Skipped] = []
     warnings: list[str] = []
 
-    known = _known_at_invoices(db, user_id, invoices)
+    edits = _user_edits(db, user_id)
+    _align_edited_at_rows(db, user_id, edits)
+    known = _known_at_invoices(db, user_id, invoices, edits)
     for invoice in invoices:
         outcome = None
         key = _source_key(invoice)
@@ -247,6 +250,7 @@ def import_purchases(
                         taxpayer_nif=taxpayer_nif,
                         invoice=invoice,
                         known=known,
+                        edits=edits,
                     )
                     db.flush()
                     if after_invoice is not None:
@@ -315,6 +319,7 @@ def _import_one(
     taxpayer_nif: str,
     invoice: EFaturaInvoice,
     known: set[_KnownInvoice],
+    edits: _UserEdits,
 ) -> _Outcome:
     source_key, existing = _resolve_source_key(db, user_id, invoice)
     if existing is not None:
@@ -359,7 +364,7 @@ def _import_one(
         )
         return _Outcome("skipped", source_key, skip)
 
-    matches = _match_documents(db, user_id, invoice)
+    matches = _match_documents(db, user_id, invoice, edits)
     if len(matches) > 1:
         ids = ", ".join(sorted(document.id for document in matches))
         warning = f"Several receipts match this e-Fatura document: {ids}"
@@ -384,13 +389,13 @@ def _import_one(
         if not _type_compatible(matches[0], invoice):
             matches = []
 
-    if len(matches) == 1 and not _matched_same_invoice(matches[0], invoice):
+    if len(matches) == 1 and not _matched_same_invoice(matches[0], invoice, edits):
         # A loose match must not swallow a different invoice. Store it instead.
         matches = []
 
     review_warning = None
     if len(matches) == 1:
-        _release_loose_links(db, matches[0], invoice)
+        _release_loose_links(db, matches[0], invoice, edits, known)
         review_warning = _unsafe_link_warning(db, matches[0], invoice, known)
         if review_warning is not None:
             matches = []
@@ -435,7 +440,9 @@ def _import_one(
         return _Outcome("unchanged", source_key, "unchanged")
 
     if review_warning is None:
-        review_warning = _similar_scan_warning(db, user_id, invoice)
+        review_warning = _similar_scan_warning(db, user_id, invoice) or _edited_number_warning(
+            db, user_id, invoice, edits
+        )
     document = _new_purchase(db, user_id=user_id, source_key=source_key, invoice=invoice)
     _add_link(
         db,
@@ -520,8 +527,19 @@ def _reads_two_ways(value: Optional[str]) -> bool:
     return len(parse_document_number(value).glued_run) >= 2
 
 
-def _has_upper_case(value: Optional[str]) -> bool:
-    return any(ch.isupper() for ch in value or "")
+def _series_case_kept(value: Optional[str]) -> bool:
+    """True when the number shows its series' case was not folded away.
+
+    An upper case letter in the series shows it. So does a type code written
+    as AT writes it: 'FT a/5' kept its case. The type code ignores case, so a
+    capital in it is no evidence otherwise: 'Ft a/5' reads like 'ft a/5'.
+    """
+    parsed = parse_document_number(value)
+    if any(ch.isupper() for ch in parsed.series):
+        return True
+    if parsed.code is None:
+        return False
+    return "".join(ch for ch in fold_series_text(value) if ch.isalpha())[:2] == parsed.code
 
 
 def at_invoice_identity(
@@ -796,6 +814,7 @@ def detach_deleted_scan(db: Session, document: Document) -> None:
     """
     if document.deleted_at is None or not _is_scan(document):
         return
+    _align_edited_at_rows(db, document.user_id, _user_edits(db, document.user_id))
     links = (
         db.query(EfaturaLink)
         .filter(
@@ -958,27 +977,246 @@ def _type_compatible(document: Document, invoice: EFaturaInvoice) -> bool:
     return stored == incoming
 
 
-def _matched_same_invoice(document: Document, invoice: EFaturaInvoice) -> bool:
+def _matched_same_invoice(document: Document, invoice: EFaturaInvoice, edits: _UserEdits) -> bool:
     """A numbered row links only when it is this invoice.
 
     An unnumbered scan matched by date and amount stays a link. ATCUD is the
     same invoice even when the printed number differs. A scan may also match
     on the looser scan key. A different number is stored on its own row
-    instead of being reported as a link and dropped.
+    instead of being reported as a link and dropped. An AT row is compared on
+    AT's number, not on a user's edit of it.
     """
     if invoice.atcud and _qr_atcud(document) == invoice.atcud:
         return True
-    if not (document.invoice_number or "").strip():
+    printed = _at_value(document, edits, "invoice_number")
+    if not (printed or "").strip():
         return True
-    if normalise_nif(document.vendor_nif) != normalise_nif(invoice.issuer_nif):
+    if normalise_nif(_at_value(document, edits, "vendor_nif")) != normalise_nif(invoice.issuer_nif):
         return False
-    if normalise_invoice_number(document.invoice_number) == normalise_invoice_number(
-        invoice.invoice_number
-    ):
+    if normalise_invoice_number(printed) == normalise_invoice_number(invoice.invoice_number):
         return True
-    return _is_scan(document) and _scan_number(document.invoice_number) == _scan_number(
-        invoice.invoice_number
+    return _is_scan(document) and _scan_number(printed) == _scan_number(invoice.invoice_number)
+
+
+_KEY_FIELDS = ("vendor_nif", "document_type", "invoice_number")
+_AMOUNT_FIELDS = ("net_amount", "vat_amount", "gross_amount")
+
+
+@dataclass(frozen=True)
+class _UserEdits:
+    """What users changed on this account's documents, read from the update audit entries.
+
+    ``first_values`` maps a document id to each identity field's value before
+    its first user edit. On an AT row that is AT's value: the row's figures
+    belong to the invoice those values name. ``amount_edits`` maps a document
+    id to the times a user changed its net, VAT or gross amount.
+    """
+
+    first_values: dict[str, dict[str, Optional[str]]]
+    amount_edits: dict[str, tuple[datetime, ...]]
+
+    def amounts_edited_since(self, document_id: str, since: Optional[datetime]) -> bool:
+        return any(since is None or at >= since for at in self.amount_edits.get(document_id, ()))
+
+
+def _user_edits(db: Session, user_id: str) -> _UserEdits:
+    first_values: dict[str, dict[str, Optional[str]]] = {}
+    amount_edits: dict[str, list[datetime]] = {}
+    for audit in (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.user_id == user_id,
+            AuditLog.entity_type == "document",
+            AuditLog.action == "update",
+            AuditLog.source == "user",
+        )
+        .order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
+    ):
+        try:
+            changes = json.loads(audit.changes_json or "")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(changes, dict):
+            continue
+        for field in _KEY_FIELDS:
+            change = changes.get(field)
+            if isinstance(change, dict):
+                first_values.setdefault(audit.entity_id, {}).setdefault(field, change.get("old"))
+        if any(field in changes for field in _AMOUNT_FIELDS):
+            amount_edits.setdefault(audit.entity_id, []).append(audit.created_at)
+    return _UserEdits(
+        first_values=first_values,
+        amount_edits={key: tuple(times) for key, times in amount_edits.items()},
     )
+
+
+def _at_value(document: Document, edits: _UserEdits, field: str) -> Optional[str]:
+    """The field as AT gave it on an AT row, and as stored on a scan.
+
+    A user may correct a scan's OCR, so a scan is matched on what the user typed.
+    An AT row's figures stay AT's whatever its number says, so it is matched on
+    AT's value.
+    """
+    first = {} if _is_scan(document) else edits.first_values.get(document.id, {})
+    if field in first:
+        return first[field]
+    return getattr(document, field)
+
+
+def _held_identity(document: Document, edits: _UserEdits) -> str:
+    """The identity of the AT invoice whose figures this AT row holds."""
+    return at_invoice_identity(
+        _at_value(document, edits, "vendor_nif"),
+        _at_value(document, edits, "document_type"),
+        _at_value(document, edits, "invoice_number"),
+    )
+
+
+def _align_edited_at_rows(db: Session, user_id: str, edits: _UserEdits) -> None:
+    """Point each user-edited AT row's identity back at the invoice it holds.
+
+    PATCH stores the identity of the edited number, which can take the slot of
+    another AT invoice. The row's number and amounts stay as the user saved them.
+    An identity another live row holds is left alone and logged. Rows that
+    swap identities are written through NULL, so the unique index never sees
+    two live rows with one identity. Then an invoice that main's lowercased
+    doc key wrote over this row's link is split off to its own row. A second
+    run writes nothing.
+    """
+    if not edits.first_values:
+        return
+    rows = [
+        row
+        for row in db.query(Document)
+        .filter(Document.user_id == user_id, Document.id.in_(list(edits.first_values)))
+        .order_by(Document.id)
+        .all()
+        if not _is_scan(row)
+    ]
+    wanted = {
+        row.id: _held_identity(row, edits)
+        for row in rows
+        if row.at_invoice_identity != _held_identity(row, edits)
+    }
+    if wanted:
+        _rekey(db, user_id, {row.id: row for row in rows}, wanted)
+    for row in rows:
+        if row.deleted_at is None and row.at_invoice_identity == _held_identity(row, edits):
+            _split_overwritten_links(db, row, edits)
+    db.flush()
+
+
+def _rekey(db: Session, user_id: str, rows: dict[str, Document], wanted: dict[str, str]) -> None:
+    holders: dict[str, str] = {
+        document_id: identity
+        for document_id, identity in db.query(Document.id, Document.at_invoice_identity).filter(
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+            Document.at_invoice_identity.isnot(None),
+        )
+    }
+    live = {document_id for document_id, row in rows.items() if row.deleted_at is None}
+    while True:
+        final = {**holders, **{key: value for key, value in wanted.items() if key in live}}
+        owners: dict[str, list[str]] = {}
+        for document_id, identity in final.items():
+            owners.setdefault(identity, []).append(document_id)
+        blocked = {
+            document_id
+            for ids in owners.values()
+            if len(ids) > 1
+            for document_id in ids
+            if document_id in wanted
+        }
+        if not blocked:
+            break
+        for document_id in sorted(blocked):
+            logger.warning(
+                "e-Fatura row %s keeps identity %s; another row holds %s",
+                document_id,
+                rows[document_id].at_invoice_identity,
+                wanted[document_id],
+            )
+            del wanted[document_id]
+    if not wanted:
+        return
+    _lock_documents_then_links(db, list(wanted), [])
+    for document_id in wanted:
+        rows[document_id].at_invoice_identity = None
+    db.flush()
+    for document_id, identity in wanted.items():
+        rows[document_id].at_invoice_identity = identity
+    db.flush()
+
+
+def _split_overwritten_links(db: Session, row: Document, edits: _UserEdits) -> None:
+    """Move off an invoice whose payload main wrote over this row's doc-key link.
+
+    Main's doc key lowercased the number, so 'FT a/5' could overwrite the link
+    of the 'FT A/5' row. Migration 014 split these off unedited rows. On an
+    edited row the audit's first number tells the two apart.
+    """
+    held_number = (_at_value(row, edits, "invoice_number") or "").strip().lower()
+    links = (
+        db.query(EfaturaLink)
+        .filter(EfaturaLink.document_id == row.id)
+        .order_by(EfaturaLink.id)
+        .with_for_update()
+        .all()
+    )
+    for link in links:
+        if not (link.source_key or "").startswith("doc:"):
+            continue
+        try:
+            other = _parse_invoice(json.loads(link.payload_json))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if other.invoice_number.strip().lower() != held_number:
+            continue
+        if at_invoice_identity(other.issuer_nif, _stored_type(other), other.invoice_number) == row.at_invoice_identity:
+            continue
+        target, _created = _place_at_invoice(db, link, other, None)
+        link.document_id = target.id
+        link.outcome = "created"
+        link.warning = (
+            f"Split off receipt {row.id}: a user edited its number, and its figures "
+            "are another e-Fatura document's. Review both."
+        )
+        link.updated_at = datetime.utcnow()
+        _log_unlink(db, row, target, link.source_key, "efatura")
+
+
+def _edited_number_warning(
+    db: Session, user_id: str, invoice: EFaturaInvoice, edits: _UserEdits
+) -> Optional[str]:
+    """A live AT row a user renumbered to this invoice's number, or None.
+
+    Its figures are another invoice's, so this invoice is not linked to it.
+    """
+    nif = normalise_nif(invoice.issuer_nif)
+    number = normalise_invoice_number(invoice.invoice_number)
+    for document in (
+        db.query(Document)
+        .filter(
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+            Document.id.in_(list(edits.first_values)),
+        )
+        .order_by(Document.created_at.asc(), Document.id.asc())
+    ):
+        if _is_scan(document):
+            continue
+        shown = (normalise_nif(document.vendor_nif), normalise_invoice_number(document.invoice_number))
+        held = (
+            normalise_nif(_at_value(document, edits, "vendor_nif")),
+            normalise_invoice_number(_at_value(document, edits, "invoice_number")),
+        )
+        if shown == (nif, number) and held != shown:
+            return (
+                f"Receipt {document.id} shows this e-Fatura document's number after a user "
+                "edit, but its figures are another document's. Review both."
+            )
+    return None
 
 
 @dataclass(frozen=True)
@@ -995,7 +1233,7 @@ def _known_invoice(nif: Optional[str], number: Optional[str]) -> Optional[_Known
 
 
 def _known_at_invoices(
-    db: Session, user_id: str, invoices: Sequence[EFaturaInvoice]
+    db: Session, user_id: str, invoices: Sequence[EFaturaInvoice], edits: _UserEdits
 ) -> set[_KnownInvoice]:
     """Every AT invoice this account has seen: this pull, AT rows and link payloads."""
     known: set[_KnownInvoice] = set()
@@ -1006,7 +1244,9 @@ def _known_at_invoices(
     for document in db.query(Document).filter(Document.user_id == user_id).all():
         if _is_scan(document):
             continue
-        entry = _known_invoice(document.vendor_nif, document.invoice_number)
+        entry = _known_invoice(
+            _at_value(document, edits, "vendor_nif"), _at_value(document, edits, "invoice_number")
+        )
         if entry:
             known.add(entry)
     for link in db.query(EfaturaLink).filter(EfaturaLink.user_id == user_id).all():
@@ -1040,11 +1280,11 @@ def _unsafe_link_warning(
     """Why this scan must not be linked to this invoice, or None.
 
     A scan already linked to a different AT invoice is not linked to a second
-    one. A scan whose number matched only on the looser key, is written
-    without an upper case letter, or has its code glued to two or more
-    characters is not linked when another AT invoice from the same supplier
-    reads the same with its spaces and case dropped. The invoice is then
-    stored on its own row for review.
+    one. A scan whose number matched only on the looser key, does not show
+    its series' case, or has its code glued to two or more characters is not
+    linked when another AT invoice from the same supplier reads the same with
+    its spaces and case dropped. The invoice is then stored on its own row
+    for review.
     """
     if not _is_scan(document):
         return None
@@ -1066,7 +1306,7 @@ def _unsafe_link_warning(
     printed = document.invoice_number or ""
     if not printed.strip():
         return None
-    exact = normalise_invoice_number(printed) == number and _has_upper_case(printed)
+    exact = normalise_invoice_number(printed) == number and _series_case_kept(printed)
     if exact and not _reads_two_ways(printed):
         return None
     glue = _glue_key(printed)
@@ -1079,16 +1319,26 @@ def _unsafe_link_warning(
     return None
 
 
-def _release_loose_links(db: Session, document: Document, invoice: EFaturaInvoice) -> None:
-    """Move invoices that match this receipt only on the looser key to their own AT rows.
+def _release_loose_links(
+    db: Session,
+    document: Document,
+    invoice: EFaturaInvoice,
+    edits: _UserEdits,
+    known: set[_KnownInvoice],
+) -> None:
+    """Move invoices that match this receipt only on the looser key off it.
 
-    The receipt's number is this invoice's exactly. Each moved invoice goes
-    to its AT row, or a new one in review, with a warning naming the receipt.
+    The receipt's number is this invoice's exactly. Each moved invoice goes to
+    its AT row, else to the one scan of its own number that can take it, else
+    to a new AT row in review with a warning naming the receipt. A link stays
+    when a user edited the receipt's amounts after it was made and the amounts
+    are not this invoice's: they may be the linked invoice's. The receipt is
+    then not linked to this invoice either, and the invoice is held.
     """
-    printed = document.invoice_number or ""
-    nif = normalise_nif(document.vendor_nif)
+    printed = _at_value(document, edits, "invoice_number") or ""
+    nif = normalise_nif(_at_value(document, edits, "vendor_nif"))
     number = normalise_invoice_number(printed)
-    if _is_scan(document) and not _has_upper_case(printed):
+    if _is_scan(document) and not _series_case_kept(printed):
         return
     if nif != normalise_nif(invoice.issuer_nif) or number != normalise_invoice_number(
         invoice.invoice_number
@@ -1114,6 +1364,14 @@ def _release_loose_links(db: Session, document: Document, invoice: EFaturaInvoic
             continue
         if other.atcud and _qr_atcud(document) == other.atcud:
             continue
+        if _amounts_pin_link(document, link, invoice, edits):
+            continue
+        identity = at_invoice_identity(other.issuer_nif, _stored_type(other), other.invoice_number)
+        if _identity_row(db, document.user_id, identity, live=True) is None:
+            scan = _exact_scan(db, document, other, known)
+            if scan is not None:
+                _move_link_to_scan(db, link, other, document, scan)
+                continue
         row, _created = _place_at_invoice(db, link, other, None)
         link.document_id = row.id
         link.outcome = "created"
@@ -1124,6 +1382,68 @@ def _release_loose_links(db: Session, document: Document, invoice: EFaturaInvoic
         link.updated_at = datetime.utcnow()
         _log_unlink(db, document, row, link.source_key, "efatura")
     db.flush()
+
+
+def _amounts_pin_link(
+    document: Document, link: EfaturaLink, invoice: EFaturaInvoice, edits: _UserEdits
+) -> bool:
+    if not edits.amounts_edited_since(document.id, link.created_at):
+        return False
+    vat = document.vat_amount
+    return vat is None or Decimal(vat).quantize(_CENT) != _iva_amount(invoice)
+
+
+def _exact_scan(
+    db: Session, left: Document, invoice: EFaturaInvoice, known: set[_KnownInvoice]
+) -> Optional[Document]:
+    """The one live scan, other than ``left``, that this invoice may link to by its exact number."""
+    nif = normalise_nif(invoice.issuer_nif)
+    number = normalise_invoice_number(invoice.invoice_number)
+    candidates = [
+        document
+        for document in db.query(Document)
+        .filter(
+            Document.user_id == left.user_id,
+            Document.deleted_at.is_(None),
+            Document.id != left.id,
+        )
+        .order_by(Document.created_at.asc(), Document.id.asc())
+        if _is_scan(document)
+        and (document.invoice_number or "").strip()
+        and normalise_nif(document.vendor_nif) == nif
+        and normalise_invoice_number(document.invoice_number) == number
+        and _series_case_kept(document.invoice_number)
+        and _type_compatible(document, invoice)
+    ]
+    if len(candidates) != 1:
+        return None
+    if _unsafe_link_warning(db, candidates[0], invoice, known) is not None:
+        return None
+    return candidates[0]
+
+
+def _move_link_to_scan(
+    db: Session, link: EfaturaLink, invoice: EFaturaInvoice, left: Document, scan: Document
+) -> None:
+    _lock_documents_then_links(db, [scan.id], [])
+    link.document_id = scan.id
+    link.outcome = "linked_existing"
+    link.warning = _LINKED_WARNING
+    link.updated_at = datetime.utcnow()
+    _log_unlink(db, left, scan, link.source_key, "efatura")
+    log_event(
+        db,
+        entity_type="document",
+        entity_id=scan.id,
+        user_id=scan.user_id,
+        action="efatura_duplicate",
+        source="efatura",
+        changes={
+            "source_key": {"old": None, "new": link.source_key},
+            "fields_copied": {"old": None, "new": False},
+        },
+    )
+    drop_accepted_series_mismatch(db, scan, invoice.document_type, source="efatura")
 
 
 _REVIEW_RECEIPT = re.compile(r"\b[Rr]eceipt (?P<id>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\b.*Review both\.$")
@@ -1163,7 +1483,9 @@ def _similar_scan_warning(db: Session, user_id: str, invoice: EFaturaInvoice) ->
     return None
 
 
-def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list[Document]:
+def _match_documents(
+    db: Session, user_id: str, invoice: EFaturaInvoice, edits: _UserEdits
+) -> list[Document]:
     documents = [
         document
         for document in db.query(Document)
@@ -1182,9 +1504,9 @@ def _match_documents(db: Session, user_id: str, invoice: EFaturaInvoice) -> list
         by_number = [
             document
             for document in documents
-            if normalise_nif(document.vendor_nif) == incoming_nif
-            and document.invoice_number
-            and normalise_invoice_number(document.invoice_number) == number
+            if normalise_nif(_at_value(document, edits, "vendor_nif")) == incoming_nif
+            and _at_value(document, edits, "invoice_number")
+            and normalise_invoice_number(_at_value(document, edits, "invoice_number")) == number
         ]
         if by_number:
             return by_number

@@ -744,7 +744,12 @@ async def update_document(
         # Update fields
         for field, value in update_data.items():
             setattr(document, field, value)
-        if any(field in update_data for field in ("vendor_nif", "document_type", "invoice_number")):
+        # A save that resends an unchanged number keeps the identity, so an AT
+        # row a pull pointed back at its own invoice is not moved again.
+        if any(
+            field in update_data and update_data[field] != before_state[field]
+            for field in ("vendor_nif", "document_type", "invoice_number")
+        ):
             if document.at_invoice_identity or (
                 document.mime_type or ""
             ).startswith("application/vnd.invoflow.efatura"):
