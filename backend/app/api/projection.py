@@ -36,7 +36,7 @@ def _effective_date(document: Document) -> date:
 
 
 @router.get("/projection", response_model=ProjectionResponse)
-async def get_projection(
+def get_projection(
     year: Optional[int] = None,
     quarter: Optional[int] = Query(None, ge=1, le=4),
     as_of: Optional[date] = None,

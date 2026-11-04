@@ -46,10 +46,27 @@ from app.schemas.document import (
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.efatura import (
+    EDIT_LOCK_WAIT_SECONDS,
+    MATCHED_FIELDS,
+    AccountBusy,
+    IdentityConflict,
+    UnplacedInvoice,
     at_invoice_identity,
     detach_deleted_scan,
+    identity_conflicts,
     is_pg_deadlock,
+    is_scan,
+    lock_account,
+    renumbered_at_rows,
     review_receipt_id,
+    unplaced_invoices,
+)
+
+EFATURA_NOT_IMPORTED = "efatura_not_imported"
+EFATURA_IDENTITY_CONFLICT = "efatura_identity_conflict"
+EDIT_BUSY_DETAIL = (
+    "Está a decorrer uma importação do e-Fatura nesta conta. As alterações não foram "
+    "guardadas; tente guardar novamente dentro de momentos."
 )
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
@@ -238,17 +255,88 @@ def _efatura_reviews(db: Session, documents: list[Document]) -> dict[str, Efatur
             Document.id.in_(set(related.values())), Document.deleted_at.is_(None)
         )
     }
+    renumbered: dict[str, str] = {}
+    for user_id in {receipt.user_id for receipt in receipts.values()}:
+        renumbered.update(renumbered_at_rows(db, user_id))
     reviews: dict[str, EfaturaReview] = {}
     for document_id, receipt_id in related.items():
         receipt = receipts.get(receipt_id)
         if receipt is None or receipt.user_id != owners[document_id]:
             continue
+        is_efatura = not is_scan(receipt)
         reviews[document_id] = EfaturaReview(
             related_document_id=receipt.id,
             related_invoice_number=receipt.invoice_number,
             related_vendor_name=receipt.vendor_name,
+            related_is_efatura=is_efatura,
+            related_original_number=renumbered.get(receipt.id) if is_efatura else None,
         )
     return reviews
+
+
+def _quoted(number: Optional[str]) -> str:
+    text = (number or "").strip()
+    return f"n.º {text}" if text else "sem número"
+
+
+def _unplaced_message(entry: UnplacedInvoice) -> str:
+    invoice = _quoted(entry.invoice_number)
+    if entry.several:
+        return (
+            f"A fatura {invoice} do e-Fatura não foi importada: corresponde a este recibo "
+            "e a outro. Apague o duplicado ou corrija o n.º; a próxima importação do "
+            "e-Fatura volta a tentar."
+        )
+    return (
+        f"A fatura {invoice} do e-Fatura não foi importada: este documento foi editado "
+        "para esse n.º e outro documento tem a fatura de origem. Reveja os dois; a "
+        "próxima importação do e-Fatura volta a tentar."
+    )
+
+
+def _conflict_message(conflict: IdentityConflict) -> str:
+    # Only deleting the row that is not the edited one lets the next pull
+    # restore the missing invoice. A deleted edited row takes that invoice with it.
+    held = _quoted(conflict.held_number)
+    other = _quoted(conflict.other_number)
+    if conflict.edited:
+        return (
+            f"Este documento do e-Fatura foi editado e a fatura de origem ({held}) também "
+            f"está no documento {other}. O IVA pode estar a contar duas vezes. Para "
+            f"corrigir, apague o documento {other}, não este; a próxima importação do "
+            "e-Fatura repõe a fatura que faltar."
+        )
+    return (
+        f"O documento {other} foi editado a partir desta mesma fatura do e-Fatura "
+        f"({held}). O IVA pode estar a contar duas vezes. Para corrigir, apague este "
+        f"documento, não o {other}; a próxima importação do e-Fatura repõe a fatura que "
+        "faltar."
+    )
+
+
+def efatura_hold_warnings(db: Session, user_id: str) -> dict[str, list[dict]]:
+    """Warnings that stay on a row until the e-Fatura clash it is part of is resolved."""
+    held: dict[str, list[dict]] = {}
+    for document_id, entries in unplaced_invoices(db, user_id).items():
+        for entry in entries:
+            held.setdefault(document_id, []).append(
+                {
+                    "code": EFATURA_NOT_IMPORTED,
+                    "message": _unplaced_message(entry),
+                    "severity": "warning",
+                    "field": "invoice_number",
+                }
+            )
+    for document_id, conflict in identity_conflicts(db, user_id).items():
+        held.setdefault(document_id, []).append(
+            {
+                "code": EFATURA_IDENTITY_CONFLICT,
+                "message": _conflict_message(conflict),
+                "severity": "warning",
+                "field": "invoice_number",
+            }
+        )
+    return held
 
 
 def _column_at_type(document: Document) -> Optional[str]:
@@ -287,6 +375,7 @@ def build_document_response(
     db: Optional[Session] = None,
     linked_at_pair: Optional[LinkedAtPair] = None,
     efatura_review: Optional[EfaturaReview] = None,
+    hold_warnings: Optional[list[dict]] = None,
 ) -> DocumentResponse:
     """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings.
 
@@ -296,6 +385,7 @@ def build_document_response(
     if db is not None:
         linked_at_pair = _linked_at_pairs(db, [document.id]).get(document.id)
         efatura_review = _efatura_reviews(db, [document]).get(document.id)
+        hold_warnings = efatura_hold_warnings(db, document.user_id).get(document.id)
     field_confidence = parse_field_confidence(
         document.ocr_raw_response, 
         float(document.ocr_confidence) if document.ocr_confidence else None
@@ -309,6 +399,7 @@ def build_document_response(
     warnings = validate_document(document)
     if db is not None:
         warnings += detect_duplicates(db, document.user_id, document)
+    warnings += hold_warnings or []
     # A stored pair that is not the one AT issued stays visible as a warning.
     # The confirmation wording is only for a mismatch the flag can still accept.
     if series_disagrees(document.document_type, document.invoice_number) and not keeps_at_issued_pair(
@@ -413,7 +504,7 @@ async def get_upload_url(
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(RATE_LIMITS["upload"])
-async def create_document(
+def create_document(
     request: Request,
     doc_create: DocumentCreate,
     background_tasks: BackgroundTasks,
@@ -500,7 +591,7 @@ async def create_document(
 
 
 @router.get("", response_model=DocumentListResponse)
-async def list_documents(
+def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -563,6 +654,7 @@ async def list_documents(
     # Generate URLs and response
     linked_pairs = _linked_at_pairs(db, [doc.id for doc in documents])
     reviews = _efatura_reviews(db, documents)
+    holds = efatura_hold_warnings(db, user.id) if documents else {}
     doc_responses = []
     for doc in documents:
         file_url = storage.get_download_url(doc.storage_key)
@@ -572,6 +664,7 @@ async def list_documents(
                 file_url,
                 linked_at_pair=linked_pairs.get(doc.id),
                 efatura_review=reviews.get(doc.id),
+                hold_warnings=holds.get(doc.id),
             )
         )
     
@@ -585,7 +678,7 @@ async def list_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document(
+def get_document(
     document_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -615,7 +708,7 @@ async def get_document(
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
-async def update_document(
+def update_document(
     document_id: str,
     doc_update: DocumentUpdate,
     db: Session = Depends(get_db),
@@ -624,28 +717,28 @@ async def update_document(
     """Update document fields (for manual corrections)."""
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
-    
-    # Lock the scan before reading its links, the same order as delete and
-    # import, so a link cannot land between the retype check and the commit.
-    document = (
-        db.query(Document)
-        .filter(
-            Document.id == document_id,
-            Document.user_id == user.id,
-            Document.deleted_at.is_(None),
-        )
-        .with_for_update()
-        .first()
+
+    live = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == user.id,
+        Document.deleted_at.is_(None),
     )
-    
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
-    
+    if not db.query(live.exists()).scalar():
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    intended_identity = None
     try:
-        intended_identity = None
+        # A running e-Fatura pull matches on the edits it read at its start, so an
+        # edit to a matched field waits for it. The account lock comes first.
+        if MATCHED_FIELDS & doc_update.model_fields_set:
+            lock_account(db, user.id, wait_seconds=EDIT_LOCK_WAIT_SECONDS)
+        # Lock the scan before reading its links, the same order as delete and
+        # import, so a link cannot land between the retype check and the commit.
+        document = live.with_for_update().first()
+        if not document:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
         if "document_type" in update_data and update_data["document_type"] is None:
@@ -756,7 +849,25 @@ async def update_document(
                 intended_identity = at_invoice_identity(
                     document.vendor_nif, document.document_type, document.invoice_number
                 )
-                document.at_invoice_identity = intended_identity
+                holder = (
+                    db.query(Document)
+                    .filter(
+                        Document.user_id == user.id,
+                        Document.at_invoice_identity == intended_identity,
+                        Document.id != document.id,
+                        Document.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                # A renumbered AT row a pull pointed back at its own invoice
+                # holds that identity without showing the number. The number
+                # is free to type; this row keeps its identity until a pull.
+                if holder is None or at_invoice_identity(
+                    holder.vendor_nif, holder.document_type, holder.invoice_number
+                ) == intended_identity:
+                    document.at_invoice_identity = intended_identity
+                else:
+                    intended_identity = None
         
         # Audit log
         after_state = {field: getattr(document, field, None) for field in update_data}
@@ -793,6 +904,13 @@ async def update_document(
     except HTTPException:
         db.rollback()
         raise
+    except AccountBusy:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=EDIT_BUSY_DETAIL,
+            headers={"Retry-After": "10"},
+        )
     except IntegrityError:
         db.rollback()
         other = None
@@ -827,7 +945,7 @@ async def update_document(
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(
+def delete_document(
     document_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
