@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
+from app.models.user import User
 from app.schemas.document import fold_series_text, parse_document_number
 from app.services.audit import drop_accepted_series_mismatch, log_auto_categorize, log_event
 from app.services.categorization import categorize_document
@@ -215,6 +216,8 @@ def import_purchases(
     if not _NIF.fullmatch(taxpayer_nif or ""):
         raise ValueError("taxpayer_nif must be 9 digits")
 
+    # The edits read below must hold until commit, so no identity edit may land mid-pull.
+    lock_account(db, user_id)
     subject = db.query(EfaturaSubject).filter(EfaturaSubject.user_id == user_id).one_or_none()
     if subject is None:
         subject = EfaturaSubject(
@@ -301,6 +304,16 @@ def import_purchases(
         skipped=tuple(skipped),
         warnings=tuple(warnings),
     )
+
+
+def lock_account(db: Session, user_id: str) -> None:
+    """Serialise a pull with the account's edits that change how its rows match.
+
+    A pull reads the account's user edits once, at its start. A PATCH that
+    renumbers a row must not commit between that read and the pull's commit.
+    Both take this lock first, before any document or link lock.
+    """
+    db.query(User.id).filter(User.id == user_id).with_for_update().one_or_none()
 
 
 @dataclass
@@ -1020,6 +1033,8 @@ def _matched_same_invoice(document: Document, invoice: EFaturaInvoice, edits: _U
 
 _KEY_FIELDS = ("vendor_nif", "document_type", "invoice_number")
 _AMOUNT_FIELDS = ("net_amount", "vat_amount", "gross_amount")
+# Fields a pull matches on, through _match_documents and _UserEdits.
+MATCHED_FIELDS = frozenset({*_KEY_FIELDS, *_AMOUNT_FIELDS, "document_date"})
 
 
 @dataclass(frozen=True)

@@ -96,6 +96,8 @@ jobs:
         run: python scripts/check_concurrent_pulls.py
       - name: A user-edited AT number keeps both invoices' VAT on Postgres 16
         run: python scripts/check_edited_at_rows.py
+      - name: A PATCH during an e-Fatura pull waits for it on Postgres 16
+        run: python scripts/check_edit_during_pull.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base

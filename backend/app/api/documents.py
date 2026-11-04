@@ -46,9 +46,11 @@ from app.schemas.document import (
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.efatura import (
+    MATCHED_FIELDS,
     at_invoice_identity,
     detach_deleted_scan,
     is_pg_deadlock,
+    lock_account,
     review_receipt_id,
 )
 from app.services.processing import read_receipt
@@ -624,7 +626,11 @@ async def update_document(
     """Update document fields (for manual corrections)."""
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
-    
+
+    # A running e-Fatura pull matches on the edits it read at its start, so an
+    # edit to a matched field waits for it. The account lock comes first.
+    if MATCHED_FIELDS & doc_update.model_fields_set:
+        lock_account(db, user.id)
     # Lock the scan before reading its links, the same order as delete and
     # import, so a link cannot land between the retype check and the commit.
     document = (
