@@ -266,6 +266,39 @@ def test_l4_a_number_another_row_shows_is_still_409(client, db: Session):
     assert "FT A/5" in response.json()["detail"]
 
 
+# L-5: the held card says when the related row is an e-Fatura row a user renumbered.
+
+
+def test_l5_held_card_names_a_renumbered_at_row_by_its_at_number(client, db: Session):
+    user, headers = _user(db)
+    upper, lower = _pair(atcud=True)
+    edited_id = _pull(db, user, lower).created[0]
+    _patch(client, headers, edited_id, invoice_number="FT A/5")
+    held_id = _pull(db, user, upper, lower).created[0]
+
+    listed = client.get("/api/documents", headers=headers).json()["documents"]
+    review = next(row for row in listed if row["id"] == held_id)["efatura_review"]
+    assert review["related_document_id"] == edited_id
+    assert review["related_invoice_number"] == "FT A/5"
+    assert review["related_is_efatura"] is True
+    assert review["related_original_number"] == "FT a/5"
+
+
+def test_l5_held_card_next_to_a_scan_keeps_the_receipt_wording(client, db: Session):
+    from tests.test_gil206_edited_rows import _reviews
+
+    user, headers = _user(db)
+    scan = _scan_numbered(db, user, "FRA2026/12")
+    _pull(db, user, _at("FR A2026/12", "FRA-1", kind="FR"))
+    result = _pull(db, user, _at("FRA 2026/12", "FRA-2", kind="FR"))
+    held = [row for row, review in _reviews(client, headers).items() if review]
+    assert held, result
+    review = _reviews(client, headers)[held[0]]
+    assert review["related_document_id"] == scan.id
+    assert review["related_is_efatura"] is False
+    assert review["related_original_number"] is None
+
+
 def test_l3_migration_014_first_run_gives_an_edited_row_its_invoice_identity(db: Session):
     from tests.test_migration_014_split import _audit
 

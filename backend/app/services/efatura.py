@@ -1575,6 +1575,27 @@ def unplaced_invoices(db: Session, user_id: str) -> dict[str, list[UnplacedInvoi
     return named
 
 
+is_scan = _is_scan
+
+
+def renumbered_at_rows(db: Session, user_id: str) -> dict[str, str]:
+    """AT's number for each AT row whose number a user changed, by document id."""
+    edits = _user_edits(db, user_id)
+    numbers = {
+        document_id: first["invoice_number"]
+        for document_id, first in edits.first_values.items()
+        if first.get("invoice_number")
+    }
+    if not numbers:
+        return {}
+    return {
+        row.id: numbers[row.id]
+        for row in db.query(Document).filter(Document.id.in_(list(numbers)))
+        if not _is_scan(row)
+        and normalise_invoice_number(row.invoice_number) != normalise_invoice_number(numbers[row.id])
+    }
+
+
 @dataclass(frozen=True)
 class IdentityConflict:
     """Two live rows that hold one AT invoice, one of them an AT row a user renumbered."""

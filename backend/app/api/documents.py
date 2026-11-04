@@ -53,7 +53,9 @@ from app.services.efatura import (
     detach_deleted_scan,
     identity_conflicts,
     is_pg_deadlock,
+    is_scan,
     lock_account,
+    renumbered_at_rows,
     review_receipt_id,
     unplaced_invoices,
 )
@@ -247,15 +249,21 @@ def _efatura_reviews(db: Session, documents: list[Document]) -> dict[str, Efatur
             Document.id.in_(set(related.values())), Document.deleted_at.is_(None)
         )
     }
+    renumbered: dict[str, str] = {}
+    for user_id in {receipt.user_id for receipt in receipts.values()}:
+        renumbered.update(renumbered_at_rows(db, user_id))
     reviews: dict[str, EfaturaReview] = {}
     for document_id, receipt_id in related.items():
         receipt = receipts.get(receipt_id)
         if receipt is None or receipt.user_id != owners[document_id]:
             continue
+        is_efatura = not is_scan(receipt)
         reviews[document_id] = EfaturaReview(
             related_document_id=receipt.id,
             related_invoice_number=receipt.invoice_number,
             related_vendor_name=receipt.vendor_name,
+            related_is_efatura=is_efatura,
+            related_original_number=renumbered.get(receipt.id) if is_efatura else None,
         )
     return reviews
 

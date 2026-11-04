@@ -40,7 +40,18 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Briefcase, Megaphone, Wrench, Monitor, Tag,
 };
 
+// Warnings that hold until the user resolves an e-Fatura clash on this row.
+const EFATURA_CLASH_CODES = new Set(["efatura_not_imported", "efatura_identity_conflict"]);
+
 function reviewHoldText(review: NonNullable<Document["efatura_review"]>): string {
+  if (review.related_is_efatura) {
+    const vendor = review.related_vendor_name ? ` (${review.related_vendor_name})` : "";
+    const shown = review.related_invoice_number ?? "sem número";
+    if (review.related_original_number) {
+      return `Pode corresponder ao documento do e-Fatura ${review.related_original_number}${vendor}, que foi renumerado para ${shown}. Reveja os dois.`;
+    }
+    return `Pode corresponder ao documento do e-Fatura ${shown}${vendor}. Reveja os dois.`;
+  }
   const parts = [review.related_invoice_number, review.related_vendor_name].filter(Boolean);
   const receipt =
     parts.length === 2 ? `${parts[0]} (${parts[1]})` : parts[0] ?? "sem número";
@@ -373,13 +384,19 @@ export default function ReceiptsPage() {
                 const reviewAria = reviewNote
                   ? `${heldNumber ? `, e-Fatura n.º ${heldNumber}` : ""}, Em revisão: ${reviewNote}`
                   : "";
+                const efaturaClash = doc.validation_warnings?.find((w) =>
+                  EFATURA_CLASH_CODES.has(w.code),
+                );
+                const clashAria = efaturaClash
+                  ? `, e-Fatura por resolver: ${efaturaClash.message}`
+                  : "";
 
                 return (
                   <li key={doc.id}>
                     <Link
                       href={`/receipts/${doc.id}`}
                       className="card p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors"
-                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}${linkedAtAria}${reviewAria}`}
+                      aria-label={`${vendorName}, ${date}, ${amount}, ${catInfo.label}, Estado: ${statusInfo.label}${linkedAtAria}${reviewAria}${clashAria}`}
                     >
                       {/* Category icon */}
                       <div
@@ -451,6 +468,14 @@ export default function ReceiptsPage() {
                               </span>
                             ) : null}
                             <span className="min-w-0 break-words">{reviewNote}</span>
+                          </p>
+                        ) : null}
+                        {efaturaClash ? (
+                          <p className="mt-1 flex flex-wrap items-start gap-x-2 gap-y-1 text-xs text-amber-800">
+                            <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-medium">
+                              e-Fatura por resolver
+                            </span>
+                            <span className="min-w-0 break-words">{efaturaClash.message}</span>
                           </p>
                         ) : null}
                       </div>
