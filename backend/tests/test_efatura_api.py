@@ -195,3 +195,25 @@ def test_incomplete_efatura_config_warns_and_does_not_raise(monkeypatch):
     monkeypatch.setattr(settings, "efatura_at_public_key_pem", "")
     warnings = validate_configuration()
     assert any("EFATURA_PASSWORD" in warning for warning in warnings)
+
+
+def test_a_pull_that_cannot_get_the_account_lock_is_a_retryable_503(
+    client: TestClient, db: Session, monkeypatch
+):
+    from app.api.efatura import PULL_BUSY_DETAIL
+    from app.services.efatura import AccountBusy
+
+    def busy(*args, **kwargs):
+        raise AccountBusy("user")
+
+    _enable(monkeypatch)
+    monkeypatch.setattr("app.api.efatura.import_purchases", busy)
+    response = client.post(
+        "/api/efatura/pull",
+        json={"taxpayer_nif": "555555555", "period_start": "2020-01-01", "period_end": "2099-12-31"},
+        headers=_headers(),
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == PULL_BUSY_DETAIL
+    assert response.headers["retry-after"] == "10"
+    assert db.query(EfaturaLink).count() == 0
