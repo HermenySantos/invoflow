@@ -234,6 +234,38 @@ def test_l3_migration_014_runs_again_after_a_swap(client, db: Session):
     assert _snapshot(db) == before
 
 
+# L-4: swapping two rows' numbers with a pull in between.
+
+
+@pytest.mark.parametrize("atcud", [False, True], ids=["doc-key", "atcud"])
+def test_l4_a_swap_through_a_temporary_number_with_a_pull_between_is_allowed(client, db: Session, atcud):
+    user, headers = _user(db)
+    upper_id, lower_id = _pull(db, user, *_pair(atcud)).created
+    _patch(client, headers, upper_id, invoice_number="FT T/5")
+    _pull(db, user, *_pair(atcud))
+
+    _patch(client, headers, lower_id, invoice_number="FT A/5")
+    _patch(client, headers, upper_id, invoice_number="FT a/5")
+    for _ in range(2):
+        _pull(db, user, *_pair(atcud))
+        db.expire_all()
+        assert (db.get(Document, upper_id).invoice_number, db.get(Document, upper_id).at_invoice_identity) == (
+            "FT a/5",
+            UPPER,
+        )
+        assert db.get(Document, lower_id).at_invoice_identity == LOWER
+        assert _vat(db, user) == EXPECTED
+    assert _warnings(client, headers, CONFLICT) == {}
+
+
+def test_l4_a_number_another_row_shows_is_still_409(client, db: Session):
+    user, headers = _user(db)
+    upper_id, lower_id = _pull(db, user, *_pair(atcud=True)).created
+    response = client.patch(f"/api/documents/{lower_id}", headers=headers, json={"invoice_number": "FT A/5"})
+    assert response.status_code == 409, response.text
+    assert "FT A/5" in response.json()["detail"]
+
+
 def test_l3_migration_014_first_run_gives_an_edited_row_its_invoice_identity(db: Session):
     from tests.test_migration_014_split import _audit
 

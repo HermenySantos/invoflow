@@ -836,7 +836,25 @@ async def update_document(
                 intended_identity = at_invoice_identity(
                     document.vendor_nif, document.document_type, document.invoice_number
                 )
-                document.at_invoice_identity = intended_identity
+                holder = (
+                    db.query(Document)
+                    .filter(
+                        Document.user_id == user.id,
+                        Document.at_invoice_identity == intended_identity,
+                        Document.id != document.id,
+                        Document.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                # A renumbered AT row a pull pointed back at its own invoice
+                # holds that identity without showing the number. The number
+                # is free to type; this row keeps its identity until a pull.
+                if holder is None or at_invoice_identity(
+                    holder.vendor_nif, holder.document_type, holder.invoice_number
+                ) == intended_identity:
+                    document.at_invoice_identity = intended_identity
+                else:
+                    intended_identity = None
         
         # Audit log
         after_state = {field: getattr(document, field, None) for field in update_data}
