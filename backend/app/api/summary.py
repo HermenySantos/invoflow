@@ -20,7 +20,12 @@ from app.models.user import User
 from app.models.document import Document
 from app.models.vat_sales import VatSalesEntry
 from app.schemas.summary import AcceptedSeriesMismatch, SummaryResponse, CategoryBreakdown, ExcludedDocument
-from app.api.documents import get_or_create_user
+from app.api.documents import (
+    EFATURA_IDENTITY_CONFLICT,
+    EFATURA_NOT_IMPORTED,
+    efatura_hold_warnings,
+    get_or_create_user,
+)
 from app.services.categorization import (
     get_expense_category_label,
     get_irs_sector_label,
@@ -46,6 +51,29 @@ def _format_eur(amount: Decimal) -> str:
     """1234.5 -> "1.234,50 €" (pt-PT)."""
     whole, cents = f"{amount:,.2f}".split(".")
     return f"{whole.replace(',', '.')},{cents} €"
+
+
+def _efatura_hold_summary(db: Session, user_id: str, documents: list[Document]) -> list[str]:
+    """One line per kind of unresolved e-Fatura clash on this period's rows."""
+    in_period = {document.id for document in documents if document.deleted_at is None}
+    codes: dict[str, int] = defaultdict(int)
+    for document_id, held in efatura_hold_warnings(db, user_id).items():
+        if document_id not in in_period:
+            continue
+        for code in {warning["code"] for warning in held}:
+            codes[code] += 1
+    lines = []
+    if codes[EFATURA_NOT_IMPORTED]:
+        lines.append(
+            f"{codes[EFATURA_NOT_IMPORTED]} recibo(s) com uma fatura do e-Fatura por importar "
+            "— reveja-os"
+        )
+    if codes[EFATURA_IDENTITY_CONFLICT]:
+        lines.append(
+            f"{codes[EFATURA_IDENTITY_CONFLICT]} documento(s) do e-Fatura com a mesma fatura "
+            "— o IVA pode estar a contar duas vezes; reveja-os"
+        )
+    return lines
 
 
 def _get_vat_on_sales(
@@ -211,6 +239,7 @@ async def get_summary(
     warnings = [w["message"] for w in warning_objects]
     warnings.extend(credit_note_warnings(valid_docs, library))
     warnings.extend(duplicate_warnings(valid_docs, library))
+    warnings.extend(_efatura_hold_summary(db, user.id, documents))
     
     # ── Category breakdowns ──
     expense_totals: dict[str, dict] = defaultdict(lambda: {"count": 0, "total": Decimal(0), "vat": Decimal(0), "deductible": Decimal(0)})

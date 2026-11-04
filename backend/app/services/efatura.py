@@ -344,6 +344,22 @@ def _import_one(
         )
         db.refresh(existing)
     payload = _payload(invoice)
+    if existing is not None and is_unplaced(existing):
+        held_warning = existing.warning
+        outcome = _place_invoice(
+            db,
+            user_id=user_id,
+            taxpayer_nif=taxpayer_nif,
+            invoice=invoice,
+            known=known,
+            edits=edits,
+            source_key=source_key,
+            payload=payload,
+            link=existing,
+        )
+        if outcome.outcome == "ambiguous_duplicate" and outcome.warning == held_warning:
+            return _Outcome("unchanged", source_key, outcome.outcome)
+        return outcome
     if existing is not None:
         warning = None
         if existing.fiscal_status != "cancelled" and invoice.fiscal_status == "cancelled":
@@ -360,20 +376,59 @@ def _import_one(
                 return _Outcome("created", source_key, "created", document.id)
             return _Outcome("unchanged", source_key, existing.outcome, document.id, warning)
         return _Outcome("unchanged", source_key, existing.outcome, existing.document_id, warning)
+    return _place_invoice(
+        db,
+        user_id=user_id,
+        taxpayer_nif=taxpayer_nif,
+        invoice=invoice,
+        known=known,
+        edits=edits,
+        source_key=source_key,
+        payload=payload,
+        link=None,
+    )
+
+
+def is_unplaced(link: EfaturaLink) -> bool:
+    """A link whose invoice was not stored because several receipts could be it.
+
+    Every pull examines it again, so it holds until the user resolves the clash.
+    """
+    return link.outcome == "ambiguous_duplicate" and not link.document_id
+
+
+def _place_invoice(
+    db: Session,
+    *,
+    user_id: str,
+    taxpayer_nif: str,
+    invoice: EFaturaInvoice,
+    known: set[_KnownInvoice],
+    edits: _UserEdits,
+    source_key: str,
+    payload: str,
+    link: Optional[EfaturaLink],
+) -> _Outcome:
+    """Store, link or hold an invoice no placed link holds. ``link`` is an unplaced one to rewrite."""
+
+    def record(**fields) -> None:
+        if link is None:
+            _add_link(db, user_id=user_id, source_key=source_key, payload=payload, **fields)
+            return
+        for name, value in fields.items():
+            setattr(link, name, value)
+        link.payload_json = payload
+        link.updated_at = datetime.utcnow()
 
     role = _role(invoice, taxpayer_nif)
     skip = _skip_reason(invoice, role)
     if skip is not None:
-        _add_link(
-            db,
-            user_id=user_id,
-            source_key=source_key,
+        record(
             role=role,
             outcome=skip,
             document_id=None,
             fiscal_status=invoice.fiscal_status,
             warning=None,
-            payload=payload,
         )
         return _Outcome("skipped", source_key, skip)
 
@@ -381,16 +436,12 @@ def _import_one(
     if len(matches) > 1:
         ids = ", ".join(sorted(document.id for document in matches))
         warning = f"Several receipts match this e-Fatura document: {ids}"
-        _add_link(
-            db,
-            user_id=user_id,
-            source_key=source_key,
+        record(
             role=role,
             outcome="ambiguous_duplicate",
             document_id=None,
             fiscal_status=invoice.fiscal_status,
             warning=warning,
-            payload=payload,
         )
         return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
@@ -418,16 +469,12 @@ def _import_one(
         hidden = document.deleted_at is not None
         warning = _HIDDEN_WARNING if hidden else _LINKED_WARNING
         outcome = "linked_hidden" if hidden else "linked_existing"
-        _add_link(
-            db,
-            user_id=user_id,
-            source_key=source_key,
+        record(
             role=role,
             outcome=outcome,
             document_id=document.id,
             fiscal_status=invoice.fiscal_status,
             warning=warning,
-            payload=payload,
         )
         log_event(
             db,
@@ -449,7 +496,16 @@ def _import_one(
     identity = at_invoice_identity(
         invoice.issuer_nif, _stored_type(invoice), invoice.invoice_number
     )
-    if _identity_row(db, user_id, identity, live=False) is not None:
+    deleted = _identity_row(db, user_id, identity, live=False)
+    if deleted is not None:
+        if link is not None:
+            record(
+                role=role,
+                outcome="created",
+                document_id=deleted.id,
+                fiscal_status=invoice.fiscal_status,
+                warning=None,
+            )
         return _Outcome("unchanged", source_key, "unchanged")
     # Only an edited row whose own invoice another row holds keeps this
     # identity unmatched. Inserting would hit the unique index silently.
@@ -459,16 +515,12 @@ def _import_one(
             f"Not stored: receipt {holder.id} has this e-Fatura document's number after a "
             "user edit, and another row holds the invoice it came from. Review both."
         )
-        _add_link(
-            db,
-            user_id=user_id,
-            source_key=source_key,
+        record(
             role=role,
             outcome="ambiguous_duplicate",
             document_id=None,
             fiscal_status=invoice.fiscal_status,
             warning=warning,
-            payload=payload,
         )
         return _Outcome("skipped", source_key, "ambiguous_duplicate", warning=warning)
 
@@ -477,16 +529,12 @@ def _import_one(
             db, user_id, invoice, edits
         )
     document = _new_purchase(db, user_id=user_id, source_key=source_key, invoice=invoice)
-    _add_link(
-        db,
-        user_id=user_id,
-        source_key=source_key,
+    record(
         role=role,
         outcome="created",
         document_id=document.id,
         fiscal_status=invoice.fiscal_status,
         warning=review_warning,
-        payload=payload,
     )
     return _Outcome("created", source_key, "created", document.id, review_warning)
 
@@ -1189,9 +1237,14 @@ def _split_overwritten_links(db: Session, row: Document, edits: _UserEdits) -> N
 
     Main's doc key lowercased the number, so 'FT a/5' could overwrite the link
     of the 'FT A/5' row. Migration 014 split these off unedited rows. On an
-    edited row the audit's first number tells the two apart.
+    edited row the audit's first number tells the two apart. A link that
+    was matched on the edited number, not the row's AT number, moves too.
     """
     held_number = (_at_value(row, edits, "invoice_number") or "").strip().lower()
+    held_key = (
+        normalise_nif(_at_value(row, edits, "vendor_nif")),
+        normalise_invoice_number(_at_value(row, edits, "invoice_number")),
+    )
     links = (
         db.query(EfaturaLink)
         .filter(EfaturaLink.document_id == row.id)
@@ -1200,13 +1253,21 @@ def _split_overwritten_links(db: Session, row: Document, edits: _UserEdits) -> N
         .all()
     )
     for link in links:
-        if not (link.source_key or "").startswith("doc:"):
-            continue
         try:
             other = _parse_invoice(json.loads(link.payload_json))
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
-        if other.invoice_number.strip().lower() != held_number:
+        overwritten = (link.source_key or "").startswith("doc:") and (
+            other.invoice_number.strip().lower() == held_number
+        )
+        # An AT row is linked only on its own AT number. A link on another
+        # number was matched on the user's edit, by main's relink or by a
+        # PATCH that landed mid-pull before the account lock.
+        matched_on_edit = link.outcome in _LINKED_SCAN_OUTCOMES and (
+            normalise_nif(other.issuer_nif),
+            normalise_invoice_number(other.invoice_number),
+        ) != held_key
+        if not (overwritten or matched_on_edit):
             continue
         if at_invoice_identity(other.issuer_nif, _stored_type(other), other.invoice_number) == row.at_invoice_identity:
             continue
@@ -1479,6 +1540,92 @@ def _move_link_to_scan(
         },
     )
     drop_accepted_series_mismatch(db, scan, invoice.document_type, source="efatura")
+
+
+_DOCUMENT_ID = re.compile(r"\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b")
+
+
+@dataclass(frozen=True)
+class UnplacedInvoice:
+    """An AT invoice a pull did not store because of a receipt it names."""
+
+    invoice_number: Optional[str]
+    several: bool
+
+
+def unplaced_invoices(db: Session, user_id: str) -> dict[str, list[UnplacedInvoice]]:
+    """Each document an unplaced link names, with the AT invoices it holds back."""
+    named: dict[str, list[UnplacedInvoice]] = {}
+    for link in (
+        db.query(EfaturaLink)
+        .filter(
+            EfaturaLink.user_id == user_id,
+            EfaturaLink.outcome == "ambiguous_duplicate",
+            EfaturaLink.document_id.is_(None),
+        )
+        .order_by(EfaturaLink.created_at.asc(), EfaturaLink.id.asc())
+    ):
+        payload = _payload_number(link)
+        entry = UnplacedInvoice(
+            invoice_number=payload[1] if payload else None,
+            several=(link.warning or "").startswith("Several receipts match"),
+        )
+        for document_id in dict.fromkeys(_DOCUMENT_ID.findall(link.warning or "")):
+            named.setdefault(document_id, []).append(entry)
+    return named
+
+
+@dataclass(frozen=True)
+class IdentityConflict:
+    """Two live rows that hold one AT invoice, one of them an AT row a user renumbered."""
+
+    other_id: str
+    other_number: Optional[str]
+    held_number: Optional[str]
+    edited: bool
+
+
+def identity_conflicts(db: Session, user_id: str) -> dict[str, IdentityConflict]:
+    """Rows where an edited AT row could not get its invoice's identity back.
+
+    The other live row has that identity, so both may count the same invoice.
+    Neither row is changed: the user decides which one is the duplicate.
+    """
+    edits = _user_edits(db, user_id)
+    if not edits.first_values:
+        return {}
+    conflicts: dict[str, IdentityConflict] = {}
+    for row in (
+        db.query(Document)
+        .filter(
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+            Document.id.in_(list(edits.first_values)),
+        )
+        .order_by(Document.created_at.asc(), Document.id.asc())
+    ):
+        if _is_scan(row):
+            continue
+        held = _held_identity(row, edits)
+        if held == row.at_invoice_identity:
+            continue
+        other = (
+            db.query(Document)
+            .filter(
+                Document.user_id == user_id,
+                Document.deleted_at.is_(None),
+                Document.at_invoice_identity == held,
+                Document.id != row.id,
+            )
+            .order_by(Document.created_at.asc(), Document.id.asc())
+            .first()
+        )
+        if other is None:
+            continue
+        held_number = _at_value(row, edits, "invoice_number")
+        conflicts[row.id] = IdentityConflict(other.id, other.invoice_number, held_number, True)
+        conflicts.setdefault(other.id, IdentityConflict(row.id, row.invoice_number, held_number, False))
+    return conflicts
 
 
 _REVIEW_RECEIPT = re.compile(r"\b[Rr]eceipt (?P<id>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\b.*Review both\.$")

@@ -47,12 +47,19 @@ from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.efatura import (
     MATCHED_FIELDS,
+    IdentityConflict,
+    UnplacedInvoice,
     at_invoice_identity,
     detach_deleted_scan,
+    identity_conflicts,
     is_pg_deadlock,
     lock_account,
     review_receipt_id,
+    unplaced_invoices,
 )
+
+EFATURA_NOT_IMPORTED = "efatura_not_imported"
+EFATURA_IDENTITY_CONFLICT = "efatura_identity_conflict"
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
 from app.services.audit import (
@@ -253,6 +260,68 @@ def _efatura_reviews(db: Session, documents: list[Document]) -> dict[str, Efatur
     return reviews
 
 
+def _quoted(number: Optional[str]) -> str:
+    text = (number or "").strip()
+    return f"n.º {text}" if text else "sem número"
+
+
+def _unplaced_message(entry: UnplacedInvoice) -> str:
+    invoice = _quoted(entry.invoice_number)
+    if entry.several:
+        return (
+            f"A fatura {invoice} do e-Fatura não foi importada: corresponde a este recibo "
+            "e a outro. Apague o duplicado ou corrija o n.º; a próxima importação do "
+            "e-Fatura volta a tentar."
+        )
+    return (
+        f"A fatura {invoice} do e-Fatura não foi importada: este documento foi editado "
+        "para esse n.º e outro documento tem a fatura de origem. Reveja os dois; a "
+        "próxima importação do e-Fatura volta a tentar."
+    )
+
+
+def _conflict_message(conflict: IdentityConflict) -> str:
+    held = _quoted(conflict.held_number)
+    if conflict.edited:
+        return (
+            f"Este documento do e-Fatura foi editado e a fatura de origem ({held}) também "
+            f"está no documento {_quoted(conflict.other_number)}. O IVA pode estar a contar "
+            "duas vezes. Reveja os dois: se o outro for um duplicado, apague-o; a próxima "
+            "importação do e-Fatura repõe a fatura que faltar."
+        )
+    return (
+        f"O documento {_quoted(conflict.other_number)} foi editado a partir desta mesma "
+        f"fatura do e-Fatura ({held}). O IVA pode estar a contar duas vezes. Reveja os "
+        "dois: se este for um duplicado, apague-o; a próxima importação do e-Fatura repõe "
+        "a fatura que faltar."
+    )
+
+
+def efatura_hold_warnings(db: Session, user_id: str) -> dict[str, list[dict]]:
+    """Warnings that stay on a row until the e-Fatura clash it is part of is resolved."""
+    held: dict[str, list[dict]] = {}
+    for document_id, entries in unplaced_invoices(db, user_id).items():
+        for entry in entries:
+            held.setdefault(document_id, []).append(
+                {
+                    "code": EFATURA_NOT_IMPORTED,
+                    "message": _unplaced_message(entry),
+                    "severity": "warning",
+                    "field": "invoice_number",
+                }
+            )
+    for document_id, conflict in identity_conflicts(db, user_id).items():
+        held.setdefault(document_id, []).append(
+            {
+                "code": EFATURA_IDENTITY_CONFLICT,
+                "message": _conflict_message(conflict),
+                "severity": "warning",
+                "field": "invoice_number",
+            }
+        )
+    return held
+
+
 def _column_at_type(document: Document) -> Optional[str]:
     """Stored AT code, including a legacy row whose QR payload is gone."""
     raw = getattr(document, "at_document_type", None)
@@ -289,6 +358,7 @@ def build_document_response(
     db: Optional[Session] = None,
     linked_at_pair: Optional[LinkedAtPair] = None,
     efatura_review: Optional[EfaturaReview] = None,
+    hold_warnings: Optional[list[dict]] = None,
 ) -> DocumentResponse:
     """Build a DocumentResponse with computed fields, parsed confidence, and validation warnings.
 
@@ -298,6 +368,7 @@ def build_document_response(
     if db is not None:
         linked_at_pair = _linked_at_pairs(db, [document.id]).get(document.id)
         efatura_review = _efatura_reviews(db, [document]).get(document.id)
+        hold_warnings = efatura_hold_warnings(db, document.user_id).get(document.id)
     field_confidence = parse_field_confidence(
         document.ocr_raw_response, 
         float(document.ocr_confidence) if document.ocr_confidence else None
@@ -311,6 +382,7 @@ def build_document_response(
     warnings = validate_document(document)
     if db is not None:
         warnings += detect_duplicates(db, document.user_id, document)
+    warnings += hold_warnings or []
     # A stored pair that is not the one AT issued stays visible as a warning.
     # The confirmation wording is only for a mismatch the flag can still accept.
     if series_disagrees(document.document_type, document.invoice_number) and not keeps_at_issued_pair(
@@ -565,6 +637,7 @@ async def list_documents(
     # Generate URLs and response
     linked_pairs = _linked_at_pairs(db, [doc.id for doc in documents])
     reviews = _efatura_reviews(db, documents)
+    holds = efatura_hold_warnings(db, user.id) if documents else {}
     doc_responses = []
     for doc in documents:
         file_url = storage.get_download_url(doc.storage_key)
@@ -574,6 +647,7 @@ async def list_documents(
                 file_url,
                 linked_at_pair=linked_pairs.get(doc.id),
                 efatura_review=reviews.get(doc.id),
+                hold_warnings=holds.get(doc.id),
             )
         )
     
