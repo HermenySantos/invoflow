@@ -1,0 +1,8 @@
+export const CONFIG = {
+  FORM_ENDPOINT: '',
+  DEPOSIT_ENABLED: false,
+  STRIPE_PAYMENT_LINK: '',
+  ANALYTICS: '',
+  PLAUSIBLE_DOMAIN: '',
+  META_PIXEL_ID: '',
+};
