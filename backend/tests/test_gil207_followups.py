@@ -171,6 +171,26 @@ def test_l3_deleting_the_flagged_duplicate_restores_both_invoices(client, db: Se
     assert [row[:4] for row in _snapshot(db)[1]] == [row[:4] for row in before[1]]
 
 
+@pytest.mark.parametrize("atcud", [False, True], ids=["doc-key", "atcud"])
+def test_l3_following_the_advice_on_either_card_ends_at_6_90(client, db: Session, atcud):
+    user, headers, edited_id, duplicate_id, upper, lower = _g1_relinked(client, db, atcud)
+    assert sorted(_vat(db, user)) == [Decimal("4.60"), Decimal("4.60")]
+
+    shown = _warnings(client, headers, CONFLICT)
+    assert "Para corrigir, apague o documento n.º FT a/5, não este" in shown[edited_id][0]
+    assert "Para corrigir, apague este documento, não o n.º FT A/5" in shown[duplicate_id][0]
+    numbers = {row["id"]: row["invoice_number"] for row in client.get("/api/documents", headers=headers).json()["documents"]}
+    assert (numbers[edited_id], numbers[duplicate_id]) == ("FT A/5", "FT a/5")
+
+    assert client.delete(f"/api/documents/{duplicate_id}", headers=headers).status_code == 204
+    _pull(db, user, upper, lower)
+
+    assert sorted(_vat(db, user)) == [Decimal("2.30"), Decimal("4.60")]
+    assert sum(_vat(db, user)) == Decimal("6.90")
+    assert _warnings(client, headers, CONFLICT) == {}
+    assert not any("mesma fatura" in line for line in _summary_warnings(client, headers))
+
+
 def test_l3_g2_left_by_main_is_flagged_and_repaired_by_deleting_the_duplicate(client, db: Session):
     user, headers = _user(db)
     edited = _at_row(db, user, "FT A/5", f"{NIF}|FT|ft a/5")
@@ -184,7 +204,10 @@ def test_l3_g2_left_by_main_is_flagged_and_repaired_by_deleting_the_duplicate(cl
 
     _pull(db, user, upper, lower)
     assert sum(_vat(db, user)) == Decimal("4.60")
-    assert sorted(_warnings(client, headers, CONFLICT)) == sorted([edited.id, duplicate.id])
+    shown = _warnings(client, headers, CONFLICT)
+    assert sorted(shown) == sorted([edited.id, duplicate.id])
+    assert "apague o documento n.º FT A/5, não este" in shown[edited.id][0]
+    assert "apague este documento, não o n.º FT a/5" in shown[duplicate.id][0]
 
     assert client.delete(f"/api/documents/{duplicate.id}", headers=headers).status_code == 204
     _pull(db, user, upper, lower)

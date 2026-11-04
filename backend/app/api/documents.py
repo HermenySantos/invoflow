@@ -295,19 +295,22 @@ def _unplaced_message(entry: UnplacedInvoice) -> str:
 
 
 def _conflict_message(conflict: IdentityConflict) -> str:
+    # Only deleting the row that is not the edited one lets the next pull
+    # restore the missing invoice. A deleted edited row takes that invoice with it.
     held = _quoted(conflict.held_number)
+    other = _quoted(conflict.other_number)
     if conflict.edited:
         return (
             f"Este documento do e-Fatura foi editado e a fatura de origem ({held}) também "
-            f"está no documento {_quoted(conflict.other_number)}. O IVA pode estar a contar "
-            "duas vezes. Reveja os dois: se o outro for um duplicado, apague-o; a próxima "
-            "importação do e-Fatura repõe a fatura que faltar."
+            f"está no documento {other}. O IVA pode estar a contar duas vezes. Para "
+            f"corrigir, apague o documento {other}, não este; a próxima importação do "
+            "e-Fatura repõe a fatura que faltar."
         )
     return (
-        f"O documento {_quoted(conflict.other_number)} foi editado a partir desta mesma "
-        f"fatura do e-Fatura ({held}). O IVA pode estar a contar duas vezes. Reveja os "
-        "dois: se este for um duplicado, apague-o; a próxima importação do e-Fatura repõe "
-        "a fatura que faltar."
+        f"O documento {other} foi editado a partir desta mesma fatura do e-Fatura "
+        f"({held}). O IVA pode estar a contar duas vezes. Para corrigir, apague este "
+        f"documento, não o {other}; a próxima importação do e-Fatura repõe a fatura que "
+        "faltar."
     )
 
 
