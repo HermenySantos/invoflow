@@ -46,7 +46,9 @@ from app.schemas.document import (
 from app.services.pt_qr import parse_invoice_qr
 from app.services.storage import get_storage_service, MAX_FILE_SIZE
 from app.services.efatura import (
+    EDIT_LOCK_WAIT_SECONDS,
     MATCHED_FIELDS,
+    AccountBusy,
     IdentityConflict,
     UnplacedInvoice,
     at_invoice_identity,
@@ -62,6 +64,10 @@ from app.services.efatura import (
 
 EFATURA_NOT_IMPORTED = "efatura_not_imported"
 EFATURA_IDENTITY_CONFLICT = "efatura_identity_conflict"
+EDIT_BUSY_DETAIL = (
+    "Está a decorrer uma importação do e-Fatura nesta conta. As alterações não foram "
+    "guardadas; tente guardar novamente dentro de momentos."
+)
 from app.services.processing import read_receipt
 from app.services.categorization import effective_deductible_pct
 from app.services.audit import (
@@ -495,7 +501,7 @@ async def get_upload_url(
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(RATE_LIMITS["upload"])
-async def create_document(
+def create_document(
     request: Request,
     doc_create: DocumentCreate,
     background_tasks: BackgroundTasks,
@@ -582,7 +588,7 @@ async def create_document(
 
 
 @router.get("", response_model=DocumentListResponse)
-async def list_documents(
+def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -669,7 +675,7 @@ async def list_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document(
+def get_document(
     document_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -699,7 +705,7 @@ async def get_document(
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
-async def update_document(
+def update_document(
     document_id: str,
     doc_update: DocumentUpdate,
     db: Session = Depends(get_db),
@@ -709,31 +715,27 @@ async def update_document(
     user = get_or_create_user(db, current_user)
     storage = get_storage_service()
 
-    # A running e-Fatura pull matches on the edits it read at its start, so an
-    # edit to a matched field waits for it. The account lock comes first.
-    if MATCHED_FIELDS & doc_update.model_fields_set:
-        lock_account(db, user.id)
-    # Lock the scan before reading its links, the same order as delete and
-    # import, so a link cannot land between the retype check and the commit.
-    document = (
-        db.query(Document)
-        .filter(
-            Document.id == document_id,
-            Document.user_id == user.id,
-            Document.deleted_at.is_(None),
-        )
-        .with_for_update()
-        .first()
+    live = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == user.id,
+        Document.deleted_at.is_(None),
     )
-    
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
-    
+    if not db.query(live.exists()).scalar():
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    intended_identity = None
     try:
-        intended_identity = None
+        # A running e-Fatura pull matches on the edits it read at its start, so an
+        # edit to a matched field waits for it. The account lock comes first.
+        if MATCHED_FIELDS & doc_update.model_fields_set:
+            lock_account(db, user.id, wait_seconds=EDIT_LOCK_WAIT_SECONDS)
+        # Lock the scan before reading its links, the same order as delete and
+        # import, so a link cannot land between the retype check and the commit.
+        document = live.with_for_update().first()
+        if not document:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
         # Capture before-state for audit
         update_data = doc_update.model_dump(exclude_unset=True)
         if "document_type" in update_data and update_data["document_type"] is None:
@@ -899,6 +901,13 @@ async def update_document(
     except HTTPException:
         db.rollback()
         raise
+    except AccountBusy:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=EDIT_BUSY_DETAIL,
+            headers={"Retry-After": "10"},
+        )
     except IntegrityError:
         db.rollback()
         other = None
@@ -933,7 +942,7 @@ async def update_document(
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(
+def delete_document(
     document_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),

@@ -18,6 +18,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Callable, Literal, Optional, Protocol, Sequence
 
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -217,7 +218,7 @@ def import_purchases(
         raise ValueError("taxpayer_nif must be 9 digits")
 
     # The edits read below must hold until commit, so no identity edit may land mid-pull.
-    lock_account(db, user_id)
+    lock_account(db, user_id, wait_seconds=PULL_LOCK_WAIT_SECONDS)
     subject = db.query(EfaturaSubject).filter(EfaturaSubject.user_id == user_id).one_or_none()
     if subject is None:
         subject = EfaturaSubject(
@@ -306,14 +307,42 @@ def import_purchases(
     )
 
 
-def lock_account(db: Session, user_id: str) -> None:
+EDIT_LOCK_WAIT_SECONDS = 10
+PULL_LOCK_WAIT_SECONDS = 30
+LOCK_HOLDER_IDLE_SECONDS = 30
+LOCK_HOLDER_STATEMENT_SECONDS = 60
+
+
+class AccountBusy(Exception):
+    """The account lock was not free within the wait. The transaction is aborted."""
+
+
+def lock_account(db: Session, user_id: str, *, wait_seconds: int) -> None:
     """Serialise a pull with the account's edits that change how its rows match.
 
     A pull reads the account's user edits once, at its start. A PATCH that
     renumbers a row must not commit between that read and the pull's commit.
     Both take this lock first, before any document or link lock.
+
+    On Postgres the wait is bounded, and so is the holder: a holder that goes
+    idle or runs one statement past its limit is ended by the server, which
+    frees the lock. Raises AccountBusy when the wait runs out.
     """
-    db.query(User.id).filter(User.id == user_id).with_for_update().one_or_none()
+    postgres = db.get_bind().dialect.name == "postgresql"
+    if postgres:
+        db.execute(text(f"SET LOCAL lock_timeout = '{int(wait_seconds)}s'"))
+    try:
+        db.query(User.id).filter(User.id == user_id).with_for_update().one_or_none()
+    except OperationalError as exc:
+        if _sqlstate(exc) == "55P03":
+            raise AccountBusy(user_id) from exc
+        raise
+    if postgres:
+        db.execute(text("SET LOCAL lock_timeout TO DEFAULT"))
+        db.execute(
+            text(f"SET LOCAL idle_in_transaction_session_timeout = '{LOCK_HOLDER_IDLE_SECONDS}s'")
+        )
+        db.execute(text(f"SET LOCAL statement_timeout = '{LOCK_HOLDER_STATEMENT_SECONDS}s'"))
 
 
 @dataclass
@@ -930,11 +959,20 @@ def detach_deleted_scan(db: Session, document: Document) -> None:
         _log_unlink(db, document, moved_to, source_key, "user")
 
 
+def _sqlstate(exc: BaseException) -> Optional[str]:
+    orig = getattr(exc, "orig", None)
+    return getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+
+
+def is_hold_timeout(exc: BaseException) -> bool:
+    """True when the server ended an account-lock holder: statement or idle timeout."""
+    return _sqlstate(exc) in {"57014", "25P03"}
+
+
 def is_pg_deadlock(exc: BaseException) -> bool:
     """True for Postgres deadlock (40P01) and serialization failure (40001)."""
     orig = getattr(exc, "orig", None)
-    code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
-    if code in {"40P01", "40001"}:
+    if _sqlstate(exc) in {"40P01", "40001"}:
         return True
     return type(orig).__name__ in {"DeadlockDetected", "SerializationFailure"}
 

@@ -98,7 +98,7 @@ def _get_vat_on_sales(
 
 
 @router.get("", response_model=SummaryResponse)
-async def get_summary(
+def get_summary(
     period_type: str = Query("quarter", pattern="^(month|quarter)$"),
     year: Optional[int] = None,
     month: Optional[int] = Query(None, ge=1, le=12),

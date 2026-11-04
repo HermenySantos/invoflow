@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 @router.get("/documents/{document_id}", response_model=AuditTrailResponse)
-async def get_document_audit_trail(
+def get_document_audit_trail(
     document_id: str,
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
