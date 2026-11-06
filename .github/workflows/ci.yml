@@ -102,6 +102,8 @@ jobs:
         run: python scripts/check_missing_document_lock.py
       - name: A hung e-Fatura pull holds the account lock for a bounded time on Postgres 16
         run: python scripts/check_hung_pull.py
+      - name: Account-lock waiters share one budget and never stall other accounts on Postgres 16
+        run: python scripts/check_lock_storm.py
       - name: Migrations go down and back up
         run: |
           alembic downgrade base
