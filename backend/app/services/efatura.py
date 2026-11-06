@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from app.core.db_errors import is_interrupted, sqlstate
 from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
@@ -311,6 +312,9 @@ EDIT_LOCK_WAIT_SECONDS = 10
 PULL_LOCK_WAIT_SECONDS = 30
 LOCK_HOLDER_IDLE_SECONDS = 30
 LOCK_HOLDER_STATEMENT_SECONDS = 60
+MAX_LOCK_WAITERS = 3
+# application_name is capped at 63 bytes: prefix, 36-byte id, role, epoch ms.
+_LOCK_TAG = "ifl:"
 
 
 class AccountBusy(Exception):
@@ -324,25 +328,75 @@ def lock_account(db: Session, user_id: str, *, wait_seconds: int) -> None:
     renumbers a row must not commit between that read and the pull's commit.
     Both take this lock first, before any document or link lock.
 
+    The lock is FOR NO KEY UPDATE, so inserting a receipt, a VAT-on-sales
+    entry or an AT row for the account (a foreign-key check) never waits on it.
+
     On Postgres the wait is bounded, and so is the holder: a holder that goes
     idle or runs one statement past its limit is ended by the server, which
-    frees the lock. Raises AccountBusy when the wait runs out.
+    frees the lock. Waiters share one budget, counted from the earliest of the
+    current holder's start and the oldest waiter's start, in every worker, so
+    a retry does not wait the whole budget again. Past MAX_LOCK_WAITERS, or
+    once the budget is spent, a waiter only tries the lock once. Raises
+    AccountBusy when the lock is not free in time.
     """
-    postgres = db.get_bind().dialect.name == "postgresql"
-    if postgres:
-        db.execute(text(f"SET LOCAL lock_timeout = '{int(wait_seconds)}s'"))
+    query = db.query(User.id).filter(User.id == user_id)
+    if db.get_bind().dialect.name != "postgresql":
+        query.with_for_update(key_share=True).one_or_none()
+        return
+    remaining_ms = _shared_wait_ms(db, user_id, wait_seconds)
     try:
-        db.query(User.id).filter(User.id == user_id).with_for_update().one_or_none()
+        if remaining_ms <= 0:
+            query.with_for_update(key_share=True, nowait=True).one_or_none()
+        else:
+            _tag_lock(db, user_id, "w")
+            # lock_timeout restarts for each lock in the queue (the tuple, then
+            # the holder), so only statement_timeout bounds the whole wait.
+            db.execute(text(f"SET LOCAL lock_timeout = '{int(remaining_ms)}ms'"))
+            db.execute(text(f"SET LOCAL statement_timeout = '{int(remaining_ms)}ms'"))
+            query.with_for_update(key_share=True).one_or_none()
     except OperationalError as exc:
-        if _sqlstate(exc) == "55P03":
+        if _sqlstate(exc) in {"55P03", "57014"}:
             raise AccountBusy(user_id) from exc
         raise
-    if postgres:
-        db.execute(text("SET LOCAL lock_timeout TO DEFAULT"))
-        db.execute(
-            text(f"SET LOCAL idle_in_transaction_session_timeout = '{LOCK_HOLDER_IDLE_SECONDS}s'")
-        )
-        db.execute(text(f"SET LOCAL statement_timeout = '{LOCK_HOLDER_STATEMENT_SECONDS}s'"))
+    _tag_lock(db, user_id, "h")
+    db.execute(text("SET LOCAL lock_timeout TO DEFAULT"))
+    db.execute(text(f"SET LOCAL idle_in_transaction_session_timeout = '{LOCK_HOLDER_IDLE_SECONDS}s'"))
+    db.execute(text(f"SET LOCAL statement_timeout = '{LOCK_HOLDER_STATEMENT_SECONDS}s'"))
+
+
+def _tag_lock(db: Session, user_id: str, role: str) -> None:
+    """Publish this transaction as the account's lock waiter ('w') or holder ('h').
+
+    The tag is transaction-local, so commit or rollback clears it.
+    """
+    db.execute(
+        text(
+            "SELECT set_config('application_name', "
+            ":tag || floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint, true)"
+        ),
+        {"tag": f"{_LOCK_TAG}{user_id}:{role}:"},
+    )
+
+
+def _shared_wait_ms(db: Session, user_id: str, wait_seconds: int) -> int:
+    """What is left of this account's lock budget for a new waiter, in ms."""
+    db.execute(text("SELECT pg_stat_clear_snapshot()"))
+    rows = db.execute(
+        text(
+            "SELECT split_part(application_name, ':', 3) AS role, "
+            "split_part(application_name, ':', 4)::bigint AS since_ms, "
+            "floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS now_ms "
+            "FROM pg_stat_activity "
+            "WHERE application_name LIKE :prefix AND pid <> pg_backend_pid()"
+        ),
+        {"prefix": f"{_LOCK_TAG}{user_id}:%"},
+    ).all()
+    if not rows:
+        return wait_seconds * 1000
+    if sum(1 for row in rows if row.role == "w") >= MAX_LOCK_WAITERS:
+        return 0
+    started = min(row.since_ms for row in rows)
+    return started + wait_seconds * 1000 - rows[0].now_ms
 
 
 @dataclass
@@ -959,14 +1013,12 @@ def detach_deleted_scan(db: Session, document: Document) -> None:
         _log_unlink(db, document, moved_to, source_key, "user")
 
 
-def _sqlstate(exc: BaseException) -> Optional[str]:
-    orig = getattr(exc, "orig", None)
-    return getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+_sqlstate = sqlstate
 
 
 def is_hold_timeout(exc: BaseException) -> bool:
     """True when the server ended an account-lock holder: statement or idle timeout."""
-    return _sqlstate(exc) in {"57014", "25P03"}
+    return is_interrupted(exc)
 
 
 def is_pg_deadlock(exc: BaseException) -> bool:
