@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from app.core.db_errors import is_interrupted, sqlstate
 from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.efatura import EfaturaLink, EfaturaSubject
@@ -959,14 +960,12 @@ def detach_deleted_scan(db: Session, document: Document) -> None:
         _log_unlink(db, document, moved_to, source_key, "user")
 
 
-def _sqlstate(exc: BaseException) -> Optional[str]:
-    orig = getattr(exc, "orig", None)
-    return getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+_sqlstate = sqlstate
 
 
 def is_hold_timeout(exc: BaseException) -> bool:
     """True when the server ended an account-lock holder: statement or idle timeout."""
-    return _sqlstate(exc) in {"57014", "25P03"}
+    return is_interrupted(exc)
 
 
 def is_pg_deadlock(exc: BaseException) -> bool:

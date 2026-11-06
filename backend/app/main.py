@@ -16,12 +16,13 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import router as api_router
 from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
+from app.core.db_errors import RETRY_AFTER_SECONDS, retryable
 from app.core.rate_limit import limiter
 from app.core.startup import get_environment_status, run_startup_checks
 from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_gap
@@ -47,6 +48,7 @@ def create_error_response(
     message: str,
     status_code: int,
     details: dict = None,
+    headers: dict = None,
 ) -> JSONResponse:
     """Create a standardized error response."""
     content = {
@@ -62,7 +64,7 @@ def create_error_response(
     if details:
         content["error"]["details"] = details
 
-    return JSONResponse(status_code=status_code, content=content)
+    return JSONResponse(status_code=status_code, content=content, headers=headers)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -163,6 +165,21 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
         code="DATABASE_INTEGRITY_ERROR",
         message="Database constraint violation",
         status_code=status.HTTP_409_CONFLICT,
+    )
+
+
+@app.exception_handler(OperationalError)
+async def operational_error_handler(request: Request, exc: OperationalError):
+    found = retryable(exc)
+    if found is None:
+        return await sqlalchemy_error_handler(request, exc)
+    code, message = found
+    logger.warning(f"Retryable database error ({code}): {exc}")
+    return create_error_response(
+        code=code,
+        message=message,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        headers={"Retry-After": RETRY_AFTER_SECONDS},
     )
 
 
