@@ -16,7 +16,11 @@ if settings.database_url.startswith("sqlite"):
 else:
     # A session left idle inside a transaction keeps its row locks. Background
     # OCR holds a transaction open across a read, so the limit is generous.
-    connect_args = {"options": "-c idle_in_transaction_session_timeout=300000"}
+    # No row-lock wait outlasts the e-Fatura pull's own 30 s wait; past it the
+    # request is a 503 the user can retry.
+    connect_args = {
+        "options": "-c idle_in_transaction_session_timeout=300000 -c lock_timeout=30000"
+    }
     engine_kwargs["pool_size"] = 5
     engine_kwargs["max_overflow"] = 10
 
