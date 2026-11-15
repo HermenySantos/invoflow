@@ -328,7 +328,7 @@ export default function SummaryPage() {
                   <button
                     type="button"
                     onClick={startEditingVatSales}
-                    className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+                    className="mt-1 -mb-2.5 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-700 touch-manipulation"
                   >
                     Introduzir IVA das vendas
                   </button>

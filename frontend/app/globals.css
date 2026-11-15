@@ -15,8 +15,8 @@
   --ff-max: 720px;
   --ff-hero-max: 960px;
   --font-sans: var(--font-plex), var(--font-inter), Inter, system-ui, sans-serif;
-  /* Height of BottomNav: h-16 plus its .safe-area-inset-bottom padding. */
-  --ff-nav-h: calc(4rem + max(1rem, env(safe-area-inset-bottom, 0px)));
+  /* Height of BottomNav: its 1px top border, h-16, and its .safe-area-inset-bottom padding. */
+  --ff-nav-h: calc(4rem + 1px + max(1rem, env(safe-area-inset-bottom, 0px)));
 }
 
 @layer base {
