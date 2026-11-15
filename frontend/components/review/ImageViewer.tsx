@@ -259,7 +259,7 @@ export function ImageViewer({
         <button
           onClick={(e) => { e.stopPropagation(); handleZoomOut(); }}
           disabled={zoomIndex === MIN_ZOOM}
-          className="p-2.5 text-white hover:bg-white/20 rounded touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-3.5 lg:p-2.5 text-white hover:bg-white/20 rounded touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="Reduzir"
         >
           <ZoomOut className="w-4 h-4" />
@@ -272,7 +272,7 @@ export function ImageViewer({
         <button
           onClick={(e) => { e.stopPropagation(); handleZoomIn(); }}
           disabled={zoomIndex === MAX_ZOOM}
-          className="p-2.5 text-white hover:bg-white/20 rounded touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-3.5 lg:p-2.5 text-white hover:bg-white/20 rounded touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="Ampliar"
         >
           <ZoomIn className="w-4 h-4" />
@@ -282,7 +282,7 @@ export function ImageViewer({
 
         <button
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-          className="p-2.5 text-white hover:bg-white/20 rounded touch-manipulation transition-colors"
+          className="p-3.5 lg:p-2.5 text-white hover:bg-white/20 rounded touch-manipulation transition-colors"
           aria-label={isFullscreen ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
         >
           {isFullscreen ? (

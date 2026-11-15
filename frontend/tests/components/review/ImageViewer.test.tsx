@@ -39,6 +39,17 @@ describe('ImageViewer', () => {
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
 
+  it('gives the zoom controls 44 px on touch screens and keeps 36 px from lg up', () => {
+    render(<ImageViewer src="https://example.com/image.jpg" />);
+
+    // 16 px icon plus p-3.5 on each side is 44 px; lg:p-2.5 is the previous 36 px.
+    for (const name of ['Reduzir', 'Ampliar', 'Ver em ecrã inteiro']) {
+      const button = screen.getByLabelText(name);
+      expect(button.classList.contains('p-3.5')).toBe(true);
+      expect(button.classList.contains('lg:p-2.5')).toBe(true);
+    }
+  });
+
   it('zooms in when zoom in button is clicked', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
