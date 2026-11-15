@@ -14,7 +14,7 @@ describe('ImageViewer', () => {
   it('shows placeholder when no src provided', () => {
     render(<ImageViewer src={null} />);
     
-    expect(screen.getByText('No image available')).toBeInTheDocument();
+    expect(screen.getByText('Sem imagem disponível')).toBeInTheDocument();
   });
 
   it('shows PDF placeholder for PDF files', () => {

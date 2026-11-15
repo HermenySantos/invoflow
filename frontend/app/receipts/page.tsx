@@ -284,11 +284,11 @@ export default function ReceiptsPage() {
         ) : (
           <>
             {/* Category filter chips */}
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide mb-1">
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar mb-1">
               <button
                 onClick={() => handleCategoryFilter(null)}
                 className={clsx(
-                  "flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors touch-manipulation",
+                  "flex-shrink-0 min-h-10 px-4 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
                   activeCategory === null
                     ? "bg-gray-900 text-white"
                     : "bg-gray-100 text-gray-600",
@@ -304,7 +304,7 @@ export default function ReceiptsPage() {
                     key={cat.key}
                     onClick={() => handleCategoryFilter(cat.key)}
                     className={clsx(
-                      "flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors touch-manipulation",
+                      "flex-shrink-0 flex items-center gap-1.5 min-h-10 px-4 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
                       isActive
                         ? `${cat.color} ${cat.textColor} ring-1 ring-current`
                         : "bg-gray-100 text-gray-600",

@@ -37,3 +37,22 @@ describe('ScanReceipt upload errors', () => {
     expect(await screen.findByText('O carregamento falhou. Tente outra vez.')).toBeInTheDocument();
   });
 });
+
+describe('ScanReceipt on a phone', () => {
+  it('opens the rear camera from "Fotografar" and the file picker from the other button', () => {
+    render(<ScanReceipt />);
+    const [camera, files] = Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
+    expect(camera).toHaveAttribute('capture', 'environment');
+    expect(camera).toHaveAttribute('accept', 'image/*');
+    // No capture here, so Android offers the gallery and PDFs from Files.
+    expect(files).not.toHaveAttribute('capture');
+    expect(files).toHaveAttribute('accept', 'image/*,application/pdf');
+
+    const cameraClick = vi.spyOn(camera, 'click');
+    const filesClick = vi.spyOn(files, 'click');
+    fireEvent.click(screen.getByRole('button', { name: /Fotografar/ }));
+    expect(cameraClick).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /Carregar PDF ou foto/ }));
+    expect(filesClick).toHaveBeenCalledTimes(1);
+  });
+});

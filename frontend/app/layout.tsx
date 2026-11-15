@@ -5,6 +5,7 @@ import './globals.css';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineProvider } from '@/components/providers/OfflineProvider';
+import { APP_NAME, THEME_COLOR } from '@/lib/pwa';
 
 const plex = IBM_Plex_Sans({
   subsets: ['latin'],
@@ -23,22 +24,27 @@ export const metadata: Metadata = {
   title: 'Invoflow — IVA dos recibos para o contabilista',
   description:
     'Carregue faturas e recibos portugueses. Obtenha uma estimativa de IVA e um pacote organizado para enviar.',
-  manifest: '/manifest.json',
+  applicationName: APP_NAME,
   icons: {
-    icon: '/favicon.svg',
-    apple: '/favicon.svg',
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: '/icons/apple-touch-icon.png',
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Invoflow',
+    title: APP_NAME,
   },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#1B4D3E',
+  // Lets the page draw under Android's gesture bar; fixed bars pad themselves with env(safe-area-inset-*).
+  viewportFit: 'cover',
+  themeColor: THEME_COLOR,
 };
 
 export default function RootLayout({
@@ -55,7 +61,7 @@ export default function RootLayout({
   );
 
   return (
-    <html lang="pt" className={`${plex.variable} ${inter.variable}`}>
+    <html lang="pt-PT" className={`${plex.variable} ${inter.variable}`}>
       <body>
         {clerkEnabled ? <ClerkProvider>{app}</ClerkProvider> : app}
       </body>

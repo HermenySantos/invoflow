@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" fill="#FAFAF8"/>
-  <text x="16" y="23" text-anchor="middle" font-family="IBM Plex Sans, Inter, system-ui, sans-serif" font-size="18" font-weight="600" fill="#1B4D3E">F</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Placeholder mark until Invoflow has a real logo. -->
+  <rect width="512" height="512" rx="112" fill="#1B4D3E"/>
+  <path d="M166 106h180a20 20 0 0 1 20 20v280l-27.5-20-27.5 20-27.5-20-27.5 20-27.5-20-27.5 20-27.5-20-27.5 20V126a20 20 0 0 1 20-20z" fill="#FAFAF8"/>
+  <rect x="186" y="164" width="140" height="18" rx="9" fill="#1B4D3E"/>
+  <rect x="186" y="210" width="96" height="18" rx="9" fill="#1B4D3E"/>
+  <rect x="186" y="256" width="120" height="18" rx="9" fill="#1B4D3E"/>
+  <rect x="186" y="318" width="140" height="26" rx="13" fill="#1B4D3E"/>
 </svg>

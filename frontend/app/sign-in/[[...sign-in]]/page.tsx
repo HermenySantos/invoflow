@@ -25,8 +25,8 @@ function SignInForm() {
   return (
     <div className="landing min-h-screen flex flex-col items-center justify-center px-4">
       <div className="w-full" style={{ maxWidth: 400 }}>
-        <p className="mb-8">
-          <Link href="/">← Invoflow</Link>
+        <p className="mb-6">
+          <Link href="/" className="inline-flex min-h-11 items-center">← Invoflow</Link>
         </p>
         <h1 className="text-2xl font-semibold">Entrar</h1>
         <p className="mt-2 text-[var(--ff-text-muted)]">
@@ -43,6 +43,10 @@ function SignInForm() {
               type="text"
               inputMode="email"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="go"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="voce@empresa.pt"

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Placeholder mark until Invoflow has a real logo. Full bleed; the receipt stays inside the 40% safe-zone circle. -->
+  <rect width="512" height="512" fill="#1B4D3E"/>
+  <g transform="translate(256 256) scale(0.8) translate(-256 -256)">
+    <path d="M166 106h180a20 20 0 0 1 20 20v280l-27.5-20-27.5 20-27.5-20-27.5 20-27.5-20-27.5 20-27.5-20-27.5 20V126a20 20 0 0 1 20-20z" fill="#FAFAF8"/>
+    <rect x="186" y="164" width="140" height="18" rx="9" fill="#1B4D3E"/>
+    <rect x="186" y="210" width="96" height="18" rx="9" fill="#1B4D3E"/>
+    <rect x="186" y="256" width="120" height="18" rx="9" fill="#1B4D3E"/>
+    <rect x="186" y="318" width="140" height="26" rx="13" fill="#1B4D3E"/>
+  </g>
+</svg>

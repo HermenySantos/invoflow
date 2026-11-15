@@ -328,7 +328,7 @@ export default function SummaryPage() {
                   <button
                     type="button"
                     onClick={startEditingVatSales}
-                    className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+                    className="mt-1 -mb-2.5 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-700 touch-manipulation"
                   >
                     Introduzir IVA das vendas
                   </button>
@@ -381,10 +381,10 @@ export default function SummaryPage() {
                   <p className="text-sm font-medium text-gray-900">
                     Excluídos do IVA ({summary.excluded_count}) — por rever
                   </p>
-                  <ul className="mt-2 space-y-1">
+                  <ul className="mt-1">
                     {(summary.excluded_documents ?? []).map((item) => (
                       <li key={item.id} className="text-sm text-gray-600">
-                        <Link href={`/receipts/${item.id}`} className="underline">
+                        <Link href={`/receipts/${item.id}`} className="inline-block py-2 underline touch-manipulation">
                           {item.vendor_name || "Sem fornecedor"}
                           {item.invoice_number ? ` · ${item.invoice_number}` : ""}
                         </Link>
@@ -419,14 +419,14 @@ export default function SummaryPage() {
                       <button
                         onClick={handleSaveVatSales}
                         disabled={isSavingVatSales}
-                        className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                        className="p-2.5 -my-2 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 touch-manipulation"
                         aria-label="Guardar"
                       >
                         <Check className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setIsEditingVatSales(false)}
-                        className="p-1 rounded-md text-gray-400 hover:bg-gray-100"
+                        className="p-2.5 -my-2 rounded-md text-gray-400 hover:bg-gray-100 touch-manipulation"
                         aria-label="Cancelar"
                       >
                         <X className="w-4 h-4" />
@@ -441,7 +441,7 @@ export default function SummaryPage() {
                       </span>
                       <button
                         onClick={startEditingVatSales}
-                        className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                        className="p-3 -m-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 touch-manipulation"
                         aria-label="Editar IVA vendas"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -936,7 +936,7 @@ function CategoryBreakdownSection({
       {items.length > 4 && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full mt-3 flex items-center justify-center gap-1 text-sm text-gray-500 font-medium touch-manipulation py-1"
+          className="w-full mt-3 flex items-center justify-center gap-1 text-sm text-gray-500 font-medium touch-manipulation py-3"
         >
           {expanded ? (
             <>
