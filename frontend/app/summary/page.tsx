@@ -381,10 +381,10 @@ export default function SummaryPage() {
                   <p className="text-sm font-medium text-gray-900">
                     Excluídos do IVA ({summary.excluded_count}) — por rever
                   </p>
-                  <ul className="mt-2 space-y-1">
+                  <ul className="mt-1">
                     {(summary.excluded_documents ?? []).map((item) => (
                       <li key={item.id} className="text-sm text-gray-600">
-                        <Link href={`/receipts/${item.id}`} className="underline">
+                        <Link href={`/receipts/${item.id}`} className="inline-block py-2 underline touch-manipulation">
                           {item.vendor_name || "Sem fornecedor"}
                           {item.invoice_number ? ` · ${item.invoice_number}` : ""}
                         </Link>
