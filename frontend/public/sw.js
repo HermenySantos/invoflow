@@ -7,8 +7,16 @@
  * offline page are stored.
  */
 
-const CACHE = 'invoflow-shell-v1';
-const PRECACHE = ['/offline.html', '/manifest.json', '/favicon.svg', '/icons/icon-192x192.svg'];
+const CACHE = 'invoflow-shell-v2';
+const PRECACHE = [
+  '/offline.html',
+  '/manifest.webmanifest',
+  '/favicon.svg',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-192.png',
+  '/icons/icon-maskable-512.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -55,6 +63,10 @@ self.addEventListener('fetch', (event) => {
 
   // Pages come from the network; offline, show the static notice instead.
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.match('/offline.html')));
+    event.respondWith(
+      fetch(request).catch(() =>
+        caches.match('/offline.html').then((page) => page || Response.error())
+      )
+    );
   }
 });
