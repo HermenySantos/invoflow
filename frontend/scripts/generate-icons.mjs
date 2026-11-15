@@ -12,6 +12,7 @@ const icons = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'ico
 const chrome = process.env.CHROME || 'google-chrome';
 
 const outputs = [
+  { svg: 'icon.svg', png: 'icon-96.png', size: 96 },
   { svg: 'icon.svg', png: 'icon-192.png', size: 192 },
   { svg: 'icon.svg', png: 'icon-512.png', size: 512 },
   { svg: 'icon-maskable.svg', png: 'icon-maskable-192.png', size: 192 },

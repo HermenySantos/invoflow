@@ -57,6 +57,18 @@ describe('web manifest', () => {
     }
   });
 
+  it('gives every shortcut a 96 px icon that exists', () => {
+    for (const shortcut of m.shortcuts ?? []) {
+      const icon = shortcut.icons?.find((i) => i.sizes === '96x96');
+      expect(icon, shortcut.name).toBeDefined();
+      expect(pngSize(publicFile(icon!.src))).toBe('96x96');
+    }
+  });
+
+  it('lists only raster icons, which Chrome can decode for install', () => {
+    expect((m.icons ?? []).every((i) => i.type === 'image/png')).toBe(true);
+  });
+
   it('has an apple-touch-icon at 180 px', () => {
     expect(pngSize(publicFile('/icons/apple-touch-icon.png'))).toBe('180x180');
   });

@@ -1,6 +1,8 @@
 import type { MetadataRoute } from 'next';
 import { APP_DESCRIPTION, APP_NAME, BACKGROUND_COLOR, THEME_COLOR } from '@/lib/pwa';
 
+const SHORTCUT_ICON = { src: '/icons/icon-96.png', sizes: '96x96', type: 'image/png' };
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/',
@@ -21,12 +23,11 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: '/icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
       { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      { src: '/icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
     ],
     shortcuts: [
-      { name: 'Carregar recibo', short_name: 'Carregar', url: '/upload' },
-      { name: 'Recibos', url: '/receipts' },
-      { name: 'IVA', url: '/summary' },
+      { name: 'Carregar recibo', short_name: 'Carregar', url: '/upload', icons: [SHORTCUT_ICON] },
+      { name: 'Recibos', url: '/receipts', icons: [SHORTCUT_ICON] },
+      { name: 'IVA', url: '/summary', icons: [SHORTCUT_ICON] },
     ],
   };
 }
