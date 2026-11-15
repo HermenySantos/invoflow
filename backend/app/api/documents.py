@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
+from app.core.db_errors import retryable_http_error
 from app.core.database import get_db, session_factory
 from app.core.security import get_current_user, CurrentUser
 from app.core.rate_limit import limiter, RATE_LIMITS
@@ -577,6 +578,9 @@ def create_document(
         db.refresh(document)
     except SQLAlchemyError as e:
         db.rollback()
+        retry = retryable_http_error(e)
+        if retry is not None:
+            raise retry from e
         logger.error(f"Database error creating document: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -934,6 +938,9 @@ def update_document(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
     except SQLAlchemyError as e:
         db.rollback()
+        retry = retryable_http_error(e)
+        if retry is not None:
+            raise retry from e
         logger.error(f"Database error updating document: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -990,6 +997,9 @@ def delete_document(
             if attempt == 0 and is_pg_deadlock(exc):
                 logger.warning("delete of document %s deadlocked; retrying", document_id)
                 continue
+            retry = retryable_http_error(exc)
+            if retry is not None:
+                raise retry from exc
             logger.error(f"Database error deleting document: {exc}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

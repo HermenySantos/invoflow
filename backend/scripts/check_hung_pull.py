@@ -83,11 +83,43 @@ def check_hung_pull(account: base.Account) -> None:
             break
         assert response.status_code == 503, response.text
         assert elapsed < PULL_SLEEP, "the hung pull kept the lock until it woke up"
+        time.sleep(0.5)
     assert LOCK_HOLDER_IDLE_SECONDS - 1 < elapsed < PULL_SLEEP - 5, elapsed
     print(f"server ended the idle pull; retried edit saved {elapsed:.1f}s after the pull hung")
 
     puller.join(PULL_SLEEP + 10)
     assert errors, "the hung pull committed after its session was ended"
+    assert account.vat() == [base.Decimal("2.30")], account.rows()
+
+
+def check_idle_pull_answer(account: base.Account) -> None:
+    """GIL-208 N-5: a pull the idle limit ends is the PT-PT 503, not a generic 500.
+
+    psycopg2 reports the server ending the session only as a closed connection.
+    """
+    import app.api.efatura as api
+    import app.services.efatura as service
+    from app.api.efatura import PULL_TIMEOUT_DETAIL
+
+    idle = 2
+    real_import, real_idle = api.import_purchases, service.LOCK_HOLDER_IDLE_SECONDS
+
+    def stalled(db, **kwargs):
+        return real_import(db, after_invoice=lambda _invoice: time.sleep(idle + 2), **kwargs)
+
+    api.import_purchases, service.LOCK_HOLDER_IDLE_SECONDS = stalled, idle
+    try:
+        response = account.client.post(
+            "/api/efatura/pull",
+            headers=account.headers,
+            json={"taxpayer_nif": base.TAXPAYER, "period_start": "2026-01-01", "period_end": "2026-12-31"},
+        )
+    finally:
+        api.import_purchases, service.LOCK_HOLDER_IDLE_SECONDS = real_import, real_idle
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"] == PULL_TIMEOUT_DETAIL, response.text
+    assert response.headers.get("retry-after") == "10", response.headers
+    print(f"pull ended by the idle limit: 503: {response.json()['detail']}")
     assert account.vat() == [base.Decimal("2.30")], account.rows()
 
 
@@ -101,6 +133,7 @@ def main() -> None:
         os.environ.setdefault("STORAGE_MOCK_MODE", "true")
         os.environ.setdefault("OCR_MOCK_MODE", "true")
         os.environ.setdefault("APP_DEBUG", "true")
+        os.environ.setdefault("EFATURA_PULL_ENABLED", "true")
         sys.path.insert(0, str(base.BACKEND))
         base._migrate(url)
         from fastapi.testclient import TestClient
@@ -108,7 +141,9 @@ def main() -> None:
         from app.main import app
 
         with TestClient(app) as client:
-            check_hung_pull(base.Account(url, client))
+            account = base.Account(url, client)
+            check_hung_pull(account)
+            check_idle_pull_answer(account)
         print("hung pull passed")
     finally:
         from app.core.database import engine

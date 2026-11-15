@@ -920,13 +920,6 @@ export default function ReceiptDetailPage() {
               )}
             </div>
 
-            {/* Error message */}
-            {error && (
-              <div className="card p-3 bg-red-50 border-red-200 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                <span className="text-sm text-red-800">{error}</span>
-              </div>
-            )}
           </>
         ) : (
           <div className="card p-6 text-center">
@@ -943,6 +936,13 @@ export default function ReceiptDetailPage() {
       {document && !isLoading && (
         <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200 safe-area-inset-bottom z-40">
           <div className="max-w-lg mx-auto">
+            {/* In the fixed bar, so a 409 or 503 is not hidden under it on a small screen */}
+            {error && (
+              <div role="alert" className="mb-3 p-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                <span className="text-sm text-red-800">{error}</span>
+              </div>
+            )}
             {/* Keep the amounts in view next to the action that confirms them */}
             {!isEditing && (
               <dl className="flex justify-between text-sm mb-3" aria-label="Valores do recibo">
