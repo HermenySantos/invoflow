@@ -419,14 +419,14 @@ export default function SummaryPage() {
                       <button
                         onClick={handleSaveVatSales}
                         disabled={isSavingVatSales}
-                        className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                        className="p-2.5 -my-2 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 touch-manipulation"
                         aria-label="Guardar"
                       >
                         <Check className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setIsEditingVatSales(false)}
-                        className="p-1 rounded-md text-gray-400 hover:bg-gray-100"
+                        className="p-2.5 -my-2 rounded-md text-gray-400 hover:bg-gray-100 touch-manipulation"
                         aria-label="Cancelar"
                       >
                         <X className="w-4 h-4" />
@@ -441,7 +441,7 @@ export default function SummaryPage() {
                       </span>
                       <button
                         onClick={startEditingVatSales}
-                        className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                        className="p-3 -m-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 touch-manipulation"
                         aria-label="Editar IVA vendas"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -936,7 +936,7 @@ function CategoryBreakdownSection({
       {items.length > 4 && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full mt-3 flex items-center justify-center gap-1 text-sm text-gray-500 font-medium touch-manipulation py-1"
+          className="w-full mt-3 flex items-center justify-center gap-1 text-sm text-gray-500 font-medium touch-manipulation py-3"
         >
           {expanded ? (
             <>

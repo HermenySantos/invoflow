@@ -69,7 +69,7 @@ describe('receipt page GIL-208 N-6', () => {
     vi.mocked(api.getDocument).mockResolvedValue(receipt());
   });
 
-  it('shows a 503 from a save inside the fixed action bar, not under it', async () => {
+  it('shows a 503 from a save inside the action bar, not under it', async () => {
     updateDocument.mockRejectedValue(new Error(BUSY));
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ email: 'qa@example.com', id: 'ignored' }));
     render(
@@ -82,7 +82,7 @@ describe('receipt page GIL-208 N-6', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(BUSY);
-    const bar = screen.getByRole('button', { name: 'Está correto' }).closest('.fixed');
+    const bar = screen.getByRole('button', { name: 'Está correto' }).closest('[data-testid="receipt-action-bar"]');
     expect(bar).not.toBeNull();
     expect(bar).toContainElement(alert);
   });

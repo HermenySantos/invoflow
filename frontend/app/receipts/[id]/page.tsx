@@ -469,10 +469,12 @@ export default function ReceiptDetailPage() {
 
   return (
     <AppLayout>
+      {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short */}
+      <div className="flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top">
         <div className="flex items-center justify-between h-14 px-4">
-          <Link href="/receipts" className="p-2 -ml-2 touch-manipulation">
+          <Link href="/receipts" aria-label="Voltar aos recibos" className="p-3 -ml-3 touch-manipulation">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </Link>
           <h1 className="text-lg font-semibold text-gray-900">Recibo</h1>
@@ -480,7 +482,7 @@ export default function ReceiptDetailPage() {
             onClick={handleDeleteClick}
             disabled={isDeleting}
             aria-label="Remover recibo"
-            className="p-2 -mr-2 text-danger-500 touch-manipulation disabled:opacity-50"
+            className="p-3 -mr-3 text-danger-500 touch-manipulation disabled:opacity-50"
           >
             {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
           </button>
@@ -488,7 +490,7 @@ export default function ReceiptDetailPage() {
       </header>
 
       {/* Content */}
-      <div className="p-4 space-y-4 max-w-lg mx-auto pb-56">
+      <div className="w-full flex-1 p-4 space-y-4 max-w-lg mx-auto">
         {isLoading ? (
           <div className="space-y-4">
             <div className="card aspect-[4/3] animate-pulse bg-gray-200" />
@@ -512,7 +514,7 @@ export default function ReceiptDetailPage() {
             <div className="card overflow-hidden">
               <ImageViewer
                 src={document.file_url}
-                alt={`Receipt from ${document.vendor_name || 'vendor'}`}
+                alt={document.vendor_name ? `Recibo de ${document.vendor_name}` : 'Recibo'}
                 mimeType={document.mime_type}
                 filename={document.original_filename}
                 className="aspect-[4/3] bg-gray-100"
@@ -553,7 +555,7 @@ export default function ReceiptDetailPage() {
                   <h2 className="font-semibold text-gray-900">Editar dados</h2>
                   <button 
                     onClick={() => setIsEditing(false)}
-                    className="text-sm text-gray-500 touch-manipulation"
+                    className="-my-2 -mr-3 min-h-11 px-3 text-sm text-gray-500 touch-manipulation"
                   >
                     Cancelar
                   </button>
@@ -932,11 +934,14 @@ export default function ReceiptDetailPage() {
         )}
       </div>
 
-      {/* Fixed bottom action */}
+      {/* Bottom action bar: sticks just above BottomNav; being in the flow, it never covers the content */}
       {document && !isLoading && (
-        <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200 safe-area-inset-bottom z-40">
+        <div
+          data-testid="receipt-action-bar"
+          className="sticky bottom-[var(--ff-nav-h)] z-40 p-4 bg-white border-t border-gray-200"
+        >
           <div className="max-w-lg mx-auto">
-            {/* In the fixed bar, so a 409 or 503 is not hidden under it on a small screen */}
+            {/* In the action bar, so a 409 or 503 is not hidden under it on a small screen */}
             {error && (
               <div role="alert" className="mb-3 p-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
@@ -1061,6 +1066,7 @@ export default function ReceiptDetailPage() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Category Picker Bottom Sheet */}
       {showCategoryPicker && (
@@ -1071,11 +1077,11 @@ export default function ReceiptDetailPage() {
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900">Categoria</h2>
-              <button onClick={() => setShowCategoryPicker(false)} className="p-1 text-gray-400 touch-manipulation">
+              <button onClick={() => setShowCategoryPicker(false)} aria-label="Fechar" className="p-3 -m-2 text-gray-400 touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="overflow-y-auto p-2">
+            <div className="overflow-y-auto p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">
               {EXPENSE_CATEGORY_LIST.map((cat) => {
                 const IconComp = ICON_MAP[cat.icon] || Tag;
                 const isSelected = document?.expense_category === cat.key;
@@ -1106,11 +1112,11 @@ export default function ReceiptDetailPage() {
 
       {/* Delete Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50">
           <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in slide-in-from-bottom sm:zoom-in duration-200">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Remover recibo</h2>
-              <button onClick={handleDeleteCancel} className="p-1 text-gray-400 touch-manipulation">
+              <button onClick={handleDeleteCancel} aria-label="Fechar" className="p-3 -m-2 text-gray-400 touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
             </div>

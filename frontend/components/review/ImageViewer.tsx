@@ -205,7 +205,7 @@ export function ImageViewer({
     return (
       <div className={`relative bg-gray-100 rounded-xl flex flex-col items-center justify-center p-8 ${className}`}>
         <FileText className="w-16 h-16 text-gray-300 mb-3" />
-        <p className="text-sm text-gray-500">No image available</p>
+        <p className="text-sm text-gray-500">Sem imagem disponível</p>
       </div>
     );
   }
@@ -259,7 +259,7 @@ export function ImageViewer({
         <button
           onClick={(e) => { e.stopPropagation(); handleZoomOut(); }}
           disabled={zoomIndex === MIN_ZOOM}
-          className="p-1.5 text-white hover:bg-white/20 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-2.5 text-white hover:bg-white/20 rounded touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="Reduzir"
         >
           <ZoomOut className="w-4 h-4" />
@@ -272,7 +272,7 @@ export function ImageViewer({
         <button
           onClick={(e) => { e.stopPropagation(); handleZoomIn(); }}
           disabled={zoomIndex === MAX_ZOOM}
-          className="p-1.5 text-white hover:bg-white/20 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-2.5 text-white hover:bg-white/20 rounded touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="Ampliar"
         >
           <ZoomIn className="w-4 h-4" />
@@ -282,7 +282,7 @@ export function ImageViewer({
 
         <button
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-          className="p-1.5 text-white hover:bg-white/20 rounded transition-colors"
+          className="p-2.5 text-white hover:bg-white/20 rounded touch-manipulation transition-colors"
           aria-label={isFullscreen ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
         >
           {isFullscreen ? (
@@ -293,10 +293,10 @@ export function ImageViewer({
         </button>
       </div>
 
-      {/* Tap to expand hint on mobile */}
+      {/* Double-tap zoom hint on mobile */}
       {!isFullscreen && zoom === 1 && (
         <div className="absolute bottom-3 left-3 text-xs text-white bg-black/50 backdrop-blur-sm px-2 py-1 rounded-md lg:hidden pointer-events-none">
-          Tap to expand
+          Toque duas vezes para ampliar
         </div>
       )}
     </div>
@@ -309,7 +309,7 @@ export function ImageViewer({
         {/* Close button */}
         <button
           onClick={toggleFullscreen}
-          className="absolute top-4 right-4 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+          className="absolute top-[calc(1rem+env(safe-area-inset-top,0px))] right-4 z-10 p-2.5 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
           aria-label="Fechar ecrã inteiro"
         >
           <X className="w-6 h-6" />
@@ -317,7 +317,7 @@ export function ImageViewer({
 
         {/* Filename */}
         {filename && (
-          <div className="absolute top-4 left-4 text-white text-sm bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+          <div className="absolute top-[calc(1rem+env(safe-area-inset-top,0px))] left-4 max-w-[calc(100%-5.5rem)] truncate text-white text-sm bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-lg">
             {filename}
           </div>
         )}
