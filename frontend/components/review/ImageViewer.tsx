@@ -293,9 +293,9 @@ export function ImageViewer({
         </button>
       </div>
 
-      {/* Double-tap zoom hint on mobile */}
+      {/* Double-tap zoom hint on mobile; at the top, as the 44 px zoom controls fill the bottom of a 360 px viewer */}
       {!isFullscreen && zoom === 1 && (
-        <div className="absolute bottom-3 left-3 text-xs text-white bg-black/50 backdrop-blur-sm px-2 py-1 rounded-md lg:hidden pointer-events-none">
+        <div className="absolute top-3 left-3 text-xs text-white bg-black/50 backdrop-blur-sm px-2 py-1 rounded-md lg:hidden pointer-events-none">
           Toque duas vezes para ampliar
         </div>
       )}

@@ -48,6 +48,9 @@ describe('ImageViewer', () => {
       expect(button.classList.contains('p-3.5')).toBe(true);
       expect(button.classList.contains('lg:p-2.5')).toBe(true);
     }
+    const hint = screen.getByText('Toque duas vezes para ampliar');
+    expect(hint.classList.contains('top-3')).toBe(true);
+    expect(hint.classList.contains('bottom-3')).toBe(false);
   });
 
   it('zooms in when zoom in button is clicked', () => {
