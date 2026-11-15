@@ -6,6 +6,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
 import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
+import { saveErrorMessage } from '@/lib/saveError';
 import { 
   getExpenseCategoryInfo,
   EXPENSE_CATEGORY_LIST,
@@ -68,15 +69,6 @@ const AUDIT_SOURCE_BADGE: Record<string, { label: string; className: string }> =
   user: { label: 'Utilizador', className: 'bg-green-100 text-green-700' },
   system: { label: 'Sistema', className: 'bg-gray-100 text-gray-600' },
 };
-
-/** The API's Portuguese 422, or a generic save failure. */
-function saveError(err: unknown): string {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const message = String((err as { message: unknown }).message);
-    if (message && !message.startsWith('API Error')) return message;
-  }
-  return 'Não foi possível guardar. Tente novamente.';
-}
 
 /** Relative timestamp in Portuguese */
 function relativeTime(dateStr: string): string {
@@ -317,7 +309,7 @@ export default function ReceiptDetailPage() {
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to confirm:', err);
-      setError(saveError(err));
+      setError(saveErrorMessage(err));
     } finally {
       setIsSaving(false);
     }
@@ -351,7 +343,7 @@ export default function ReceiptDetailPage() {
       router.push('/receipts');
     } catch (err) {
       console.error('Failed to save:', err);
-      setError(saveError(err));
+      setError(saveErrorMessage(err));
     } finally {
       setIsSaving(false);
     }
