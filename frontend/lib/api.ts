@@ -333,6 +333,10 @@ export interface Document {
     related_document_id: string;
     related_invoice_number: string | null;
     related_vendor_name: string | null;
+    /** The related row is an e-Fatura row, not a scan. */
+    related_is_efatura?: boolean;
+    /** Its AT number, when a user renumbered it. */
+    related_original_number?: string | null;
   } | null;
   document_date: string | null;
   net_amount: string | null;

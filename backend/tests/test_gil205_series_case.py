@@ -366,6 +366,8 @@ def test_held_row_names_its_receipt_in_the_list_until_it_is_confirmed(client, db
         "related_document_id": scan.id,
         "related_invoice_number": "ft a/5",
         "related_vendor_name": "Loja do Bairro",
+        "related_is_efatura": False,
+        "related_original_number": None,
     }
     assert reviews == {"ft a/5": None, "FT A/5": expected, "FT a/5": expected}
 

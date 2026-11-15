@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.get("")
 @limiter.limit(RATE_LIMITS["export"])
-async def generate_export(
+def generate_export(
     request: Request,
     period_type: str = Query("quarter", pattern="^(month|quarter)$"),
     year: Optional[int] = None,

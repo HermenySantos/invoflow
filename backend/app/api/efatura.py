@@ -1,6 +1,7 @@
 """POST /api/efatura/pull. Off unless EFATURA_PULL_ENABLED is true."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.documents import get_or_create_user
@@ -9,19 +10,30 @@ from app.core.database import get_db
 from app.core.security import CurrentUser, get_current_user
 from app.schemas.efatura import EfaturaPullRequest, EfaturaPullResponse, EfaturaSkipped
 from app.services.efatura import (
+    AccountBusy,
     EFaturaConfigError,
     EFaturaDisabled,
     EFaturaSubjectMismatch,
     InvoiceQuery,
     build_efatura_client,
     import_purchases,
+    is_hold_timeout,
 )
 
 router = APIRouter()
 
+PULL_BUSY_DETAIL = (
+    "Já está a decorrer uma importação do e-Fatura nesta conta. "
+    "Tente novamente dentro de momentos."
+)
+PULL_TIMEOUT_DETAIL = (
+    "A importação do e-Fatura demorou demasiado e foi cancelada. "
+    "Nada foi alterado; tente novamente."
+)
+
 
 @router.post("/pull", response_model=EfaturaPullResponse)
-async def pull_efatura(
+def pull_efatura(
     body: EfaturaPullRequest,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -52,14 +64,30 @@ async def pull_efatura(
             taxpayer_nif=body.taxpayer_nif,
             invoices=invoices,
         )
+        db.commit()
+    except AccountBusy as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=PULL_BUSY_DETAIL,
+            headers={"Retry-After": "10"},
+        ) from exc
     except EFaturaSubjectMismatch as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except OperationalError as exc:
+        db.rollback()
+        if not is_hold_timeout(exc):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=PULL_TIMEOUT_DETAIL,
+            headers={"Retry-After": "10"},
+        ) from exc
 
-    db.commit()
     return EfaturaPullResponse(
         created=list(result.created),
         linked_existing=list(result.linked_existing),

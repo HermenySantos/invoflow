@@ -16,7 +16,10 @@ The upgrade, in order:
 1. Recomputes at_invoice_identity on every AT row, including deleted ones,
    that has an identity or a NIF, number and type. Scans stay as they are.
    The new key only ever tells apart rows the old key merged, so no two live
-   rows can collide.
+   rows can collide. An AT row whose identity fields a user edited gets the
+   identity of the invoice AT sent it, as the app's pull writes it, unless
+   another live row holds that identity. So the migration runs again cleanly
+   after the app has realigned such rows.
 2. Restores an AT row that 012 or 013 soft-deleted as a duplicate
    (its latest audit entry is efatura_dedupe) when its new identity differs
    from the kept row's and no live row has that identity.
@@ -464,8 +467,12 @@ def _apply(bind, now) -> tuple[int, int, int]:
             row["vendor_nif"] and row["invoice_number"] and row["document_type"]
         ):
             continue
-        identity = at_invoice_identity(row["vendor_nif"], row["document_type"], row["invoice_number"])
-        identities[row["id"]] = identity
+        identities[row["id"]] = at_invoice_identity(
+            row["vendor_nif"], row["document_type"], row["invoice_number"]
+        )
+    _held_identities(rows, identities, _first_values(bind))
+    for row_id, identity in identities.items():
+        row = rows[row_id]
         if row["at_invoice_identity"] != identity:
             bind.execute(
                 documents.update()
@@ -505,6 +512,77 @@ def _apply(bind, now) -> tuple[int, int, int]:
             )
         seen[key] = row_id
     return updated, restored, split
+
+
+_KEY_FIELDS = ("vendor_nif", "document_type", "invoice_number")
+
+
+def _first_values(bind) -> dict:
+    """Each document's identity fields before their first user edit."""
+    first: dict = {}
+    for audit in bind.execute(
+        sa.select(audits.c.entity_id, audits.c.changes_json)
+        .where(
+            audits.c.entity_type == "document",
+            audits.c.action == "update",
+            audits.c.source == "user",
+        )
+        .order_by(audits.c.created_at.asc(), audits.c.id.asc())
+    ).mappings():
+        try:
+            changes = json.loads(audit["changes_json"] or "")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(changes, dict):
+            continue
+        for field in _KEY_FIELDS:
+            change = changes.get(field)
+            if isinstance(change, dict):
+                first.setdefault(audit["entity_id"], {}).setdefault(field, change.get("old"))
+    return first
+
+
+def _held_identities(rows, identities, first) -> None:
+    """A user-edited AT row keeps the identity of the invoice AT sent it.
+
+    Its figures are that invoice's, whatever number the user typed. This is
+    what the app writes on its next pull, so a second run of this migration
+    after the app ran does not move the identity back to the typed number.
+    When another live row holds that identity, the row keeps its typed
+    number's, as the app does.
+    """
+    wanted = {}
+    for row_id in identities:
+        values = first.get(row_id)
+        if not values:
+            continue
+        row = rows[row_id]
+        held = at_invoice_identity(
+            *(values[field] if field in values else row[field] for field in _KEY_FIELDS)
+        )
+        if held != identities[row_id]:
+            wanted[row_id] = held
+    while True:
+        final = {
+            row_id: wanted.get(row_id, identity)
+            for row_id, identity in identities.items()
+            if rows[row_id]["deleted_at"] is None
+        }
+        owners: dict = {}
+        for row_id, identity in final.items():
+            owners.setdefault((rows[row_id]["user_id"], identity), []).append(row_id)
+        blocked = {
+            row_id
+            for ids in owners.values()
+            if len(ids) > 1
+            for row_id in ids
+            if row_id in wanted
+        }
+        if not blocked:
+            break
+        for row_id in blocked:
+            del wanted[row_id]
+    identities.update(wanted)
 
 
 def _restore_dedupes(bind, rows, identities, live_row, now) -> int:

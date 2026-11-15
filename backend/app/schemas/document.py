@@ -404,6 +404,10 @@ class EfaturaReview(BaseModel):
     related_document_id: str
     related_invoice_number: Optional[str] = None
     related_vendor_name: Optional[str] = None
+    # The related row is an e-Fatura row, not a scan.
+    related_is_efatura: bool = False
+    # Its AT number, when a user renumbered it.
+    related_original_number: Optional[str] = None
 
 
 class DocumentResponse(BaseModel):

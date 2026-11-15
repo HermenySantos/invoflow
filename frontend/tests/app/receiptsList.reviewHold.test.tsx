@@ -132,6 +132,57 @@ describe('receipts list row held for review', () => {
     expect(within(plain).queryByText(/e-Fatura FT B\/9/)).not.toBeInTheDocument();
   });
 
+  it('names a related e-Fatura row a user renumbered by its AT number', async () => {
+    vi.mocked(api.getDocuments).mockResolvedValue(
+      list([
+        receipt({
+          id: 'doc-held',
+          invoice_number: 'FT E/5',
+          efatura_review: {
+            related_document_id: 'at-edited',
+            related_invoice_number: 'FT E/5',
+            related_vendor_name: 'Loja do Bairro',
+            related_is_efatura: true,
+            related_original_number: 'FT e/5',
+          },
+        }),
+      ]),
+    );
+    renderPage();
+
+    const held = await screen.findByRole('link', { name: /Em revisão/ });
+    expect(
+      within(held).getByText(
+        'Pode corresponder ao documento do e-Fatura FT e/5 (Loja do Bairro), que foi renumerado para FT E/5. Reveja os dois.',
+      ),
+    ).toBeVisible();
+    expect(within(held).queryByText(/ao recibo/)).not.toBeInTheDocument();
+  });
+
+  it('shows an unresolved e-Fatura clash as a badge with its message', async () => {
+    const message = 'A fatura n.º FT A/5 do e-Fatura não foi importada: corresponde a este recibo e a outro.';
+    vi.mocked(api.getDocuments).mockResolvedValue(
+      list([
+        receipt({
+          id: 'doc-clash',
+          vendor_name: 'Papelaria',
+          validation_warnings: [
+            { code: 'efatura_not_imported', message, severity: 'warning', field: 'invoice_number' },
+          ],
+        }),
+        receipt({ id: 'doc-plain', vendor_name: 'Oficina do Bairro' }),
+      ]),
+    );
+    renderPage();
+
+    const row = await screen.findByRole('link', { name: /Papelaria/ });
+    expect(within(row).getByText('e-Fatura por resolver')).toBeVisible();
+    expect(within(row).getByText(message)).toBeVisible();
+    expect(row).toHaveAccessibleName(/e-Fatura por resolver: A fatura n\.º FT A\/5/);
+    const plain = screen.getByRole('link', { name: /Oficina do Bairro/ });
+    expect(within(plain).queryByText('e-Fatura por resolver')).not.toBeInTheDocument();
+  });
+
   it('puts the review note on its own wrapping line on narrow screens', async () => {
     renderPage();
 

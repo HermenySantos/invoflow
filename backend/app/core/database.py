@@ -14,6 +14,9 @@ if settings.database_url.startswith("sqlite"):
     # SQLite + QueuePool + pool_size is a common local-dev crash.
     engine_kwargs = {}
 else:
+    # A session left idle inside a transaction keeps its row locks. Background
+    # OCR holds a transaction open across a read, so the limit is generous.
+    connect_args = {"options": "-c idle_in_transaction_session_timeout=300000"}
     engine_kwargs["pool_size"] = 5
     engine_kwargs["max_overflow"] = 10
 

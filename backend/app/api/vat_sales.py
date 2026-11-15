@@ -24,7 +24,7 @@ router = APIRouter()
 
 
 @router.post("", response_model=VatSalesResponse, status_code=status.HTTP_201_CREATED)
-async def upsert_vat_sales(
+def upsert_vat_sales(
     body: VatSalesCreate,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -70,7 +70,7 @@ async def upsert_vat_sales(
 
 
 @router.get("", response_model=VatSalesListResponse)
-async def list_vat_sales(
+def list_vat_sales(
     year: Optional[int] = Query(None, ge=2020, le=2099),
     period_type: Optional[str] = Query(None, pattern="^(month|quarter)$"),
     db: Session = Depends(get_db),
@@ -90,7 +90,7 @@ async def list_vat_sales(
 
 
 @router.get("/{entry_id}", response_model=VatSalesResponse)
-async def get_vat_sales(
+def get_vat_sales(
     entry_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -108,7 +108,7 @@ async def get_vat_sales(
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_vat_sales(
+def delete_vat_sales(
     entry_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
