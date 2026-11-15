@@ -213,7 +213,7 @@ export default function ReceiptsPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="input mt-1"
+                className="input mt-1 min-h-11 lg:min-h-0"
               />
             </label>
             <label className="flex-1 text-xs text-gray-500">
@@ -222,7 +222,7 @@ export default function ReceiptsPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="input mt-1"
+                className="input mt-1 min-h-11 lg:min-h-0"
               />
             </label>
           </div>
@@ -288,7 +288,7 @@ export default function ReceiptsPage() {
               <button
                 onClick={() => handleCategoryFilter(null)}
                 className={clsx(
-                  "flex-shrink-0 min-h-10 px-4 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
+                  "flex-shrink-0 min-h-11 lg:min-h-10 px-4 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
                   activeCategory === null
                     ? "bg-gray-900 text-white"
                     : "bg-gray-100 text-gray-600",
@@ -304,7 +304,7 @@ export default function ReceiptsPage() {
                     key={cat.key}
                     onClick={() => handleCategoryFilter(cat.key)}
                     className={clsx(
-                      "flex-shrink-0 flex items-center gap-1.5 min-h-10 px-4 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
+                      "flex-shrink-0 flex items-center gap-1.5 min-h-11 lg:min-h-10 px-4 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
                       isActive
                         ? `${cat.color} ${cat.textColor} ring-1 ring-current`
                         : "bg-gray-100 text-gray-600",
@@ -321,7 +321,7 @@ export default function ReceiptsPage() {
             <div className="flex justify-end mb-3">
               <button
                 onClick={() => fetchDocuments(activeCategory)}
-                className="btn-secondary btn-sm flex items-center gap-1"
+                className="btn-secondary btn-sm min-h-11 lg:min-h-0 flex items-center gap-1 touch-manipulation"
                 aria-label="Atualizar lista"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
@@ -344,7 +344,7 @@ export default function ReceiptsPage() {
                     setDateFrom("");
                     setDateTo("");
                   }}
-                  className="btn-secondary btn-sm mt-3"
+                  className="btn-secondary btn-sm min-h-11 lg:min-h-0 mt-3 touch-manipulation"
                 >
                   Limpar filtros
                 </button>

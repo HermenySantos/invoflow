@@ -70,7 +70,7 @@ describe('receipt page GIL-208 N-6', () => {
   });
 
   it('shows a 503 from a save inside the action bar, not under it', async () => {
-    updateDocument.mockRejectedValue(new Error(BUSY));
+    updateDocument.mockRejectedValue({ message: BUSY, status: 503 });
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ email: 'qa@example.com', id: 'ignored' }));
     render(
       <AuthProvider>
@@ -85,5 +85,25 @@ describe('receipt page GIL-208 N-6', () => {
     const bar = screen.getByRole('button', { name: 'Está correto' }).closest('[data-testid="receipt-action-bar"]');
     expect(bar).not.toBeNull();
     expect(bar).toContainElement(alert);
+  });
+
+  it('shows PT-PT copy, not "Failed to fetch", for a save while offline', async () => {
+    updateDocument.mockRejectedValue(new TypeError('Failed to fetch'));
+    const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+    localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ email: 'qa@example.com', id: 'ignored' }));
+    render(
+      <AuthProvider>
+        <ReceiptDetailPage />
+      </AuthProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Está correto' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Sem ligação. As alterações não foram guardadas. Tente de novo quando estiver online.',
+    );
+    expect(alert).not.toHaveTextContent(/fetch/i);
+    onLine.mockRestore();
   });
 });
