@@ -120,7 +120,7 @@ describe('receipt page gate 7', () => {
     await screen.findByRole('button', { name: 'Está correto' });
     fireEvent.click(screen.getByRole('button', { name: 'Editar dados' }));
 
-    fireEvent.change(screen.getByPlaceholderText('Who issued this receipt?'), {
+    fireEvent.change(screen.getByPlaceholderText('Quem emitiu o recibo?'), {
       target: { value: 'Padaria Nova' },
     });
     const amounts = screen.getAllByPlaceholderText('0.00');

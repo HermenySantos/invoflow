@@ -52,8 +52,9 @@
     @apply px-6 py-3 text-base;
   }
 
+  /* 44 px tap target below lg; the desktop height is unchanged. */
   .btn-md {
-    @apply px-4 py-2 text-base;
+    @apply px-4 py-2 text-base min-h-11 lg:min-h-0;
   }
 
   .btn-sm {
@@ -67,7 +68,7 @@
   }
 
   .input {
-    @apply w-full px-4 py-2 focus:outline-none focus:ring-2;
+    @apply w-full px-4 py-2 min-h-11 lg:min-h-0 focus:outline-none focus:ring-2;
     border: 1px solid var(--ff-border);
     border-radius: var(--ff-radius);
   }

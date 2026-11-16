@@ -137,6 +137,13 @@ describe('receipt page gate 11', () => {
     expect(updateDocument).not.toHaveBeenCalled();
   });
 
+  it('gives the printed-pair checkbox row 44 px below lg and keeps its desktop height', async () => {
+    vi.mocked(api.getDocument).mockResolvedValue(receipt({ document_type: 'FT', invoice_number: 'FS 1/2' }));
+    renderPage();
+    const checkbox = await screen.findByLabelText(PRINTED_PAIR_LABEL);
+    expect(checkbox.closest('label')).toHaveClass('min-h-11', 'lg:min-h-0');
+  });
+
   it('refuses an unprefixed credit retype of a linked e-Fatura scan', async () => {
     vi.mocked(api.getDocument).mockResolvedValue(
       receipt({

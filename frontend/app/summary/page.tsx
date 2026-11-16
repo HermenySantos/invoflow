@@ -328,7 +328,7 @@ export default function SummaryPage() {
                   <button
                     type="button"
                     onClick={startEditingVatSales}
-                    className="mt-1 -mb-2.5 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-700 touch-manipulation"
+                    className="mt-1 -mb-2.5 min-h-11 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-700 touch-manipulation lg:min-h-0"
                   >
                     Introduzir IVA das vendas
                   </button>
@@ -384,7 +384,7 @@ export default function SummaryPage() {
                   <ul className="mt-1">
                     {(summary.excluded_documents ?? []).map((item) => (
                       <li key={item.id} className="text-sm text-gray-600">
-                        <Link href={`/receipts/${item.id}`} className="inline-block py-2 underline touch-manipulation">
+                        <Link href={`/receipts/${item.id}`} className="inline-flex min-h-11 items-center py-2 underline touch-manipulation lg:inline-block lg:min-h-0">
                           {item.vendor_name || "Sem fornecedor"}
                           {item.invoice_number ? ` · ${item.invoice_number}` : ""}
                         </Link>
@@ -408,7 +408,7 @@ export default function SummaryPage() {
                         inputMode="decimal"
                         value={vatSalesInput}
                         onChange={(e) => setVatSalesInput(e.target.value)}
-                        className="w-24 px-2 py-1 text-sm text-right border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-24 min-h-11 px-2 py-1 text-sm text-right border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 lg:min-h-0"
                         placeholder="0,00"
                         autoFocus
                         onKeyDown={(e) => {
@@ -419,14 +419,14 @@ export default function SummaryPage() {
                       <button
                         onClick={handleSaveVatSales}
                         disabled={isSavingVatSales}
-                        className="p-2.5 -my-2 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 touch-manipulation"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 -my-2 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 touch-manipulation lg:min-h-0 lg:min-w-0"
                         aria-label="Guardar"
                       >
                         <Check className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setIsEditingVatSales(false)}
-                        className="p-2.5 -my-2 rounded-md text-gray-400 hover:bg-gray-100 touch-manipulation"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 -my-2 rounded-md text-gray-400 hover:bg-gray-100 touch-manipulation lg:min-h-0 lg:min-w-0"
                         aria-label="Cancelar"
                       >
                         <X className="w-4 h-4" />
@@ -441,7 +441,7 @@ export default function SummaryPage() {
                       </span>
                       <button
                         onClick={startEditingVatSales}
-                        className="p-3 -m-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 touch-manipulation"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-3 -m-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 touch-manipulation lg:min-h-0 lg:min-w-0"
                         aria-label="Editar IVA vendas"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -669,7 +669,7 @@ function PeriodSelector({
           <button
             onClick={() => onToggleType('month')}
             className={clsx(
-              'px-4 py-1.5 text-sm font-medium rounded-md transition-colors',
+              'min-h-11 px-4 py-1.5 text-sm font-medium rounded-md transition-colors lg:min-h-0',
               periodType === 'month'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -680,7 +680,7 @@ function PeriodSelector({
           <button
             onClick={() => onToggleType('quarter')}
             className={clsx(
-              'px-4 py-1.5 text-sm font-medium rounded-md transition-colors',
+              'min-h-11 px-4 py-1.5 text-sm font-medium rounded-md transition-colors lg:min-h-0',
               periodType === 'quarter'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -695,7 +695,7 @@ function PeriodSelector({
       <div className="flex items-center justify-between">
         <button
           onClick={() => onNavigate('prev')}
-          className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation lg:min-h-0 lg:min-w-0"
           aria-label="Período anterior"
         >
           <ChevronLeft className="w-5 h-5 text-gray-600" />
@@ -705,7 +705,7 @@ function PeriodSelector({
         </span>
         <button
           onClick={() => onNavigate('next')}
-          className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation lg:min-h-0 lg:min-w-0"
           aria-label="Próximo período"
         >
           <ChevronRight className="w-5 h-5 text-gray-600" />
