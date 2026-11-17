@@ -38,5 +38,24 @@ describe('AppLayout on a phone', () => {
     expect(main.className).toContain('overflow-y-auto');
     expect(main.nextElementSibling).toBe(nav);
     expect(main).toContainElement(screen.getByRole('button', { name: 'Editar IVA vendas' }));
+    expect(main.firstElementChild).toHaveClass('pb-4');
+  });
+
+  it('prints the whole page: no scroll area clipping, no nav', async () => {
+    localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
+    render(
+      <AuthProvider>
+        <AppLayout title="Recibos">
+          <p>Lista</p>
+        </AppLayout>
+      </AuthProvider>,
+    );
+
+    const nav = await screen.findByRole('navigation', { name: 'Navegação principal' });
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main-content');
+    expect(main).toHaveClass('print:overflow-visible', 'print:h-auto', 'print:!m-0');
+    expect(main.parentElement).toHaveClass('print:block', 'print:h-auto');
+    expect(nav).toHaveClass('print:hidden');
   });
 });

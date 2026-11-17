@@ -83,6 +83,8 @@ describe('receipt page on a phone', () => {
     expect(bar.className).toContain('bottom-0');
     expect(bar.className).not.toMatch(/\bfixed\b|\bbottom-16\b/);
     expect(bar.parentElement!.className).toContain('min-h-[calc(100dvh-var(--ff-nav-h))]');
+    // Cancels the scroll area's pb-4, so the bar rests on the nav at the end of the page too.
+    expect(bar.parentElement).toHaveClass('-mb-4');
   });
 
   it('labels the image and the header buttons in Portuguese', async () => {

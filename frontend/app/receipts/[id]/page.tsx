@@ -461,8 +461,9 @@ export default function ReceiptDetailPage() {
 
   return (
     <AppLayout>
-      {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short */}
-      <div className="flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col">
+      {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;
+          -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar */}
+      <div className="-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top">
         <div className="flex items-center justify-between h-14 px-4">
@@ -930,6 +931,7 @@ export default function ReceiptDetailPage() {
       {document && !isLoading && (
         <div
           data-testid="receipt-action-bar"
+          data-fold-cover
           className="sticky bottom-0 z-40 p-4 bg-white border-t border-gray-200"
         >
           <div className="max-w-lg mx-auto">

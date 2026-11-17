@@ -16,7 +16,7 @@ export function BottomNav() {
 
   return (
     <nav
-      className="shrink-0 bg-[var(--ff-bg)] border-t border-[var(--ff-border)] safe-area-inset-bottom z-50"
+      className="shrink-0 print:hidden bg-[var(--ff-bg)] border-t border-[var(--ff-border)] safe-area-inset-bottom z-50"
       aria-label="Navegação principal"
     >
       <ul className="flex items-center justify-around h-16 max-w-lg mx-auto list-none m-0 p-0">

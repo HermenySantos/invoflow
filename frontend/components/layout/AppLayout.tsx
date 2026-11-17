@@ -3,6 +3,7 @@
 import { ReactNode, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { BottomNav } from './BottomNav';
+import { MainScrollArea } from './MainScrollArea';
 import { useAuth } from '@/components/providers/AuthProvider';
 
 interface AppLayoutProps {
@@ -40,7 +41,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
   return (
     /* Only <main> scrolls and the nav sits below it in the flow, so no content can scroll under the nav */
-    <div className="flex h-[100dvh] flex-col">
+    <div className="flex h-[100dvh] flex-col print:block print:h-auto">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-[100] focus:p-4 focus:bg-white focus:text-primary-600 focus:underline"
@@ -66,9 +67,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
         </header>
       )}
 
-      <main id="main-content" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain" tabIndex={-1}>
-        <div className="max-w-lg mx-auto">{children}</div>
-      </main>
+      <MainScrollArea>{children}</MainScrollArea>
 
       <BottomNav />
     </div>
