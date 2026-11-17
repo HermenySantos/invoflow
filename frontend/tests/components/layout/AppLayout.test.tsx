@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
+import { readScroll, scrollKey, writeScroll } from '@/lib/mainScroll';
 
 vi.mock('@clerk/nextjs', () => ({
   useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
@@ -54,8 +55,28 @@ describe('AppLayout on a phone', () => {
     const nav = await screen.findByRole('navigation', { name: 'Navegação principal' });
     const main = screen.getByRole('main');
     expect(main).toHaveAttribute('id', 'main-content');
-    expect(main).toHaveClass('print:overflow-visible', 'print:h-auto', 'print:!m-0');
+    expect(main).toHaveClass('print:overflow-visible', 'print:h-auto');
     expect(main.parentElement).toHaveClass('print:block', 'print:h-auto');
     expect(nav).toHaveClass('print:hidden');
+  });
+
+  it('forgets every saved scroll position on sign-out (Sair)', async () => {
+    localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
+    writeScroll('/receipts', 1200);
+    writeScroll('/receipts?status=ready', 300);
+    sessionStorage.setItem('other', 'kept');
+    render(
+      <AuthProvider>
+        <AppLayout title="Recibos">
+          <p>Lista</p>
+        </AppLayout>
+      </AuthProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sair' }));
+    expect(readScroll('/receipts')).toBe(0);
+    expect(sessionStorage.getItem(scrollKey('/receipts?status=ready'))).toBeNull();
+    expect(sessionStorage.getItem('other')).toBe('kept');
+    sessionStorage.removeItem('other');
   });
 });

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  MAX_FOLD_GAP_PX,
-  foldGap,
+  clearScrollMemory,
+  currentRoute,
   readScroll,
+  requestScrollRestore,
   resetScrollMemoryForTests,
   scrollKey,
   takeRestoreDecision,
@@ -16,6 +17,11 @@ function stubLoadType(type: string | undefined) {
   });
 }
 
+function popstateTo(route: string) {
+  window.history.pushState(null, '', route);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 describe('scroll memory', () => {
   beforeEach(() => {
     resetScrollMemoryForTests();
@@ -27,13 +33,15 @@ describe('scroll memory', () => {
     window.history.replaceState(null, '', '/');
   });
 
-  it('stores the position per pathname', () => {
+  it('keys the route by pathname and search', () => {
+    window.history.replaceState(null, '', '/receipts?status=ready');
+    expect(currentRoute()).toBe('/receipts?status=ready');
+    writeScroll('/receipts?status=ready', 300);
     writeScroll('/receipts', 1200.4);
-    writeScroll('/summary', 900);
     expect(sessionStorage.getItem(scrollKey('/receipts'))).toBe('1200');
+    expect(readScroll('/receipts?status=ready')).toBe(300);
     expect(readScroll('/receipts')).toBe(1200);
-    expect(readScroll('/summary')).toBe(900);
-    expect(readScroll('/upload')).toBe(0);
+    expect(readScroll('/receipts?status=failed')).toBe(0);
   });
 
   it('reads 0 for a missing, negative or broken value', () => {
@@ -41,6 +49,19 @@ describe('scroll memory', () => {
     sessionStorage.setItem(scrollKey('/b'), '-5');
     expect(readScroll('/a')).toBe(0);
     expect(readScroll('/b')).toBe(0);
+  });
+
+  it('forgets every saved position, and nothing else, on sign-out', () => {
+    writeScroll('/receipts', 1200);
+    writeScroll('/summary?period=2026-Q1', 900);
+    sessionStorage.setItem('other', 'kept');
+    requestScrollRestore('/receipts');
+    clearScrollMemory();
+    expect(readScroll('/receipts')).toBe(0);
+    expect(readScroll('/summary?period=2026-Q1')).toBe(0);
+    expect(sessionStorage.getItem('other')).toBe('kept');
+    takeRestoreDecision('/upload');
+    expect(takeRestoreDecision('/receipts')).toBe(false);
   });
 
   it('starts a new navigation at the top', () => {
@@ -59,36 +80,30 @@ describe('scroll memory', () => {
     expect(takeRestoreDecision('/summary')).toBe(true);
   });
 
-  it('restores the screen that back or forward (popstate) lands on, once', () => {
-    takeRestoreDecision('/receipts');
-    window.history.pushState(null, '', '/receipts');
-    window.dispatchEvent(new PopStateEvent('popstate'));
-    expect(takeRestoreDecision('/receipts')).toBe(true);
-    expect(takeRestoreDecision('/summary')).toBe(false);
+  it('restores the route that back or forward (popstate) lands on, once', () => {
+    takeRestoreDecision('/receipts/doc-1');
+    popstateTo('/receipts?status=ready');
+    expect(takeRestoreDecision('/receipts?status=ready')).toBe(true);
+    expect(takeRestoreDecision('/receipts?status=ready')).toBe(false);
   });
 
-  it('does not restore a different screen than the one popstate landed on', () => {
+  it('does not restore a route other than the one popstate landed on', () => {
     takeRestoreDecision('/receipts');
-    window.history.pushState(null, '', '/summary');
-    window.dispatchEvent(new PopStateEvent('popstate'));
+    popstateTo('/summary');
     expect(takeRestoreDecision('/receipts')).toBe(false);
   });
-});
 
-describe('foldGap', () => {
-  it('is 0 when no control crosses the fold', () => {
-    expect(foldGap(700, [{ top: 600, bottom: 644 }, { top: 700, bottom: 744 }, { top: 760, bottom: 804 }])).toBe(0);
+  it('restores the next push to a requested route (the list after a save), once', () => {
+    takeRestoreDecision('/receipts/doc-1');
+    requestScrollRestore('/receipts');
+    expect(takeRestoreDecision('/receipts')).toBe(true);
+    expect(takeRestoreDecision('/receipts')).toBe(false);
   });
 
-  it('raises the fold to the top of a control it cuts (the 44 px pencil at the fold)', () => {
-    expect(foldGap(687, [{ top: 663, bottom: 707 }])).toBe(24);
-  });
-
-  it('keeps raising while the new fold cuts another control', () => {
-    expect(foldGap(700, [{ top: 680, bottom: 724 }, { top: 660, bottom: 690 }])).toBe(40);
-  });
-
-  it('leaves a control taller than the cap alone', () => {
-    expect(foldGap(700, [{ top: 700 - MAX_FOLD_GAP_PX - 1, bottom: 900 }])).toBe(0);
+  it('drops a restore request when another route mounts first', () => {
+    takeRestoreDecision('/receipts/doc-1');
+    requestScrollRestore('/receipts');
+    expect(takeRestoreDecision('/summary')).toBe(false);
+    expect(takeRestoreDecision('/receipts')).toBe(false);
   });
 });

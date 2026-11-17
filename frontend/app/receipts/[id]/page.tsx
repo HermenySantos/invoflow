@@ -7,6 +7,7 @@ import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
 import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { saveErrorMessage } from '@/lib/saveError';
+import { requestScrollRestore } from '@/lib/mainScroll';
 import { 
   getExpenseCategoryInfo,
   EXPENSE_CATEGORY_LIST,
@@ -89,6 +90,11 @@ function relativeTime(dateStr: string): string {
 export default function ReceiptDetailPage() {
   const params = useParams();
   const router = useRouter();
+  /* After a save or delete, back on the list where the user left it, as with the back button */
+  const backToList = () => {
+    requestScrollRestore('/receipts');
+    router.push('/receipts');
+  };
   const [document, setDocument] = useState<Document | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -306,7 +312,7 @@ export default function ReceiptDetailPage() {
       setError(null);
       
       await api.updateDocument(document.id, confirmed);
-      router.push('/receipts');
+      backToList();
     } catch (err) {
       console.error('Failed to confirm:', err);
       setError(saveErrorMessage(err));
@@ -340,7 +346,7 @@ export default function ReceiptDetailPage() {
       setError(null);
       
       await api.updateDocument(document.id, saveEditPayload(editData, mismatch && canOverride));
-      router.push('/receipts');
+      backToList();
     } catch (err) {
       console.error('Failed to save:', err);
       setError(saveErrorMessage(err));
@@ -359,7 +365,7 @@ export default function ReceiptDetailPage() {
       setIsDeleting(true);
       await api.deleteDocument(document.id);
       setShowDeleteModal(false);
-      router.push('/receipts');
+      backToList();
     } catch (err) {
       console.error('Failed to delete:', err);
       setIsDeleting(false);
@@ -931,7 +937,6 @@ export default function ReceiptDetailPage() {
       {document && !isLoading && (
         <div
           data-testid="receipt-action-bar"
-          data-fold-cover
           className="sticky bottom-0 z-40 p-4 bg-white border-t border-gray-200"
         >
           <div className="max-w-lg mx-auto">

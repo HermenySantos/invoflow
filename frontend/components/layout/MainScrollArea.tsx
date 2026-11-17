@@ -2,49 +2,35 @@
 
 import { ReactNode, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { FOLD_CONTROLS, FOLD_COVER, foldGap, readScroll, takeRestoreDecision, writeScroll } from '@/lib/mainScroll';
+import { currentRoute, readScroll, takeRestoreDecision, writeScroll } from '@/lib/mainScroll';
 
 const RESTORE_TIMEOUT_MS = 5000;
 const USER_SCROLL_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
 
 /** The app's only scroll area: between the header and BottomNav, with its position kept per route. */
 export function MainScrollArea({ children }: { children: ReactNode }) {
-  const pathname = usePathname() ?? '';
+  const pathname = usePathname();
   const mainRef = useRef<HTMLElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   /* Kept in a ref so Strict Mode's second effect run reuses the decision instead of taking a fresh one */
-  const decision = useRef<{ pathname: string; restore: boolean } | null>(null);
+  const decision = useRef<{ route: string; restore: boolean } | null>(null);
 
   useEffect(() => {
     const main = mainRef.current;
-    const content = contentRef.current;
-    if (!main || !content) return;
+    if (!main) return;
 
-    if (decision.current?.pathname !== pathname) {
-      decision.current = { pathname, restore: takeRestoreDecision(pathname) };
+    /* Read from location rather than useSearchParams, which would need a Suspense boundary on every static page */
+    const route = currentRoute();
+    if (decision.current?.route !== route) {
+      decision.current = { route, restore: takeRestoreDecision(route) };
     }
-    const target = decision.current.restore ? readScroll(pathname) : 0;
-
-    const updateFoldGap = () => {
-      const current = parseFloat(main.style.marginBottom) || 0;
-      const cover = content.querySelector(FOLD_COVER);
-      const foldLine = main.getBoundingClientRect().bottom + current - (cover?.getBoundingClientRect().height ?? 0);
-      const rects = Array.from(content.querySelectorAll(FOLD_CONTROLS))
-        .filter((el) => !cover?.contains(el))
-        .map((el) => el.getBoundingClientRect())
-        .filter((r) => r.width > 1 && r.height > 1);
-      const gap = foldGap(foldLine, rects);
-      if (gap !== current) main.style.marginBottom = gap ? `${gap}px` : '';
-    };
+    const target = decision.current.restore ? readScroll(route) : 0;
 
     let restoring = target > 0;
     let restoreFrame = 0;
     const started = Date.now();
     const stopRestoring = () => {
-      if (!restoring) return;
       restoring = false;
       cancelAnimationFrame(restoreFrame);
-      updateFoldGap();
     };
     const restore = () => {
       main.scrollTop = target;
@@ -55,13 +41,13 @@ export function MainScrollArea({ children }: { children: ReactNode }) {
       restore();
     } else {
       main.scrollTop = 0;
-      writeScroll(pathname, 0);
+      writeScroll(route, 0);
     }
 
     let saveFrame = 0;
     let unsavedTop: number | null = null;
     const save = () => {
-      if (unsavedTop !== null) writeScroll(pathname, unsavedTop);
+      if (unsavedTop !== null) writeScroll(route, unsavedTop);
       unsavedTop = null;
     };
     const onScroll = () => {
@@ -73,19 +59,12 @@ export function MainScrollArea({ children }: { children: ReactNode }) {
     main.addEventListener('scroll', onScroll, { passive: true });
     USER_SCROLL_EVENTS.forEach((type) => main.addEventListener(type, stopRestoring, { passive: true }));
 
-    updateFoldGap();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateFoldGap);
-    observer?.observe(main);
-    observer?.observe(content);
-
     return () => {
-      restoring = false;
-      cancelAnimationFrame(restoreFrame);
+      stopRestoring();
       cancelAnimationFrame(saveFrame);
       save();
       main.removeEventListener('scroll', onScroll);
       USER_SCROLL_EVENTS.forEach((type) => main.removeEventListener(type, stopRestoring));
-      observer?.disconnect();
     };
   }, [pathname]);
 
@@ -93,13 +72,11 @@ export function MainScrollArea({ children }: { children: ReactNode }) {
     <main
       ref={mainRef}
       id="main-content"
-      className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain print:!m-0 print:h-auto print:overflow-visible"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain print:h-auto print:overflow-visible"
       tabIndex={-1}
     >
-      {/* Bottom padding so the last row clears the nav */}
-      <div ref={contentRef} className="max-w-lg mx-auto pb-4">
-        {children}
-      </div>
+      {/* Bottom padding so the last row clears the nav at the end of the scroll */}
+      <div className="max-w-lg mx-auto pb-4">{children}</div>
     </main>
   );
 }

@@ -112,7 +112,7 @@ export function ScanReceipt() {
 
       {state === 'idle' ? (
         <div className="space-y-4">
-          {/* On a short screen (phone in landscape) the tile is a row, so the fold does not cut it */}
+          {/* On a short screen (phone in landscape) the tile is a row, so it and 'Carregar PDF ou foto' fit above the nav */}
           <button
             onClick={() => cameraInputRef.current?.click()}
             className="card p-8 w-full flex flex-col items-center justify-center gap-4 hover:bg-gray-50 transition-colors border-2 border-dashed border-gray-300 [@media(max-height:500px)]:flex-row [@media(max-height:500px)]:p-4"
