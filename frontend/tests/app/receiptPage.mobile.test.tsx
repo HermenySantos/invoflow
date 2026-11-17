@@ -80,7 +80,7 @@ describe('receipt page on a phone', () => {
     // A fixed bar at a hard-coded offset covered the nav's top edge, and more of it
     // above Android's gesture bar; it also hid content whenever it grew taller.
     expect(bar.className).toContain('sticky');
-    expect(bar.className).toContain('bottom-[var(--ff-nav-h)]');
+    expect(bar.className).toContain('bottom-0');
     expect(bar.className).not.toMatch(/\bfixed\b|\bbottom-16\b/);
     expect(bar.parentElement!.className).toContain('min-h-[calc(100dvh-var(--ff-nav-h))]');
   });

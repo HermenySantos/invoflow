@@ -926,11 +926,11 @@ export default function ReceiptDetailPage() {
         )}
       </div>
 
-      {/* Bottom action bar: sticks just above BottomNav; being in the flow, it never covers the content */}
+      {/* Bottom action bar: sticks to the bottom of the scroll area, just above BottomNav; being in the flow, it never covers the content */}
       {document && !isLoading && (
         <div
           data-testid="receipt-action-bar"
-          className="sticky bottom-[var(--ff-nav-h)] z-40 p-4 bg-white border-t border-gray-200"
+          className="sticky bottom-0 z-40 p-4 bg-white border-t border-gray-200"
         >
           <div className="max-w-lg mx-auto">
             {/* In the action bar, so a 409 or 503 is not hidden under it on a small screen */}

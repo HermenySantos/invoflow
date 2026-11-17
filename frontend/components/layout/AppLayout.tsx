@@ -39,7 +39,8 @@ export function AppLayout({ children, title }: AppLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen pb-[var(--ff-nav-h)]">
+    /* Only <main> scrolls and the nav sits below it in the flow, so no content can scroll under the nav */
+    <div className="flex h-[100dvh] flex-col">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-[100] focus:p-4 focus:bg-white focus:text-primary-600 focus:underline"
@@ -48,7 +49,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
       </a>
 
       {title && (
-        <header className="sticky top-0 z-40 bg-[var(--ff-bg)] border-b border-[var(--ff-border)] safe-area-inset-top">
+        <header className="shrink-0 bg-[var(--ff-bg)] border-b border-[var(--ff-border)] safe-area-inset-top">
           <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
             <h1 className="text-lg font-semibold">{title}</h1>
             <button
@@ -65,8 +66,8 @@ export function AppLayout({ children, title }: AppLayoutProps) {
         </header>
       )}
 
-      <main id="main-content" className="max-w-lg mx-auto" tabIndex={-1}>
-        {children}
+      <main id="main-content" className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain" tabIndex={-1}>
+        <div className="max-w-lg mx-auto">{children}</div>
       </main>
 
       <BottomNav />
