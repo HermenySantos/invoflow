@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  SAVE_CONFLICT_ERROR,
   SAVE_GENERIC_ERROR,
+  SAVE_INVALID_ERROR,
+  SAVE_UNAVAILABLE_ERROR,
   SAVE_NOT_FOUND_ERROR,
   SAVE_OFFLINE_ERROR,
   SAVE_SESSION_ERROR,
@@ -15,6 +18,32 @@ const DB_BUSY =
   'Outra operação nesta conta estava a decorrer ao mesmo tempo. Nada foi guardado; tente novamente dentro de momentos.';
 const DUPLICATE = 'Já existe outro documento com o n.º FT A/1.';
 const AMOUNT_MISMATCH = 'O valor líquido mais o IVA tem de ser igual ao total.';
+
+/** Words of the English texts a proxy, framework or handler may put in the body. */
+const ENGLISH_WORDS =
+  /\b(conflict|invoice|already|exists|service|unavailable|error|invalid|request|data|failed|database|constraint|violation|entity|the)\b/i;
+
+const STATUS_FALLBACK: Record<number, string> = {
+  409: SAVE_CONFLICT_ERROR,
+  422: SAVE_INVALID_ERROR,
+  503: SAVE_UNAVAILABLE_ERROR,
+};
+
+/** backend/app/api/documents.py, schemas/document.py and core/db_errors.py, for PATCH /documents/{id}. */
+const BACKEND_DETAILS: Record<number, string[]> = {
+  409: ['Já existe outro documento com este NIF e n.º.', DUPLICATE, 'Já existe outro documento com o n.º 2026/12.'],
+  422: [
+    AMOUNT_MISMATCH,
+    'Indique o tipo de documento antes de o marcar como pronto.',
+    'O tipo de documento não pode ficar vazio.',
+    'O n.º do documento não corresponde ao tipo indicado.',
+  ],
+  503: [
+    EDIT_BUSY,
+    DB_BUSY,
+    'A operação demorou demasiado e foi interrompida. Nada foi guardado; tente novamente.',
+  ],
+};
 
 const BROWSER_FETCH_FAILURES = [
   new TypeError('Failed to fetch'),
@@ -76,13 +105,60 @@ describe('saveErrorMessage', () => {
     expect(saveErrorMessage({ status: 500, message: 'Failed to update document' }, false)).toBe(SAVE_GENERIC_ERROR);
     expect(saveErrorMessage({ status: 502, message: 'API Error: Bad Gateway' }, false)).toBe(SAVE_GENERIC_ERROR);
     expect(saveErrorMessage({ status: 409, message: 'Database constraint violation' }, false)).toBe(
-      SAVE_GENERIC_ERROR,
+      SAVE_CONFLICT_ERROR,
     );
-    expect(saveErrorMessage({ status: 422, message: 'Invalid request data' }, false)).toBe(SAVE_GENERIC_ERROR);
+    expect(saveErrorMessage({ status: 422, message: 'Invalid request data' }, false)).toBe(SAVE_INVALID_ERROR);
     expect(saveErrorMessage({ status: 503, message: 'API Error: Service Unavailable' }, false)).toBe(
-      SAVE_GENERIC_ERROR,
+      SAVE_UNAVAILABLE_ERROR,
     );
-    expect(saveErrorMessage({ status: 503, message: '  ' }, false)).toBe(SAVE_GENERIC_ERROR);
+    expect(saveErrorMessage({ status: 503, message: '  ' }, false)).toBe(SAVE_UNAVAILABLE_ERROR);
+  });
+
+  it('replaces an injected English 409 with the PT-PT conflict copy', () => {
+    const shown = saveErrorMessage({ status: 409, message: 'Conflict: invoice already exists' }, false);
+    expect(shown).toBe(SAVE_CONFLICT_ERROR);
+    expect(shown).not.toMatch(ENGLISH_WORDS);
+  });
+
+  it('replaces an injected English 503 with the PT-PT unavailable copy', () => {
+    const shown = saveErrorMessage({ status: 503, message: 'Service Unavailable' }, false);
+    expect(shown).toBe(SAVE_UNAVAILABLE_ERROR);
+    expect(shown).not.toMatch(ENGLISH_WORDS);
+  });
+
+  it.each([409, 422, 503])('passes no unknown %i detail through, PT-PT-looking or not', (status) => {
+    for (const message of [
+      'Conflict: invoice already exists',
+      'Service Unavailable',
+      'Unprocessable Entity',
+      'value is not a valid decimal',
+      'Erro interno qualquer',
+      'Já existe outro documento com o n.º ',
+    ]) {
+      const shown = saveErrorMessage({ status, message }, false);
+      expect(shown).toBe(STATUS_FALLBACK[status]);
+      expect(shown).not.toMatch(ENGLISH_WORDS);
+    }
+  });
+
+  it('keeps every PT-PT detail the save endpoint sends', () => {
+    for (const [status, messages] of Object.entries(BACKEND_DETAILS)) {
+      for (const message of messages) {
+        expect(saveErrorMessage({ status: Number(status), message: `  ${message} ` }, false)).toBe(message);
+      }
+    }
+  });
+
+  it('does not let a known detail through under another status', () => {
+    expect(saveErrorMessage({ status: 422, message: EDIT_BUSY }, false)).toBe(SAVE_INVALID_ERROR);
+    expect(saveErrorMessage({ status: 503, message: DUPLICATE }, false)).toBe(SAVE_UNAVAILABLE_ERROR);
+    expect(saveErrorMessage({ status: 500, message: AMOUNT_MISMATCH }, false)).toBe(SAVE_GENERIC_ERROR);
+  });
+
+  it('writes its fallback copy in PT-PT', () => {
+    for (const copy of [SAVE_CONFLICT_ERROR, SAVE_INVALID_ERROR, SAVE_UNAVAILABLE_ERROR]) {
+      expect(copy).not.toMatch(ENGLISH_WORDS);
+    }
   });
 
   it('uses the API answer over the offline flag: the server did reply', () => {

@@ -602,7 +602,7 @@ export default function ReceiptDetailPage() {
                     type="text"
                     value={editData.vendor_name}
                     onChange={(e) => setEditData(d => ({ ...d, vendor_name: e.target.value }))}
-                    placeholder="Who issued this receipt?"
+                    placeholder="Quem emitiu o recibo?"
                     className="input"
                   />
                 </div>
@@ -737,7 +737,7 @@ export default function ReceiptDetailPage() {
                     {/* VAT breakdown */}
                     {document.vat_amount && (
                       <div className="text-right">
-                        <p className="text-xs text-gray-500">VAT {getVatRateDisplay()}</p>
+                        <p className="text-xs text-gray-500">IVA {getVatRateDisplay()}</p>
                         <p className="text-sm font-medium text-gray-700">
                           {formatCurrency(document.vat_amount)}
                         </p>
@@ -961,7 +961,7 @@ export default function ReceiptDetailPage() {
                   {editCanOverride ? (
                     <>
                       <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
-                      <label className="flex items-start gap-2 text-sm text-gray-800">
+                      <label className="flex min-h-11 items-start gap-2 text-sm text-gray-800 lg:min-h-0">
                         <input
                           type="checkbox"
                           className="mt-1"
@@ -1023,7 +1023,7 @@ export default function ReceiptDetailPage() {
                   {confirmCanOverride ? (
                     <>
                       <p className="text-sm text-amber-800">{SERIES_OVERRIDE_WARNING}</p>
-                      <label className="flex items-start gap-2 text-sm text-gray-800">
+                      <label className="flex min-h-11 items-start gap-2 text-sm text-gray-800 lg:min-h-0">
                         <input
                           type="checkbox"
                           className="mt-1"
