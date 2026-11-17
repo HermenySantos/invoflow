@@ -4,6 +4,9 @@
  */
 
 const KEY_PREFIX = 'invoflow:scroll:';
+/* Routes with a saved position, oldest first; outside KEY_PREFIX so it never reads as a route */
+const ORDER_KEY = 'invoflow:scroll-order';
+export const MAX_SAVED_ROUTES = 50;
 
 let popstateRoute: string | null = null;
 let requestedRoute: string | null = null;
@@ -32,9 +35,25 @@ export function readScroll(route: string): number {
   }
 }
 
+function readOrder(): string[] {
+  try {
+    const order: unknown = JSON.parse(sessionStorage.getItem(ORDER_KEY) ?? '[]');
+    return Array.isArray(order) ? order.filter((route): route is string => typeof route === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Saves `top` for `route`, keeping only the MAX_SAVED_ROUTES most recently written routes. */
 export function writeScroll(route: string, top: number): void {
   try {
     sessionStorage.setItem(scrollKey(route), String(Math.max(0, Math.round(top))));
+    const order = readOrder();
+    if (order[order.length - 1] === route) return;
+    const next = order.filter((saved) => saved !== route);
+    next.push(route);
+    next.splice(0, next.length - MAX_SAVED_ROUTES).forEach((evicted) => sessionStorage.removeItem(scrollKey(evicted)));
+    sessionStorage.setItem(ORDER_KEY, JSON.stringify(next));
   } catch {
     // Storage full or blocked: the position is just not remembered.
   }
@@ -47,6 +66,7 @@ export function clearScrollMemory(): void {
       const key = sessionStorage.key(i);
       if (key?.startsWith(KEY_PREFIX)) sessionStorage.removeItem(key);
     }
+    sessionStorage.removeItem(ORDER_KEY);
   } catch {
     // Storage blocked: nothing was saved.
   }
