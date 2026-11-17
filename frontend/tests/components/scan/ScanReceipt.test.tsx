@@ -56,3 +56,11 @@ describe('ScanReceipt on a phone', () => {
     expect(filesClick).toHaveBeenCalledTimes(1);
   });
 });
+describe('ScanReceipt on a short screen', () => {
+  it('lays the camera tile out as a row below 500 px of height, so a phone in landscape shows all of it', () => {
+    render(<ScanReceipt />);
+    const tile = screen.getByRole('button', { name: /Fotografar/ });
+    expect(tile).toHaveClass('flex-col', 'p-8', '[@media(max-height:500px)]:flex-row', '[@media(max-height:500px)]:p-4');
+    expect(tile.firstElementChild).toHaveClass('w-20', 'h-20', '[@media(max-height:500px)]:w-12', '[@media(max-height:500px)]:h-12');
+  });
+});

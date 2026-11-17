@@ -112,11 +112,12 @@ export function ScanReceipt() {
 
       {state === 'idle' ? (
         <div className="space-y-4">
+          {/* On a short screen (phone in landscape) the tile is a row, so the fold does not cut it */}
           <button
             onClick={() => cameraInputRef.current?.click()}
-            className="card p-8 w-full flex flex-col items-center justify-center gap-4 hover:bg-gray-50 transition-colors border-2 border-dashed border-gray-300"
+            className="card p-8 w-full flex flex-col items-center justify-center gap-4 hover:bg-gray-50 transition-colors border-2 border-dashed border-gray-300 [@media(max-height:500px)]:flex-row [@media(max-height:500px)]:p-4"
           >
-            <div className="w-20 h-20 rounded-full bg-primary-100 flex items-center justify-center">
+            <div className="w-20 h-20 rounded-full bg-primary-100 flex items-center justify-center [@media(max-height:500px)]:w-12 [@media(max-height:500px)]:h-12">
               <Camera className="w-10 h-10 text-primary-600" />
             </div>
             <div className="text-center">
