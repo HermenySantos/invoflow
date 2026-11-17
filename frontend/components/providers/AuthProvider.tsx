@@ -9,6 +9,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useUser, useClerk } from '@clerk/nextjs';
 import { DEMO_AUTH_KEY, demoUserId, readDemoUser } from '@/lib/demoUser';
+import { clearScrollMemory } from '@/lib/mainScroll';
 
 interface User {
   id: string;
@@ -50,6 +51,7 @@ function MockAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = () => {
+    clearScrollMemory();
     setUser(null);
     localStorage.removeItem(DEMO_AUTH_KEY);
   };
@@ -87,7 +89,10 @@ function ClerkAuthBridge({ children }: { children: ReactNode }) {
         isAuthenticated: !!isSignedIn,
         isLoading: !isLoaded,
         signIn: () => {},
-        signOut: () => clerkSignOut(),
+        signOut: () => {
+          clearScrollMemory();
+          clerkSignOut();
+        },
       }}
     >
       {children}

@@ -7,6 +7,7 @@ import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
 import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
 import { saveErrorMessage } from '@/lib/saveError';
+import { requestScrollRestore } from '@/lib/mainScroll';
 import { 
   getExpenseCategoryInfo,
   EXPENSE_CATEGORY_LIST,
@@ -89,6 +90,11 @@ function relativeTime(dateStr: string): string {
 export default function ReceiptDetailPage() {
   const params = useParams();
   const router = useRouter();
+  /* After a save or delete, back on the list where the user left it, as with the back button */
+  const backToList = () => {
+    requestScrollRestore('/receipts');
+    router.push('/receipts');
+  };
   const [document, setDocument] = useState<Document | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -306,7 +312,7 @@ export default function ReceiptDetailPage() {
       setError(null);
       
       await api.updateDocument(document.id, confirmed);
-      router.push('/receipts');
+      backToList();
     } catch (err) {
       console.error('Failed to confirm:', err);
       setError(saveErrorMessage(err));
@@ -340,7 +346,7 @@ export default function ReceiptDetailPage() {
       setError(null);
       
       await api.updateDocument(document.id, saveEditPayload(editData, mismatch && canOverride));
-      router.push('/receipts');
+      backToList();
     } catch (err) {
       console.error('Failed to save:', err);
       setError(saveErrorMessage(err));
@@ -359,7 +365,7 @@ export default function ReceiptDetailPage() {
       setIsDeleting(true);
       await api.deleteDocument(document.id);
       setShowDeleteModal(false);
-      router.push('/receipts');
+      backToList();
     } catch (err) {
       console.error('Failed to delete:', err);
       setIsDeleting(false);
@@ -461,8 +467,9 @@ export default function ReceiptDetailPage() {
 
   return (
     <AppLayout>
-      {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short */}
-      <div className="flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col">
+      {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;
+          -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar */}
+      <div className="-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top">
         <div className="flex items-center justify-between h-14 px-4">
@@ -926,11 +933,11 @@ export default function ReceiptDetailPage() {
         )}
       </div>
 
-      {/* Bottom action bar: sticks just above BottomNav; being in the flow, it never covers the content */}
+      {/* Bottom action bar: sticks to the bottom of the scroll area, just above BottomNav; being in the flow, it never covers the content */}
       {document && !isLoading && (
         <div
           data-testid="receipt-action-bar"
-          className="sticky bottom-[var(--ff-nav-h)] z-40 p-4 bg-white border-t border-gray-200"
+          className="sticky bottom-0 z-40 p-4 bg-white border-t border-gray-200"
         >
           <div className="max-w-lg mx-auto">
             {/* In the action bar, so a 409 or 503 is not hidden under it on a small screen */}

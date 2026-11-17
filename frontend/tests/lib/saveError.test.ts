@@ -149,6 +149,41 @@ describe('saveErrorMessage', () => {
     }
   });
 
+  it.each([
+    'Já existe outro documento com o n.º FT 2026/12.',
+    'Já existe outro documento com o n.º NC. 2026/5.',
+    'Já existe outro documento com o n.º N C A/5.',
+    'Já existe outro documento com o n.º NC1 2026.',
+    'Já existe outro documento com o n.º FR-2026/0001.',
+  ])('keeps a 409 duplicate detail that names a real document number: %s', (message) => {
+    expect(saveErrorMessage({ status: 409, message }, false)).toBe(message);
+  });
+
+  it.each([
+    `${DUPLICATE} Please try again.`,
+    `${DUPLICATE} Conflict.`,
+    `${DUPLICATE} OK.`,
+    'Já existe outro documento com o n.º FT K/1..',
+    'Já existe outro documento com o n.º FT K/1...',
+    'Já existe outro documento com o n.º FT A/1. Please retry.',
+    'Já existe outro documento com o n.º FT A/1 already exists.',
+    'Já existe outro documento com o n.º FT A/1 in use.',
+    'Já existe outro documento com o n.º FT A/1 (conflict).',
+    'Já existe outro documento com o n.º FT A/1 - see logs.',
+    'Já existe outro documento com o n.º FT A/1.\nDuplicate key value violates unique constraint.',
+    'Já existe outro documento com o n.º FT A/1: "Conflict".',
+    'Já existe outro documento com o n.º invoice already exists.',
+    `Já existe outro documento com o n.º ${'1'.repeat(101)}.`,
+    'Já existe outro documento com este NIF e n.º. Conflict.',
+    `${EDIT_BUSY} Service Unavailable.`,
+    `${AMOUNT_MISMATCH} Invalid request data.`,
+  ])('replaces a PT-PT detail with text appended by the fixed copy: %s', (message) => {
+    const status = message.startsWith('Já existe') ? 409 : message.startsWith('O valor') ? 422 : 503;
+    const shown = saveErrorMessage({ status, message }, false);
+    expect(shown).toBe(STATUS_FALLBACK[status]);
+    expect(shown).not.toMatch(ENGLISH_WORDS);
+  });
+
   it('does not let a known detail through under another status', () => {
     expect(saveErrorMessage({ status: 422, message: EDIT_BUSY }, false)).toBe(SAVE_INVALID_ERROR);
     expect(saveErrorMessage({ status: 503, message: DUPLICATE }, false)).toBe(SAVE_UNAVAILABLE_ERROR);

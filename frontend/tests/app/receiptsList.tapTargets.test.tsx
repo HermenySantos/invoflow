@@ -85,6 +85,18 @@ describe('receipts list tap targets on a phone', () => {
     }
   });
 
+  it('wraps the chips from sm to lg (landscape phone 800x360, tablet) instead of cutting them at the column edge', async () => {
+    const row = (await screen.findByRole('button', { name: 'Todos' })).parentElement!;
+    // A phone held upright keeps the swipeable row.
+    expect(row).toHaveClass('flex', 'overflow-x-auto', '-mx-4', 'px-4');
+    expect(row).toHaveClass('sm:max-lg:flex-wrap', 'sm:max-lg:overflow-visible', 'sm:max-lg:mx-0', 'sm:max-lg:px-0');
+    // From lg (desktop) the row is as on main: one swipeable line, so the list is not pushed down.
+    expect(row.className).not.toMatch(/(^| )(sm|lg):(flex-wrap|overflow-visible)/);
+    for (const chip of Array.from(row.children)) {
+      expect(chip).toHaveClass('min-h-11');
+    }
+  });
+
   it("gives 'Atualizar lista' 44 px", async () => {
     expectMobileTapTarget(await screen.findByRole('button', { name: 'Atualizar lista' }), 'lg:min-h-0');
   });

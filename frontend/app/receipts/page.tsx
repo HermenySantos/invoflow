@@ -283,8 +283,9 @@ export default function ReceiptsPage() {
           </div>
         ) : (
           <>
-            {/* Category filter chips */}
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar mb-1">
+            {/* Category filter chips: a swipeable row; on a phone in landscape or a tablet (sm to lg) they wrap,
+                as the row would end mid-screen at the column edge and cut a chip */}
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar mb-1 sm:max-lg:flex-wrap sm:max-lg:overflow-visible sm:max-lg:mx-0 sm:max-lg:px-0">
               <button
                 onClick={() => handleCategoryFilter(null)}
                 className={clsx(
