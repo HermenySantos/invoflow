@@ -85,6 +85,16 @@ describe('receipts list tap targets on a phone', () => {
     }
   });
 
+  it('wraps the chips from sm (landscape phone, 800x360) instead of cutting them at the column edge', async () => {
+    const row = (await screen.findByRole('button', { name: 'Todos' })).parentElement!;
+    // A phone held upright keeps the swipeable row.
+    expect(row).toHaveClass('flex', 'overflow-x-auto', '-mx-4', 'px-4');
+    expect(row).toHaveClass('sm:flex-wrap', 'sm:overflow-visible', 'sm:mx-0', 'sm:px-0');
+    for (const chip of Array.from(row.children)) {
+      expect(chip).toHaveClass('min-h-11');
+    }
+  });
+
   it("gives 'Atualizar lista' 44 px", async () => {
     expectMobileTapTarget(await screen.findByRole('button', { name: 'Atualizar lista' }), 'lg:min-h-0');
   });
