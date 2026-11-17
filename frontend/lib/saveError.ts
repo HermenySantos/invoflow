@@ -36,12 +36,29 @@ const KNOWN_PT_PT_DETAILS: Record<number, ReadonlySet<string>> = {
   ]),
 };
 
-/** The 409 duplicate detail that names the other document's number. */
-const DUPLICATE_NUMBER_DETAIL = /^Já existe outro documento com o n\.º \S.*\.$/;
+/** The 409 duplicate detail that names the other document's number (at most 100 characters, like invoice_number). */
+const DUPLICATE_NUMBER_DETAIL = /^Já existe outro documento com o n\.º (.{1,100})\.$/u;
+const NUMBER_CHARS = /^[\p{L}\p{N} /\\\-_.,:;#ºª°()[\]]+$/u;
+const HAS_DIGIT = /\p{N}/u;
+
+/**
+ * Codes of up to 3 characters (FT, N.º, N C) and then only words with a digit (A/1, 2026/12),
+ * so text appended to the PT-PT sentence ('… n.º FT A/1. Please retry.') is not taken as the number.
+ */
+function isDocumentNumber(number: string): boolean {
+  if (!NUMBER_CHARS.test(number)) return false;
+  const words = number.split(' ');
+  const firstWithDigit = words.findIndex((word) => HAS_DIGIT.test(word));
+  return (
+    firstWithDigit >= 0 &&
+    words.every((word, i) => (i < firstWithDigit ? word.length > 0 && word.length <= 3 : HAS_DIGIT.test(word)))
+  );
+}
 
 function isKnownPtPtDetail(status: number, message: string): boolean {
   if (KNOWN_PT_PT_DETAILS[status]?.has(message)) return true;
-  return status === 409 && DUPLICATE_NUMBER_DETAIL.test(message);
+  const number = status === 409 ? DUPLICATE_NUMBER_DETAIL.exec(message)?.[1] : undefined;
+  return number !== undefined && isDocumentNumber(number);
 }
 
 interface ApiFailure {
