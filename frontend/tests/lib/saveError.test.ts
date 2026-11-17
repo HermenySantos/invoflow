@@ -163,6 +163,8 @@ describe('saveErrorMessage', () => {
     `${DUPLICATE} Please try again.`,
     `${DUPLICATE} Conflict.`,
     `${DUPLICATE} OK.`,
+    'Já existe outro documento com o n.º FT K/1..',
+    'Já existe outro documento com o n.º FT K/1...',
     'Já existe outro documento com o n.º FT A/1. Please retry.',
     'Já existe outro documento com o n.º FT A/1 already exists.',
     'Já existe outro documento com o n.º FT A/1 in use.',

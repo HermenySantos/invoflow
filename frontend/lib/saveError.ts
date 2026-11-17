@@ -42,11 +42,12 @@ const NUMBER_CHARS = /^[\p{L}\p{N} /\\\-_.,:;#ºª°()[\]]+$/u;
 const HAS_DIGIT = /\p{N}/u;
 
 /**
- * Codes of up to 3 characters (FT, N.º, N C) and then only words with a digit (A/1, 2026/12),
- * so text appended to the PT-PT sentence ('… n.º FT A/1. Please retry.') is not taken as the number.
+ * Codes of up to 3 characters (FT, N.º, N C) and then only words with a digit (A/1, 2026/12), with no
+ * full stop at the end, so text appended to the PT-PT sentence ('… n.º FT A/1. Please retry.', '… FT K/1..')
+ * is not taken as the number.
  */
 function isDocumentNumber(number: string): boolean {
-  if (!NUMBER_CHARS.test(number)) return false;
+  if (!NUMBER_CHARS.test(number) || number.endsWith('.')) return false;
   const words = number.split(' ');
   const firstWithDigit = words.findIndex((word) => HAS_DIGIT.test(word));
   return (
