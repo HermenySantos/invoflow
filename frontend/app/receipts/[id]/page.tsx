@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { ModalPortal } from '@/components/layout/ModalPortal';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
 import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
@@ -1069,13 +1070,17 @@ export default function ReceiptDetailPage() {
 
       {/* Category Picker Bottom Sheet */}
       {showCategoryPicker && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowCategoryPicker(false)}>
+        <ModalPortal>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50" onClick={() => setShowCategoryPicker(false)}>
           <div 
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-picker-title"
             className="bg-white rounded-t-2xl shadow-xl w-full max-w-lg animate-in slide-in-from-bottom duration-200 max-h-[70vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Categoria</h2>
+              <h2 id="category-picker-title" className="text-lg font-semibold text-gray-900">Categoria</h2>
               <button onClick={() => setShowCategoryPicker(false)} aria-label="Fechar" className="p-3 -m-2 text-gray-400 touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
@@ -1107,14 +1112,21 @@ export default function ReceiptDetailPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Delete Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50">
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in slide-in-from-bottom sm:zoom-in duration-200">
+        <ModalPortal>
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-modal-title"
+            className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in slide-in-from-bottom sm:zoom-in duration-200"
+          >
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Remover recibo</h2>
+              <h2 id="delete-modal-title" className="text-lg font-semibold text-gray-900">Remover recibo</h2>
               <button onClick={handleDeleteCancel} aria-label="Fechar" className="p-3 -m-2 text-gray-400 touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
@@ -1129,14 +1141,14 @@ export default function ReceiptDetailPage() {
               <button
                 onClick={handleDeleteCancel}
                 disabled={isDeleting}
-                className="flex-1 btn-secondary btn-md"
+                className="flex-1 btn-secondary btn-md min-h-11"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleDeleteConfirm}
                 disabled={isDeleting}
-                className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 min-h-11 px-4 py-2.5 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Remover
@@ -1144,6 +1156,7 @@ export default function ReceiptDetailPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </AppLayout>
   );

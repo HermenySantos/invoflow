@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearScrollMemory,
   currentRoute,
+  MAX_SAVED_ROUTES,
   readScroll,
   requestScrollRestore,
   resetScrollMemoryForTests,
@@ -62,6 +63,35 @@ describe('scroll memory', () => {
     expect(sessionStorage.getItem('other')).toBe('kept');
     takeRestoreDecision('/upload');
     expect(takeRestoreDecision('/receipts')).toBe(false);
+  });
+
+  it(`keeps only the ${MAX_SAVED_ROUTES} most recently saved routes, evicting the oldest`, () => {
+    for (let i = 0; i < MAX_SAVED_ROUTES + 5; i += 1) writeScroll(`/receipts/doc-${i}`, 100 + i);
+    const savedKeys = Object.keys(sessionStorage).filter((key) => key.startsWith(scrollKey('')));
+    expect(savedKeys).toHaveLength(MAX_SAVED_ROUTES);
+    for (let i = 0; i < 5; i += 1) expect(sessionStorage.getItem(scrollKey(`/receipts/doc-${i}`))).toBeNull();
+    expect(readScroll('/receipts/doc-5')).toBe(105);
+    expect(readScroll(`/receipts/doc-${MAX_SAVED_ROUTES + 4}`)).toBe(MAX_SAVED_ROUTES + 104);
+  });
+
+  it('counts a rewrite as recent use, so an often-saved route is not evicted', () => {
+    writeScroll('/receipts', 1200);
+    for (let i = 0; i < MAX_SAVED_ROUTES - 1; i += 1) writeScroll(`/receipts/doc-${i}`, 10);
+    writeScroll('/receipts', 1300);
+    writeScroll('/summary', 50);
+    expect(readScroll('/receipts')).toBe(1300);
+    expect(readScroll('/summary')).toBe(50);
+    expect(sessionStorage.getItem(scrollKey('/receipts/doc-0'))).toBeNull();
+    expect(readScroll('/receipts/doc-1')).toBe(10);
+  });
+
+  it('recovers from a broken order list and clears it on sign-out', () => {
+    sessionStorage.setItem('invoflow:scroll-order', '{not json');
+    writeScroll('/receipts', 1200);
+    expect(readScroll('/receipts')).toBe(1200);
+    expect(JSON.parse(sessionStorage.getItem('invoflow:scroll-order')!)).toEqual(['/receipts']);
+    clearScrollMemory();
+    expect(sessionStorage.getItem('invoflow:scroll-order')).toBeNull();
   });
 
   it('starts a new navigation at the top', () => {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import type { Document } from '@/lib/api';
@@ -92,6 +92,29 @@ describe('receipt page on a phone', () => {
     expect(await screen.findByAltText('Recibo de Padaria Central')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Voltar aos recibos' })).toHaveAttribute('href', '/receipts');
     expect(screen.getByRole('button', { name: 'Remover recibo' })).toBeInTheDocument();
+  });
+
+  // Inside #main-content at the nav's own z-50, the sheet sat under the nav, so "Remover" hit "IVA".
+  it.each([
+    ['Remover recibo', 'alertdialog', 'Remover recibo'],
+    [/Serviços/, 'dialog', 'Categoria'],
+  ] as const)('mounts the %s overlay on <body>, above the nav', async (opener, role, title) => {
+    const { container } = renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: opener }));
+    const dialog = screen.getByRole(role, { name: title });
+    const overlay = dialog.parentElement as HTMLElement;
+
+    expect(overlay.parentElement).toBe(document.body);
+    expect(container.contains(overlay)).toBe(false);
+    expect(overlay).toHaveClass('fixed', 'inset-0', 'z-[60]');
+  });
+
+  it('gives the delete confirm 44 px buttons at every width', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Remover recibo' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Remover recibo' });
+    expect(within(dialog).getByRole('button', { name: 'Remover' })).toHaveClass('min-h-11');
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toHaveClass('min-h-11');
   });
 
   it('falls back to a plain label when the vendor is unknown', async () => {
