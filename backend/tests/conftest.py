@@ -20,6 +20,7 @@ os.environ["APP_DEBUG"] = "true"
 
 from app.main import app
 from app.core.database import Base, get_db
+from app.core.rate_limit import limiter
 
 
 # Create test database engine (in-memory SQLite)
@@ -43,6 +44,13 @@ def override_get_db() -> Generator[Session, None, None]:
 
 # Override the database dependency
 app.dependency_overrides[get_db] = override_get_db
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """Buckets live in process memory; one test's requests must not count against the next."""
+    limiter.reset()
+    yield
 
 
 @pytest.fixture(scope="function")

@@ -59,6 +59,8 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # The scripts below hammer one account on purpose to test database locks.
+      RATE_LIMIT_ENABLED: "false"
     defaults:
       run:
         working-directory: backend

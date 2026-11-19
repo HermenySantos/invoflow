@@ -1,12 +1,13 @@
 """POST /api/efatura/pull. Off unless EFATURA_PULL_ENABLED is true."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.documents import get_or_create_user
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.rate_limit import RATE_LIMITS, limiter
 from app.core.security import CurrentUser, get_current_user
 from app.schemas.efatura import EfaturaPullRequest, EfaturaPullResponse, EfaturaSkipped
 from app.services.efatura import (
@@ -33,7 +34,9 @@ PULL_TIMEOUT_DETAIL = (
 
 
 @router.post("/pull", response_model=EfaturaPullResponse)
+@limiter.limit(RATE_LIMITS["efatura"])
 def pull_efatura(
+    request: Request,
     body: EfaturaPullRequest,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
