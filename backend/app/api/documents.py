@@ -712,7 +712,9 @@ def get_document(
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
+@limiter.limit(RATE_LIMITS["write"])
 def update_document(
+    request: Request,
     document_id: str,
     doc_update: DocumentUpdate,
     db: Session = Depends(get_db),
@@ -952,7 +954,9 @@ def update_document(
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(RATE_LIMITS["write"])
 def delete_document(
+    request: Request,
     document_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),

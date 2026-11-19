@@ -6,10 +6,11 @@ The summary endpoint uses this to compute estimated IVA payable.
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rate_limit import RATE_LIMITS, limiter
 from app.core.security import get_current_user, CurrentUser
 from app.models.vat_sales import VatSalesEntry
 from app.schemas.vat_sales import (
@@ -24,7 +25,9 @@ router = APIRouter()
 
 
 @router.post("", response_model=VatSalesResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(RATE_LIMITS["write"])
 def upsert_vat_sales(
+    request: Request,
     body: VatSalesCreate,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -108,7 +111,9 @@ def get_vat_sales(
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(RATE_LIMITS["write"])
 def delete_vat_sales(
+    request: Request,
     entry_id: str,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),

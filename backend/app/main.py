@@ -14,7 +14,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -23,7 +22,7 @@ from app.api import router as api_router
 from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
 from app.core.db_errors import RETRY_AFTER_SECONDS, retryable
-from app.core.rate_limit import limiter
+from app.core.rate_limit import RATE_LIMITED_MESSAGE, limiter, retry_after_seconds
 from app.core.startup import get_environment_status, run_startup_checks
 from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_gap
 from app.services.processing import read_receipt, stuck_document_ids
@@ -143,7 +142,17 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    seconds = retry_after_seconds(request) or 60
+    return create_error_response(
+        code="RATE_LIMITED",
+        message=RATE_LIMITED_MESSAGE.format(seconds=seconds),
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        headers={"Retry-After": str(seconds)},
+    )
 
 
 @app.exception_handler(RequestValidationError)

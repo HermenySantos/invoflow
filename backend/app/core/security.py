@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from app.core.config import Settings, get_settings
+from app.core.rate_limit import remember_rate_limit_user
 
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
@@ -162,6 +163,7 @@ async def get_current_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid mock user id",
             )
+        remember_rate_limit_user(request, mock_user_id)
         return CurrentUser(user_id=mock_user_id, email=mock_email, is_mock=True)
     
     if not credentials:
@@ -202,6 +204,7 @@ async def get_current_user(
             },
         )
         user_id = verify_session_claims(payload, policy_from_settings(settings), _now())
+        remember_rate_limit_user(request, user_id)
         return CurrentUser(user_id=user_id, email="", is_mock=False)
 
     except InvalidSessionToken as e:
