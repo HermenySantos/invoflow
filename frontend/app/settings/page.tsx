@@ -1,11 +1,29 @@
 'use client';
 
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Loader2, X } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { SignOutConfirm } from '@/components/settings/SignOutConfirm';
 import { DeleteAccountSheet } from '@/components/settings/DeleteAccountSheet';
+import { api } from '@/lib/api';
+
+const EXPORT_FAILED = 'Não foi possível exportar os seus dados. Tente novamente.';
+const EXPORT_RATE_LIMITED = 'Já pediu várias exportações. Aguarde um minuto e tente novamente.';
+
+/** On unless NEXT_PUBLIC_ACCOUNT_EXPORT=0, which matches a backend with ACCOUNT_EXPORT_ENABLED=false. */
+const accountExportEnabled = () => process.env.NEXT_PUBLIC_ACCOUNT_EXPORT !== '0';
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 export default function SettingsPage() {
   return (
@@ -19,7 +37,24 @@ function SettingsContent() {
   const { user, signOut } = useAuth();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportEnabled = accountExportEnabled();
   const name = user?.name?.trim();
+
+  const exportData = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { blob, filename } = await api.downloadAccountExport();
+      saveBlob(blob, filename);
+    } catch (err) {
+      const status = (err as { status?: number } | null)?.status;
+      setExportError(status === 429 ? EXPORT_RATE_LIMITED : EXPORT_FAILED);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="max-w-lg mx-auto px-4 pt-6 space-y-8">
@@ -49,23 +84,50 @@ function SettingsContent() {
         </button>
       </section>
 
-      {/* There is no whole-account export API: /api/export only builds one period's accountant pack. */}
       <section aria-labelledby="data-heading">
         <h2 id="data-heading" className="sr-only">
           Dados
         </h2>
-        <button
-          type="button"
-          disabled
-          aria-describedby="export-unavailable"
-          className="w-full btn-secondary btn-md min-h-11 gap-2"
-        >
-          <Download className="w-4 h-4" aria-hidden="true" />
-          Exportar os meus dados
-        </button>
-        <p id="export-unavailable" className="mt-2 text-sm text-[var(--ff-text-muted)]">
-          Disponível em breve
-        </p>
+        {exportEnabled ? (
+          <>
+            <button
+              type="button"
+              onClick={exportData}
+              disabled={exporting}
+              aria-busy={exporting || undefined}
+              aria-describedby="export-description"
+              className="w-full btn-secondary btn-md min-h-11 gap-2"
+            >
+              {exporting ? (
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="w-4 h-4" aria-hidden="true" />
+              )}
+              Exportar os meus dados
+            </button>
+            <p id="export-description" className="mt-2 text-sm text-[var(--ff-text-muted)]">
+              Um ficheiro ZIP com os seus recibos, os dados de cada documento e o IVA das vendas que introduziu.
+            </p>
+            <p role="status" className="sr-only">
+              {exporting ? 'A preparar o ficheiro…' : ''}
+            </p>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled
+              aria-describedby="export-unavailable"
+              className="w-full btn-secondary btn-md min-h-11 gap-2"
+            >
+              <Download className="w-4 h-4" aria-hidden="true" />
+              Exportar os meus dados
+            </button>
+            <p id="export-unavailable" className="mt-2 text-sm text-[var(--ff-text-muted)]">
+              Disponível em breve
+            </p>
+          </>
+        )}
       </section>
 
       <section aria-labelledby="danger-heading" className="border-t border-[var(--ff-border)] pt-6">
@@ -83,6 +145,23 @@ function SettingsContent() {
 
       {confirmSignOut && (
         <SignOutConfirm onCancel={() => setConfirmSignOut(false)} onConfirm={() => signOut('/')} />
+      )}
+
+      {exportError && (
+        <div
+          role="alert"
+          className="fixed inset-x-4 bottom-24 z-50 mx-auto max-w-lg card flex items-start gap-3 p-4 shadow-lg border-[var(--ff-danger)]"
+        >
+          <p className="flex-1 text-sm text-[var(--ff-danger)]">{exportError}</p>
+          <button
+            type="button"
+            onClick={() => setExportError(null)}
+            aria-label="Fechar"
+            className="-m-2 h-11 w-11 shrink-0 inline-flex items-center justify-center text-[var(--ff-text-muted)]"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
       )}
 
       {deleteOpen && (

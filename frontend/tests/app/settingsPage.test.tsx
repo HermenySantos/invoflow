@@ -94,13 +94,15 @@ describe('/settings', () => {
     expect(hardNavigate).toHaveBeenCalledWith('/');
   });
 
-  it('offers no fake export: the button is disabled with “Disponível em breve”', async () => {
+  it('keeps the export disabled with “Disponível em breve” when NEXT_PUBLIC_ACCOUNT_EXPORT=0', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ACCOUNT_EXPORT', '0');
     signInDemo();
     renderSettings();
 
     const exportButton = await screen.findByRole('button', { name: 'Exportar os meus dados' });
     expect(exportButton).toBeDisabled();
     expect(exportButton).toHaveAccessibleDescription('Disponível em breve');
+    fireEvent.click(exportButton);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -143,6 +145,107 @@ describe('/settings', () => {
     expect(contrast(token('accent'), '#ffffff')).toBeGreaterThanOrEqual(4.5);
     expect(contrast(token('text-muted'), token('surface'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(token('text-muted'), token('bg'))).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('Exportar os meus dados', () => {
+  const zipResponse = () =>
+    new Response(new Blob(['PK']), {
+      status: 200,
+      headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="Invoflow_meus_dados_20261119_101500.zip"' },
+    });
+
+  let clicked: string[];
+  let clickSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    clicked = [];
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    vi.mocked(global.fetch).mockReset();
+  });
+
+  afterEach(() => {
+    clickSpy.mockRestore();
+    localStorage.removeItem(DEMO_AUTH_KEY);
+    vi.unstubAllEnvs();
+  });
+
+  it('is enabled, describes the archive, and stays busy until the ZIP arrives, then downloads it', async () => {
+    let resolve!: (r: Response) => void;
+    vi.mocked(global.fetch).mockReturnValue(new Promise<Response>((r) => (resolve = r)));
+    signInDemo();
+    renderSettings();
+
+    const button = await screen.findByRole('button', { name: 'Exportar os meus dados' });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAccessibleDescription(
+      'Um ficheiro ZIP com os seus recibos, os dados de cada documento e o IVA das vendas que introduziu.',
+    );
+    expect(screen.queryByText('Disponível em breve')).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'));
+    expect(button).toBeDisabled();
+    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('A preparar o ficheiro…');
+    const [url, init] = vi.mocked(global.fetch).mock.calls[0];
+    expect(url).toBe('/api/account/export');
+    expect((init as RequestInit).headers).toEqual({ 'X-Mock-User-Id': expect.stringMatching(/^demo-/) });
+
+    await act(async () => {
+      resolve(zipResponse());
+    });
+    await waitFor(() => expect(button).not.toHaveAttribute('aria-busy'));
+    expect(button).toBeEnabled();
+    expect(clicked).toEqual(['Invoflow_meus_dados_20261119_101500.zip']);
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast when the export fails, and clears it on Fechar', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(new Response('{}', { status: 500 }));
+    signInDemo();
+    renderSettings();
+
+    const button = await screen.findByRole('button', { name: 'Exportar os meus dados' });
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível exportar os seus dados. Tente novamente.');
+    expect(clicked).toEqual([]);
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute('aria-busy');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('says to wait a minute when rate limited', async () => {
+    vi.mocked(global.fetch).mockResolvedValue(new Response('{}', { status: 429 }));
+    signInDemo();
+    renderSettings();
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Exportar os meus dados' }));
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Já pediu várias exportações. Aguarde um minuto e tente novamente.',
+    );
+  });
+
+  it('shows the error toast when the network request throws', async () => {
+    vi.mocked(global.fetch).mockRejectedValue(new TypeError('Failed to fetch'));
+    signInDemo();
+    renderSettings();
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Exportar os meus dados' }));
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível exportar os seus dados. Tente novamente.');
   });
 });
 
