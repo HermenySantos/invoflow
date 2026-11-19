@@ -2,6 +2,7 @@ import json
 from functools import lru_cache
 from typing import Union
 
+from limits import parse_many
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
@@ -96,6 +97,14 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    # Per signed-in user (per IP when signed out), per route, in-process memory.
+    # Values use the `limits` syntax: "60/minute", "10/second;300/hour".
+    rate_limit_enabled: bool = True
+    rate_limit_write: str = "60/minute"
+    rate_limit_upload: str = "30/minute"
+    rate_limit_export: str = "5/minute"
+    rate_limit_efatura: str = "5/minute"
+
     @model_validator(mode="after")
     def enable_mock_auth_only_when_asked(self):
         requested = bool(self.auth_mock_mode) or mock_auth_requested(self.mock_auth)
@@ -108,6 +117,17 @@ class Settings(BaseSettings):
     def empty_efatura_flag_is_off(cls, value):
         if value is None or (isinstance(value, str) and value.strip() == ""):
             return False
+        return value
+
+    @field_validator(
+        "rate_limit_write", "rate_limit_upload", "rate_limit_export", "rate_limit_efatura"
+    )
+    @classmethod
+    def parse_rate_limit(cls, value: str):
+        try:
+            parse_many(value)
+        except ValueError as exc:
+            raise ValueError(f"not a rate limit such as 60/minute: {value!r}") from exc
         return value
 
     @field_validator("cors_origins", mode="before")
