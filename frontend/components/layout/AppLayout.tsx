@@ -1,7 +1,9 @@
 'use client';
 
 import { ReactNode, useEffect } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { User } from 'lucide-react';
 import { BottomNav } from './BottomNav';
 import { MainScrollArea } from './MainScrollArea';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -9,12 +11,16 @@ import { useAuth } from '@/components/providers/AuthProvider';
 interface AppLayoutProps {
   children: ReactNode;
   title?: string;
+  /** Small label above the title. */
+  eyebrow?: string;
 }
 
-export function AppLayout({ children, title }: AppLayoutProps) {
-  const { isAuthenticated, isLoading, signOut } = useAuth();
+export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
+  const { user, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const initial = (user?.name || user?.email || '').trim().charAt(0).toUpperCase();
+  const onSettings = pathname === '/settings';
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -51,18 +57,26 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
       {title && (
         <header className="shrink-0 bg-[var(--ff-bg)] border-b border-[var(--ff-border)] safe-area-inset-top">
-          <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
-            <h1 className="text-lg font-semibold">{title}</h1>
-            <button
-              type="button"
-              onClick={() => {
-                signOut();
-                router.push('/');
-              }}
-              className="-mr-3 min-h-11 px-3 text-sm text-gray-500 touch-manipulation"
+          <div className="flex items-center justify-between min-h-14 py-1 px-4 max-w-lg mx-auto">
+            <div>
+              {eyebrow && (
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--ff-text-muted)]">{eyebrow}</p>
+              )}
+              <h1 className="text-lg font-semibold">{title}</h1>
+            </div>
+            <Link
+              href="/settings"
+              aria-label="Conta"
+              aria-current={onSettings ? 'page' : undefined}
+              className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full touch-manipulation focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)]"
             >
-              Sair
-            </button>
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ff-border)] bg-[var(--ff-surface)] text-sm font-semibold text-[var(--ff-accent)]"
+              >
+                {initial || <User className="h-4 w-4" />}
+              </span>
+            </Link>
           </div>
         </header>
       )}

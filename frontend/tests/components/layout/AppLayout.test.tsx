@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { AuthProvider } from '@/components/providers/AuthProvider';
+import { AuthProvider, useAuth } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { readScroll, scrollKey, writeScroll } from '@/lib/mainScroll';
 
@@ -60,11 +60,8 @@ describe('AppLayout on a phone', () => {
     expect(nav).toHaveClass('print:hidden');
   });
 
-  it('forgets every saved scroll position on sign-out (Sair)', async () => {
+  it('puts a 44×44 account link to /settings in the header, with the user initial, and no Sair button', async () => {
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
-    writeScroll('/receipts', 1200);
-    writeScroll('/receipts?status=ready', 300);
-    sessionStorage.setItem('other', 'kept');
     render(
       <AuthProvider>
         <AppLayout title="Recibos">
@@ -73,7 +70,32 @@ describe('AppLayout on a phone', () => {
       </AuthProvider>,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Sair' }));
+    const account = await screen.findByRole('link', { name: 'Conta' });
+    expect(account).toHaveAttribute('href', '/settings');
+    expect(account).toHaveClass('h-11', 'w-11');
+    expect(account).toHaveTextContent('A');
+    expect(account).not.toHaveAttribute('aria-current');
+    expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+  });
+
+  it('forgets every saved scroll position on sign-out', async () => {
+    localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
+    writeScroll('/receipts', 1200);
+    writeScroll('/receipts?status=ready', 300);
+    sessionStorage.setItem('other', 'kept');
+    function SignOutButton() {
+      const { signOut } = useAuth();
+      return <button type="button" onClick={() => signOut()}>Terminar</button>;
+    }
+    render(
+      <AuthProvider>
+        <AppLayout title="Recibos">
+          <SignOutButton />
+        </AppLayout>
+      </AuthProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminar' }));
     expect(readScroll('/receipts')).toBe(0);
     expect(sessionStorage.getItem(scrollKey('/receipts?status=ready'))).toBeNull();
     expect(sessionStorage.getItem('other')).toBe('kept');

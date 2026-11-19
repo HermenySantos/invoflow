@@ -63,6 +63,28 @@
     border: 1px solid var(--ff-border);
   }
 
+  /* #1b4d3e on white is 9.9:1. */
+  .btn-accent-outline {
+    @apply btn bg-white focus:ring-primary-700;
+    color: var(--ff-accent);
+    border: 1px solid var(--ff-accent);
+  }
+
+  .btn-accent-outline:hover {
+    background: color-mix(in srgb, var(--ff-accent) 6%, white);
+  }
+
+  /* #8b2e2e on --ff-bg #fafaf8 is 7.9:1. */
+  .btn-ghost-danger {
+    @apply btn bg-transparent focus:ring-red-800;
+    color: var(--ff-danger);
+  }
+
+  .btn-ghost-danger:hover {
+    color: var(--ff-danger-hover);
+    background: color-mix(in srgb, var(--ff-danger) 6%, transparent);
+  }
+
   .btn-lg {
     @apply px-6 py-3 text-base;
   }

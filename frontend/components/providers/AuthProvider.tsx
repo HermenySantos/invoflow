@@ -10,10 +10,13 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useUser, useClerk } from '@clerk/nextjs';
 import { DEMO_AUTH_KEY, demoUserId, readDemoUser } from '@/lib/demoUser';
 import { clearScrollMemory } from '@/lib/mainScroll';
+import { hardNavigate } from '@/lib/navigate';
 
 interface User {
   id: string;
   email: string;
+  /** Empty for demo users and for Clerk users without a name. */
+  name?: string;
 }
 
 interface AuthContextType {
@@ -21,7 +24,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   signIn: (email: string) => void;
-  signOut: () => void;
+  /** With redirectTo, leaves with a full page load so the sign-in redirect of protected pages cannot win. */
+  signOut: (redirectTo?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,10 +55,14 @@ function MockAuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoUser));
   };
 
-  const signOut = () => {
+  const signOut = (redirectTo?: string) => {
     clearScrollMemory();
-    setUser(null);
     localStorage.removeItem(DEMO_AUTH_KEY);
+    if (redirectTo) {
+      hardNavigate(redirectTo);
+      return;
+    }
+    setUser(null);
   };
 
   return (
@@ -80,6 +88,7 @@ function ClerkAuthBridge({ children }: { children: ReactNode }) {
     ? {
         id: clerkUser.id,
         email: clerkUser.primaryEmailAddress?.emailAddress || '',
+        name: clerkUser.fullName?.trim() || '',
       }
     : null;
 
@@ -90,9 +99,9 @@ function ClerkAuthBridge({ children }: { children: ReactNode }) {
         isAuthenticated: !!isSignedIn,
         isLoading: !isLoaded,
         signIn: () => {},
-        signOut: () => {
+        signOut: (redirectTo?: string) => {
           clearScrollMemory();
-          clerkSignOut();
+          void clerkSignOut(redirectTo ? { redirectUrl: redirectTo } : undefined);
         },
       }}
     >
