@@ -70,6 +70,9 @@ function handleKeyDown(e: KeyboardEvent) {
   items[next].focus();
 }
 
+/* Read at close, not at open: the element it points to may have been remounted while the layer was open. */
+const focusLatest = (ref?: RefObject<HTMLElement>) => ref?.current?.focus();
+
 interface ModalLayerOptions {
   layer?: Layer;
   /** Gets focus on close when the element that opened the layer is no longer in the document. */
@@ -105,8 +108,8 @@ export function useModalLayer(
       stack.splice(stack.indexOf(entry), 1);
       if (stack.length === 0) document.removeEventListener('keydown', handleKeyDown);
       syncBackground();
-      const target = opener?.isConnected && opener !== document.body ? opener : returnFocusRef?.current;
-      target?.focus();
+      if (opener?.isConnected && opener !== document.body) opener.focus();
+      else focusLatest(returnFocusRef);
     };
   }, [ref, layer, returnFocusRef]);
 }
