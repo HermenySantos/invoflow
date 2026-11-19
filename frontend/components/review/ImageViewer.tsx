@@ -10,6 +10,7 @@ import {
   FileText,
   Loader2
 } from 'lucide-react';
+import { ModalLayer } from '@/components/layout/ModalLayer';
 
 interface ImageViewerProps {
   src: string | null;
@@ -40,6 +41,7 @@ export function ImageViewer({
   
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const lastTouchDistance = useRef<number | null>(null);
 
   const zoom = ZOOM_LEVELS[zoomIndex];
@@ -160,8 +162,6 @@ export function ImageViewer({
         handleZoomIn();
       } else if (e.key === '-') {
         handleZoomOut();
-      } else if (e.key === 'Escape') {
-        setIsFullscreen(false);
       }
     };
 
@@ -281,6 +281,7 @@ export function ImageViewer({
         <div className="w-px h-4 bg-white/30 mx-1" />
 
         <button
+          ref={fullscreenButtonRef}
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
           className="p-3.5 lg:p-2.5 text-white hover:bg-white/20 rounded touch-manipulation transition-colors"
           aria-label={isFullscreen ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
@@ -305,7 +306,13 @@ export function ImageViewer({
   // Fullscreen modal
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
+      <ModalLayer
+        layer="viewer"
+        onClose={toggleFullscreen}
+        returnFocusRef={fullscreenButtonRef}
+        closeOnBackdrop={false}
+        className="bg-black flex items-center justify-center"
+      >
         {/* Close button */}
         <button
           onClick={toggleFullscreen}
@@ -323,7 +330,7 @@ export function ImageViewer({
         )}
 
         {imageContent}
-      </div>
+      </ModalLayer>
     );
   }
 

@@ -6,12 +6,13 @@ Supports both Clerk JWT validation and mock mode for development.
 import logging
 import re
 import time
+from dataclasses import dataclass
 import httpx
 import jwt
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
@@ -80,6 +81,60 @@ async def _find_signing_key(kid: str) -> dict:
     )
 
 
+CLOCK_LEEWAY_SECONDS = 5
+
+
+class InvalidSessionToken(Exception):
+    """A claim check failed. The message names the check, never a claim value."""
+
+
+@dataclass(frozen=True)
+class ClerkTokenPolicy:
+    issuer: str
+    authorized_parties: frozenset[str]
+    leeway_seconds: int = CLOCK_LEEWAY_SECONDS
+
+
+def clerk_issuer(frontend_api: str) -> str:
+    host = frontend_api.strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+    return f"https://{host}" if host else ""
+
+
+def policy_from_settings(config: Settings) -> ClerkTokenPolicy:
+    return ClerkTokenPolicy(
+        issuer=clerk_issuer(config.clerk_frontend_api),
+        authorized_parties=frozenset(config.clerk_authorized_parties),
+    )
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def verify_session_claims(claims: dict, policy: ClerkTokenPolicy, now: float) -> str:
+    """The user id (sub) of signature-verified *claims* that pass *policy* at *now*."""
+    if not policy.issuer or claims.get("iss") != policy.issuer:
+        raise InvalidSessionToken("issuer mismatch")
+    if claims.get("azp") not in policy.authorized_parties:
+        raise InvalidSessionToken("authorized party not allowed")
+    exp = claims.get("exp")
+    if not _is_number(exp):
+        raise InvalidSessionToken("exp missing")
+    if now >= exp + policy.leeway_seconds:
+        raise InvalidSessionToken("expired")
+    nbf = claims.get("nbf")
+    if nbf is not None and (not _is_number(nbf) or now < nbf - policy.leeway_seconds):
+        raise InvalidSessionToken("not yet valid")
+    sub = claims.get("sub")
+    if not isinstance(sub, str) or not sub:
+        raise InvalidSessionToken("sub missing")
+    return sub
+
+
+def _now() -> float:
+    return time.time()
+
+
 class CurrentUser:
     """Represents the authenticated user."""
     
@@ -132,31 +187,35 @@ async def get_current_user(
         # Fetch JWKS and find the matching key
         signing_key = await _find_signing_key(kid)
         
-        # Verify and decode the token using the public key from JWKS
+        # PyJWT checks only the signature; verify_session_claims checks every
+        # claim against one injectable clock.
         payload = jwt.decode(
             token,
             jwt.PyJWK(signing_key).key,
             algorithms=["RS256"],
             options={
                 "verify_aud": False,  # Clerk doesn't set audience by default
+                "verify_exp": False,
+                "verify_nbf": False,
+                "verify_iat": False,
+                "verify_iss": False,
             },
         )
-        
-        # Extract user info from Clerk token
-        user_id = payload.get("sub")
-        
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user ID",
-            )
-        
+        user_id = verify_session_claims(payload, policy_from_settings(settings), _now())
         return CurrentUser(user_id=user_id, email="", is_mock=False)
-        
+
+    except InvalidSessionToken as e:
+        logger.warning("Clerk session token rejected: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except jwt.PyJWTError as e:
-        # Expired or badly signed tokens say nothing about key rotation, so
-        # the JWKS cache is kept (unknown key ids refetch in _find_signing_key).
-        logger.warning(f"JWT validation failed: {e}")
+        # Badly signed tokens say nothing about key rotation, so the JWKS
+        # cache is kept (unknown key ids refetch in _find_signing_key).
+        # PyJWT messages can quote header or claim values; log the type only.
+        logger.warning("Clerk session token rejected: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -165,7 +224,7 @@ async def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Authentication error: {e}")
+        logger.error("Authentication error: %s", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",

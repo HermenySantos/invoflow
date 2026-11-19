@@ -5,14 +5,49 @@ Ensures required configuration is present before the application starts.
 
 import logging
 from typing import List, Tuple
+from urllib.parse import urlsplit
+
 from app.core.config import app_env_name, get_settings, known_app_env, mock_auth_env_allowed
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 class ConfigurationError(Exception):
     """Raised when required configuration is missing."""
     pass
+
+
+def _is_local_host(host: str) -> bool:
+    host = host.strip().lower().rstrip(".")
+    return host in _LOCAL_HOSTS or host.endswith(".localhost")
+
+
+def production_errors(settings) -> List[str]:
+    """Settings production refuses to start with. Messages name settings, never their values."""
+    errors: List[str] = []
+
+    if settings.app_debug:
+        errors.append("APP_DEBUG must be false when APP_ENV is production. It returns tracebacks to clients.")
+
+    scheme = urlsplit(settings.database_url.strip()).scheme.lower()
+    if scheme.startswith("sqlite"):
+        errors.append("DATABASE_URL points at SQLite. Production must use PostgreSQL (postgresql://).")
+    elif scheme != "postgresql" and not scheme.startswith("postgresql+"):
+        errors.append("DATABASE_URL must be a postgresql:// URL when APP_ENV is production.")
+
+    origins = [str(origin).strip() for origin in settings.cors_origins or [] if str(origin).strip()]
+    if not origins:
+        errors.append("CORS_ORIGINS must list the site's https origin when APP_ENV is production.")
+    for position, origin in enumerate(origins, start=1):
+        parts = urlsplit(origin)
+        if origin == "*" or parts.scheme != "https" or not parts.hostname:
+            errors.append(f"CORS_ORIGINS entry {position} must be an https origin when APP_ENV is production.")
+        elif _is_local_host(parts.hostname):
+            errors.append(f"CORS_ORIGINS entry {position} is a local host, which production refuses.")
+
+    return errors
 
 
 def validate_configuration() -> List[str]:
@@ -32,9 +67,14 @@ def validate_configuration() -> List[str]:
                 "CLERK_SECRET_KEY is not set. "
                 "Set it, or set MOCK_AUTH=1 when APP_ENV is development or test."
             )
-        if not settings.clerk_frontend_api:
-            warnings.append(
-                "CLERK_FRONTEND_API is not set. JWT issuer validation may fail."
+        if not settings.clerk_frontend_api.strip():
+            errors.append(
+                "CLERK_FRONTEND_API is not set. Session token issuers cannot be verified."
+            )
+        if not settings.clerk_authorized_parties:
+            errors.append(
+                "CLERK_AUTHORIZED_PARTIES is not set. List the web origins allowed "
+                "in a session token's azp claim, e.g. https://app.example.pt."
             )
     else:
         warnings.append(
@@ -139,12 +179,14 @@ def validate_configuration() -> List[str]:
         )
     if settings.app_env != "development" and settings.storage_mock_mode:
         errors.append(f"STORAGE_MOCK_MODE must be false when APP_ENV is {settings.app_env}.")
+    if app_env_name(settings.app_env) == "production":
+        errors.extend(production_errors(settings))
 
     # Raise error if critical configuration is missing
     if errors:
         error_message = "\n".join([f"  - {e}" for e in errors])
         raise ConfigurationError(
-            f"Missing required configuration:\n{error_message}"
+            f"Missing or unsafe required configuration:\n{error_message}"
         )
     
     return warnings
