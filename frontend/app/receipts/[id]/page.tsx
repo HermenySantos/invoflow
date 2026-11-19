@@ -7,6 +7,7 @@ import { ModalLayer } from '@/components/layout/ModalLayer';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
 import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
+import { PtDateInput } from '@/components/forms/PtDateInput';
 import { saveErrorMessage } from '@/lib/saveError';
 import { requestScrollRestore } from '@/lib/mainScroll';
 import { 
@@ -108,6 +109,7 @@ export default function ReceiptDetailPage() {
   
   // Edit mode - only when user explicitly wants to edit
   const [isEditing, setIsEditing] = useState(false);
+  const editDateValidRef = useRef(true);
   const [editData, setEditData] = useState({
     vendor_name: '',
     document_date: '',
@@ -327,6 +329,8 @@ export default function ReceiptDetailPage() {
 
   const handleSaveEdit = async () => {
     if (!document || document.id !== routeId) return;
+    // The date field shows its own error; do not send the last valid date as if it were the typed one.
+    if (!editDateValidRef.current) return;
     const mismatch =
       seriesBlocks(
         editData.document_type,
@@ -626,17 +630,16 @@ export default function ReceiptDetailPage() {
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="edit-document-date" className="block text-sm font-medium text-gray-700 mb-1">Data do documento</label>
-                  <input
-                    id="edit-document-date"
-                    type="date"
-                    value={editData.document_date}
-                    onChange={(e) => setEditData(d => ({ ...d, document_date: e.target.value }))}
-                    max={new Date().toISOString().split('T')[0]}
-                    className="input"
-                  />
-                </div>
+                <PtDateInput
+                  id="edit-document-date"
+                  label="Data do documento"
+                  value={editData.document_date}
+                  onChange={(iso) => setEditData(d => ({ ...d, document_date: iso }))}
+                  onValidityChange={(valid) => { editDateValidRef.current = valid; }}
+                  max={new Date().toISOString().split('T')[0]}
+                  labelClassName="block text-sm font-medium text-gray-700 mb-1"
+                  inputClassName="input"
+                />
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -829,7 +832,10 @@ export default function ReceiptDetailPage() {
 
                 {/* Edit button */}
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    editDateValidRef.current = true;
+                    setIsEditing(true);
+                  }}
                   className="w-full py-3 flex items-center justify-center gap-2 text-gray-600 font-medium touch-manipulation"
                 >
                   <Edit3 className="w-4 h-4" />

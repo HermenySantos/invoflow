@@ -191,7 +191,8 @@ describe('receipts list for an account with no documents', () => {
 
     const cta = await screen.findByRole('link', { name: 'Carregar recibo' });
     expect(cta).toHaveAttribute('href', '/upload');
-    expect(container.querySelectorAll('input[type="date"]')).toHaveLength(0);
+    expect(screen.queryByLabelText('De')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Até')).not.toBeInTheDocument();
     expect(container.querySelectorAll('input[type="search"]')).toHaveLength(0);
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Todos' })).not.toBeInTheDocument();
@@ -204,29 +205,33 @@ describe('receipts list for an account with no documents', () => {
   it('hides the filters while the first load is in flight', () => {
     vi.mocked(api.getDocuments).mockReturnValue(new Promise(() => {}));
     const { container } = renderInApp(<ReceiptsPage />);
-    expect(container.querySelectorAll('input[type="date"], input[type="search"]')).toHaveLength(0);
+    expect(screen.queryByLabelText('De')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Até')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('input[type="search"]')).toHaveLength(0);
   });
 });
 
 describe('receipts list once a document exists', () => {
   it('shows search, both date inputs and the category chips', async () => {
     vi.mocked(api.getDocuments).mockResolvedValue(list([receipt()]));
-    const { container } = renderInApp(<ReceiptsPage />);
+    renderInApp(<ReceiptsPage />);
 
     expect(await screen.findByRole('button', { name: 'Todos' })).toBeInTheDocument();
-    expect(container.querySelectorAll('input[type="date"]')).toHaveLength(2);
+    expect(screen.getByLabelText('De')).toHaveAttribute('placeholder', 'dd/mm/aaaa');
+    expect(screen.getByLabelText('Até')).toHaveAttribute('placeholder', 'dd/mm/aaaa');
     expect(screen.getByRole('searchbox', { name: 'Procurar recibos' })).toBeInTheDocument();
   });
 
   it('keeps the filters and offers "Limpar filtros" when a filter matches nothing', async () => {
     vi.mocked(api.getDocuments).mockResolvedValue(list([receipt()]));
-    const { container } = renderInApp(<ReceiptsPage />);
+    renderInApp(<ReceiptsPage />);
 
     vi.mocked(api.getDocuments).mockResolvedValue(list([]));
     fireEvent.click(await screen.findByRole('button', { name: EXPENSE_CATEGORY_LIST[0].label }));
 
     expect(await screen.findByRole('button', { name: 'Limpar filtros' })).toBeInTheDocument();
-    expect(container.querySelectorAll('input[type="date"]')).toHaveLength(2);
+    expect(screen.getByLabelText('De')).toBeInTheDocument();
+    expect(screen.getByLabelText('Até')).toBeInTheDocument();
     expect(screen.getByRole('searchbox')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Carregar recibo' })).not.toBeInTheDocument();
   });
@@ -236,11 +241,14 @@ describe('receipts list once a document exists', () => {
     renderInApp(<ReceiptsPage />);
 
     vi.mocked(api.getDocuments).mockResolvedValue(list([]));
-    fireEvent.change(await screen.findByLabelText('De'), { target: { value: '2030-01-01' } });
+    const from = await screen.findByLabelText('De');
+    fireEvent.change(from, { target: { value: '01/01/2030' } });
+    fireEvent.blur(from);
     await screen.findByRole('button', { name: 'Limpar filtros' });
 
     vi.mocked(api.getDocuments).mockReturnValue(new Promise(() => {}));
     fireEvent.change(screen.getByLabelText('De'), { target: { value: '' } });
+    fireEvent.blur(screen.getByLabelText('De'));
     await waitFor(() => expect(api.getDocuments).toHaveBeenCalledTimes(3));
     expect(screen.getByLabelText('De')).toBeInTheDocument();
   });
