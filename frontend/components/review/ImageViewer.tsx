@@ -316,7 +316,12 @@ export function ImageViewer({
         {/* Close button */}
         <button
           onClick={toggleFullscreen}
-          className="absolute top-[calc(1rem+env(safe-area-inset-top,0px))] right-4 z-10 p-2.5 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+          className="absolute top-[calc(1rem+env(safe-area-inset-top,0px))] right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full"
+          style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            color: '#ffffff',
+          }}
           aria-label="Fechar ecrã inteiro"
         >
           <X className="w-6 h-6" />
