@@ -33,7 +33,7 @@ Gildo creates the accounts, because they need payment or identity. Claude never 
    - Create an R2 API token with Object Read & Write on both buckets.
    - Under CORS on `invoflow-documents`, allow `PUT` and `GET` from `https://<your domain>`. Browsers upload straight to R2.
    - Leave `R2_ENDPOINT_URL` and `BACKUP_ENDPOINT_URL` empty. The API and the backup script then use the EU jurisdiction endpoint `https://<account_id>.eu.r2.cloudflarestorage.com`. Set either variable to `https://<account_id>.r2.cloudflarestorage.com` only when the bucket is in Cloudflare's default jurisdiction.
-4. **Clerk:** create a production instance for the domain. You need the publishable key (`pk_live_…`), the secret key (`sk_live_…`) and the Frontend API host.
+4. **Clerk:** create a production instance for the domain. You need the publishable key (`pk_live_…`), the secret key (`sk_live_…`) and the Frontend API host. The API accepts a session token only when its `iss` is `https://<CLERK_FRONTEND_API>` and its `azp` is one of `CLERK_AUTHORIZED_PARTIES` (usually `https://<your domain>`). It refuses to start when either is unset.
 5. **Sentry (optional):** create a free Python project and copy its DSN.
 
 ## First deploy
