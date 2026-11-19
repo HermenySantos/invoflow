@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PtDateInput } from '@/components/forms/PtDateInput';
 import { api, Document } from '@/lib/api';
 import {
   getExpenseCategoryInfo,
@@ -213,24 +214,22 @@ export default function ReceiptsPage() {
               />
             </label>
             <div className="flex gap-2">
-              <label className="flex-1 text-xs text-gray-500">
-                De
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="input mt-1 min-h-11 lg:min-h-0"
-                />
-              </label>
-              <label className="flex-1 text-xs text-gray-500">
-                Até
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="input mt-1 min-h-11 lg:min-h-0"
-                />
-              </label>
+              <PtDateInput
+                label="De"
+                value={dateFrom}
+                onChange={setDateFrom}
+                className="flex-1 min-w-0"
+                labelClassName="block text-xs text-gray-500"
+                inputClassName="input mt-1 min-h-11 lg:min-h-0"
+              />
+              <PtDateInput
+                label="Até"
+                value={dateTo}
+                onChange={setDateTo}
+                className="flex-1 min-w-0"
+                labelClassName="block text-xs text-gray-500"
+                inputClassName="input mt-1 min-h-11 lg:min-h-0"
+              />
             </div>
           </div>
         ) : null}
