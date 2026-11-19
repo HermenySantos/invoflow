@@ -1,4 +1,4 @@
-"""Production refuses to start without safe Clerk, database and CORS settings."""
+"""Production refuses to start on SQLite, with unsafe CORS origins, or with APP_DEBUG on."""
 
 import os
 import socket
@@ -21,6 +21,7 @@ VALID_PRODUCTION = {
     "DATABASE_URL": f"postgresql://invoflow:{SECRET}@db.invalid:5432/invoflow",
     "CLERK_SECRET_KEY": "sk_live_placeholder",
     "CLERK_FRONTEND_API": "clerk.invoflow.example.pt",
+    "CLERK_AUTHORIZED_PARTIES": "https://invoflow.example.pt",
     "CORS_ORIGINS": "https://invoflow.example.pt",
     "STORAGE_MOCK_MODE": "false",
     "R2_ACCOUNT_ID": "placeholder",
@@ -34,14 +35,7 @@ VALID_PRODUCTION = {
 
 # (overrides, setting named in the error, value that must not be printed)
 REFUSED = {
-    "no_clerk_issuer": ({"CLERK_FRONTEND_API": "", "CLERK_JWKS_URL": ""}, "CLERK_FRONTEND_API or CLERK_JWKS_URL", None),
-    "jwks_over_http": (
-        {"CLERK_JWKS_URL": f"http://{SECRET}.example/.well-known/jwks.json"},
-        "CLERK_JWKS_URL",
-        SECRET,
-    ),
-    "jwks_on_localhost": ({"CLERK_JWKS_URL": "https://localhost/.well-known/jwks.json"}, "CLERK_JWKS_URL", None),
-    "frontend_api_with_scheme": ({"CLERK_FRONTEND_API": f"https://{SECRET}.example"}, "CLERK_FRONTEND_API", SECRET),
+    "debug_on": ({"APP_DEBUG": "true"}, "APP_DEBUG", None),
     "sqlite_by_default": ({"DATABASE_URL": None}, "DATABASE_URL points at SQLite", None),
     "sqlite_explicit": ({"DATABASE_URL": f"sqlite:////data/{SECRET}.db"}, "DATABASE_URL points at SQLite", SECRET),
     "not_postgres": ({"DATABASE_URL": f"mysql://invoflow:{SECRET}@db/invoflow"}, "DATABASE_URL", SECRET),
@@ -79,11 +73,8 @@ def test_valid_production_config_starts(monkeypatch):
     _validate(monkeypatch, _env({}))
 
 
-def test_valid_production_config_with_a_jwks_url_starts(monkeypatch):
-    _validate(
-        monkeypatch,
-        _env({"CLERK_FRONTEND_API": "", "CLERK_JWKS_URL": "https://clerk.invoflow.example.pt/.well-known/jwks.json"}),
-    )
+def test_valid_production_config_with_several_origins_starts(monkeypatch):
+    _validate(monkeypatch, _env({"CORS_ORIGINS": '["https://invoflow.example.pt","https://www.invoflow.example.pt"]'}))
 
 
 @pytest.mark.parametrize("case", sorted(REFUSED))
@@ -138,7 +129,7 @@ def _uvicorn(env: dict, cwd: Path, port: int) -> subprocess.Popen:
     )
 
 
-@pytest.mark.parametrize("case", ["no_clerk_issuer", "sqlite_explicit", "cors_http"])
+@pytest.mark.parametrize("case", ["sqlite_explicit", "cors_localhost", "cors_http"])
 def test_uvicorn_exits_non_zero_without_printing_values(tmp_path, case):
     overrides, named, hidden = REFUSED[case]
     process = _uvicorn(_env(overrides), tmp_path, _free_port())

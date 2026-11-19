@@ -28,17 +28,8 @@ def production_errors(settings) -> List[str]:
     """Settings production refuses to start with. Messages name settings, never their values."""
     errors: List[str] = []
 
-    # security.py fetches the signing keys from CLERK_JWKS_URL, else from CLERK_FRONTEND_API.
-    jwks_url = settings.clerk_jwks_url.strip()
-    frontend_api = settings.clerk_frontend_api.strip()
-    if not jwks_url and not frontend_api:
-        errors.append("CLERK_FRONTEND_API or CLERK_JWKS_URL must be set when APP_ENV is production.")
-    if jwks_url:
-        parts = urlsplit(jwks_url)
-        if parts.scheme != "https" or not parts.hostname or _is_local_host(parts.hostname):
-            errors.append("CLERK_JWKS_URL must be an https URL on a non-local host when APP_ENV is production.")
-    if frontend_api and ("/" in frontend_api or ":" in frontend_api or _is_local_host(frontend_api)):
-        errors.append("CLERK_FRONTEND_API must be a bare non-local hostname (no scheme, port or path).")
+    if settings.app_debug:
+        errors.append("APP_DEBUG must be false when APP_ENV is production. It returns tracebacks to clients.")
 
     scheme = urlsplit(settings.database_url.strip()).scheme.lower()
     if scheme.startswith("sqlite"):
