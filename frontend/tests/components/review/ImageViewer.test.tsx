@@ -96,4 +96,19 @@ describe('ImageViewer', () => {
     const img = screen.getByRole('img');
     expect(img).toHaveClass('invisible');
   });
+
+  it.each([
+    ['Escape', () => fireEvent.keyDown(document.activeElement!, { key: 'Escape' })],
+    ['the close button', () => fireEvent.click(screen.getByLabelText('Fechar ecrã inteiro'))],
+  ])('gives focus back to the fullscreen button when closed with %s', (_, close) => {
+    render(<ImageViewer src="https://example.com/image.jpg" />);
+    const open = screen.getByLabelText('Ver em ecrã inteiro');
+    open.focus();
+    fireEvent.click(open);
+    expect(screen.getByLabelText('Fechar ecrã inteiro')).toHaveFocus();
+
+    close();
+    expect(screen.queryByLabelText('Fechar ecrã inteiro')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Ver em ecrã inteiro')).toHaveFocus();
+  });
 });
