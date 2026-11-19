@@ -605,8 +605,9 @@ export default function ReceiptDetailPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
+                  <label htmlFor="edit-vendor-name" className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
                   <input
+                    id="edit-vendor-name"
                     type="text"
                     value={editData.vendor_name}
                     onChange={(e) => setEditData(d => ({ ...d, vendor_name: e.target.value }))}
@@ -616,8 +617,9 @@ export default function ReceiptDetailPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                  <label htmlFor="edit-document-date" className="block text-sm font-medium text-gray-700 mb-1">Data do documento</label>
                   <input
+                    id="edit-document-date"
                     type="date"
                     value={editData.document_date}
                     onChange={(e) => setEditData(d => ({ ...d, document_date: e.target.value }))}
@@ -628,8 +630,9 @@ export default function ReceiptDetailPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Total (€)</label>
+                    <label htmlFor="edit-gross-amount" className="block text-sm font-medium text-gray-700 mb-1">Total (€)</label>
                     <input
+                      id="edit-gross-amount"
                       type="number"
                       step="0.01"
                       min="0"
@@ -641,8 +644,9 @@ export default function ReceiptDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">IVA (€)</label>
+                    <label htmlFor="edit-vat-amount" className="block text-sm font-medium text-gray-700 mb-1">IVA (€)</label>
                     <input
+                      id="edit-vat-amount"
                       type="number"
                       step="0.01"
                       min="0"
@@ -1132,9 +1136,9 @@ export default function ReceiptDetailPage() {
               </button>
             </div>
             
+            {/* Conversion Lead owns this copy (COPY-TOKENS-v1). No retention or legal claim. */}
             <p className="text-gray-600 mb-6">
-              O recibo deixa de aparecer na lista, no resumo e na exportação. O original
-              fica guardado, como a lei exige para faturas.
+              O recibo deixa de aparecer na lista, no resumo e na exportação.
             </p>
             
             <div className="flex gap-3">
@@ -1148,7 +1152,7 @@ export default function ReceiptDetailPage() {
               <button
                 onClick={handleDeleteConfirm}
                 disabled={isDeleting}
-                className="flex-1 min-h-11 px-4 py-2.5 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 btn-danger min-h-11 px-4 py-2.5 gap-2"
               >
                 {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Remover
