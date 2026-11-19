@@ -8,19 +8,21 @@ import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import router as api_router
 from app.core.config import get_settings
-from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine
+from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine, get_db
 from app.core.db_errors import RETRY_AFTER_SECONDS, retryable
 from app.core.rate_limit import RATE_LIMITED_MESSAGE, limiter, retry_after_seconds
 from app.core.startup import get_environment_status, run_startup_checks
@@ -322,24 +324,29 @@ async def health_check():
     return JSONResponse(status_code=_runtime_status_code(payload), content=payload)
 
 
-@app.get("/health/detailed")
-async def detailed_health_check():
-    """Detailed health check. Full environment status is only returned in debug mode."""
-    runtime = ocr_runtime_status()
-    code = _runtime_status_code(runtime)
-    if not settings.app_debug:
-        return JSONResponse(
-            status_code=code,
-            content={
-                "status": runtime["status"],
-                "message": "Detailed health checks disabled in production",
-            },
-        )
+def _database_reachable(db: Session) -> bool:
+    try:
+        db.execute(text("SELECT 1"))
+        return True
+    except Exception as exc:
+        # The exception text can carry the host, user or SQL; log only its type.
+        logger.warning("Readiness check: database unreachable (%s)", type(exc).__name__)
+        return False
 
-    return JSONResponse(
-        status_code=code,
-        content={
-            "status": runtime["status"],
-            "environment": get_environment_status(),
-        },
-    )
+
+@app.get("/health/detailed")
+def detailed_health_check(db: Session = Depends(get_db)):
+    """Readiness check: OCR runtime plus a database round trip. Full environment status is only returned in debug mode."""
+    runtime = ocr_runtime_status()
+    database_ok = _database_reachable(db)
+    overall = runtime["status"] if database_ok else "degraded"
+    code = _runtime_status_code({"status": overall})
+    content = {
+        "status": overall,
+        "checks": {"database": "ok" if database_ok else "down"},
+    }
+    if settings.app_debug:
+        content["environment"] = get_environment_status()
+    else:
+        content["message"] = "Detailed health checks disabled in production"
+    return JSONResponse(status_code=code, content=content)
