@@ -10,6 +10,7 @@ import {
   FileText,
   Loader2
 } from 'lucide-react';
+import { ModalLayer } from '@/components/layout/ModalLayer';
 
 interface ImageViewerProps {
   src: string | null;
@@ -160,8 +161,6 @@ export function ImageViewer({
         handleZoomIn();
       } else if (e.key === '-') {
         handleZoomOut();
-      } else if (e.key === 'Escape') {
-        setIsFullscreen(false);
       }
     };
 
@@ -305,7 +304,12 @@ export function ImageViewer({
   // Fullscreen modal
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
+      <ModalLayer
+        layer="viewer"
+        onClose={toggleFullscreen}
+        closeOnBackdrop={false}
+        className="bg-black flex items-center justify-center"
+      >
         {/* Close button */}
         <button
           onClick={toggleFullscreen}
@@ -323,7 +327,7 @@ export function ImageViewer({
         )}
 
         {imageContent}
-      </div>
+      </ModalLayer>
     );
   }
 
