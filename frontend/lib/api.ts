@@ -212,6 +212,21 @@ class ApiClient {
     return { blob, filename: match?.[1] || 'Invoflow_Export.zip' };
   }
 
+  /** Every document, VAT-on-sales entry and receipt file of the signed-in user, as one ZIP. */
+  async downloadAccountExport() {
+    const response = await fetch(`${API_BASE}/account/export`, {
+      headers: await this.authHeaders(),
+    });
+    if (!response.ok) {
+      const error: ApiError = { message: 'Account export failed', status: response.status };
+      throw error;
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    return { blob, filename: match?.[1] || 'Invoflow_meus_dados.zip' };
+  }
+
   // VAT on Sales
   async upsertVatSales(data: {
     period_type: 'month' | 'quarter';

@@ -49,6 +49,7 @@ RATE_LIMITS = {
     "upload": lambda: settings.rate_limit_upload,
     "export": lambda: settings.rate_limit_export,
     "efatura": lambda: settings.rate_limit_efatura,
+    "account_export": lambda: settings.rate_limit_account_export,
 }
 
 

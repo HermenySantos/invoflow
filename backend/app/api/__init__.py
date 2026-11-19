@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api import documents, summary, exports, files, vat_sales, audit, efatura, projection
+from app.api import account, documents, summary, exports, files, vat_sales, audit, efatura, projection
 
 router = APIRouter()
 
@@ -11,3 +11,4 @@ router.include_router(files.router, prefix="/files", tags=["files"])
 router.include_router(vat_sales.router, prefix="/vat-sales", tags=["vat-sales"])
 router.include_router(audit.router, prefix="/audit", tags=["audit"])
 router.include_router(efatura.router, prefix="/efatura", tags=["efatura"])
+router.include_router(account.router, prefix="/account", tags=["account"])

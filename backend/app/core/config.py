@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     efatura_client_cert_pem: str = ""
     efatura_client_key_pem: str = ""
 
+    # Whole-account data export (GET /api/account/export). Off answers 404.
+    account_export_enabled: bool = True
+
     cors_origins: Union[list[str], str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -104,6 +107,8 @@ class Settings(BaseSettings):
     rate_limit_upload: str = "30/minute"
     rate_limit_export: str = "5/minute"
     rate_limit_efatura: str = "5/minute"
+    # Whole-account export reads every receipt file the user owns.
+    rate_limit_account_export: str = "2/minute;10/hour"
 
     @model_validator(mode="after")
     def enable_mock_auth_only_when_asked(self):
@@ -120,7 +125,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "rate_limit_write", "rate_limit_upload", "rate_limit_export", "rate_limit_efatura"
+        "rate_limit_write",
+        "rate_limit_upload",
+        "rate_limit_export",
+        "rate_limit_efatura",
+        "rate_limit_account_export",
     )
     @classmethod
     def parse_rate_limit(cls, value: str):
