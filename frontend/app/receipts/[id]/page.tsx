@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { ModalPortal } from '@/components/layout/ModalPortal';
+import { ModalLayer } from '@/components/layout/ModalLayer';
 import { api, Document, AuditEntry, AuditTrailResponse } from '@/lib/api';
 import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERIES_OVERRIDE_WARNING, documentTypeLabel, initialReviewEdit, isConcreteDocumentType, linkedRetypeBlocked, saveEditPayload, seriesBlocks, seriesOverrideAllowed } from '@/lib/reviewEdit';
 import { ImageViewer } from '@/components/review';
@@ -101,6 +101,9 @@ export default function ReceiptDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  /* Set before the first await, so a double tap sends one DELETE even before isDeleting re-renders */
+  const deletingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   
   // Edit mode - only when user explicitly wants to edit
@@ -356,22 +359,29 @@ export default function ReceiptDetailPage() {
     }
   };
 
-  const handleDeleteClick = () => setShowDeleteModal(true);
-  const handleDeleteCancel = () => setShowDeleteModal(false);
+  const handleDeleteClick = () => {
+    setDeleteError(null);
+    setShowDeleteModal(true);
+  };
+  const handleDeleteCancel = () => {
+    if (!deletingRef.current) setShowDeleteModal(false);
+  };
 
   const handleDeleteConfirm = async () => {
-    if (!document) return;
-    
+    if (!document || deletingRef.current) return;
+    deletingRef.current = true;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
-      setIsDeleting(true);
       await api.deleteDocument(document.id);
       setShowDeleteModal(false);
       backToList();
     } catch (err) {
       console.error('Failed to delete:', err);
+      setDeleteError('Não foi possível remover. Tente novamente.');
+    } finally {
+      deletingRef.current = false;
       setIsDeleting(false);
-      setShowDeleteModal(false);
-      setError('Não foi possível remover. Tente novamente.');
     }
   };
 
@@ -762,10 +772,11 @@ export default function ReceiptDetailPage() {
                 {(() => {
                   const catInfo = getExpenseCategoryInfo(document.expense_category);
                   const IconComp = ICON_MAP[catInfo.icon] || Tag;
+                  // aria-disabled rather than disabled: the sheet hands focus back here while the pick saves
                   return (
                     <button
-                      onClick={() => setShowCategoryPicker(true)}
-                      disabled={isSavingCategory}
+                      onClick={() => !isSavingCategory && setShowCategoryPicker(true)}
+                      aria-disabled={isSavingCategory}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl ${catInfo.color} touch-manipulation transition-colors active:opacity-80`}
                     >
                       <IconComp className={`w-5 h-5 ${catInfo.textColor} flex-shrink-0`} />
@@ -1074,14 +1085,12 @@ export default function ReceiptDetailPage() {
 
       {/* Category Picker Bottom Sheet */}
       {showCategoryPicker && (
-        <ModalPortal>
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50" onClick={() => setShowCategoryPicker(false)}>
+        <ModalLayer layer="sheet" onClose={() => setShowCategoryPicker(false)} className="flex items-end justify-center bg-black/50">
           <div 
             role="dialog"
             aria-modal="true"
             aria-labelledby="category-picker-title"
             className="bg-white rounded-t-2xl shadow-xl w-full max-w-lg animate-in slide-in-from-bottom duration-200 max-h-[70vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h2 id="category-picker-title" className="text-lg font-semibold text-gray-900">Categoria</h2>
@@ -1115,14 +1124,16 @@ export default function ReceiptDetailPage() {
               })}
             </div>
           </div>
-        </div>
-        </ModalPortal>
+        </ModalLayer>
       )}
 
       {/* Delete Modal */}
       {showDeleteModal && (
-        <ModalPortal>
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50">
+        <ModalLayer
+          layer="sheet"
+          onClose={handleDeleteCancel}
+          className="flex items-end sm:items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50"
+        >
           <div
             role="alertdialog"
             aria-modal="true"
@@ -1140,9 +1151,16 @@ export default function ReceiptDetailPage() {
             <p className="text-gray-600 mb-6">
               O recibo deixa de aparecer na lista, no resumo e na exportação.
             </p>
+
+            {deleteError && (
+              <p role="alert" className="-mt-2 mb-4 text-sm text-red-600">
+                {deleteError}
+              </p>
+            )}
             
             <div className="flex gap-3">
               <button
+                data-autofocus
                 onClick={handleDeleteCancel}
                 disabled={isDeleting}
                 className="flex-1 btn-secondary btn-md min-h-11"
@@ -1159,8 +1177,7 @@ export default function ReceiptDetailPage() {
               </button>
             </div>
           </div>
-        </div>
-        </ModalPortal>
+        </ModalLayer>
       )}
     </AppLayout>
   );
