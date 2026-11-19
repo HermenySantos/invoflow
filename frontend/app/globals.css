@@ -11,6 +11,7 @@
   --ff-accent: #1b4d3e;
   --ff-accent-hover: #143d32;
   --ff-danger: #8b2e2e;
+  --ff-danger-hover: #6f2424;
   --ff-radius: 6px;
   --ff-max: 720px;
   --ff-hero-max: 960px;
@@ -41,6 +42,16 @@
 
   .btn-primary:hover {
     background: var(--ff-accent-hover);
+  }
+
+  /* White on #8b2e2e is 8.31:1. */
+  .btn-danger {
+    @apply btn text-white focus:ring-red-800;
+    background: var(--ff-danger);
+  }
+
+  .btn-danger:hover {
+    background: var(--ff-danger-hover);
   }
 
   .btn-secondary {
