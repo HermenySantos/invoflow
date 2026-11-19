@@ -12,6 +12,10 @@
   --ff-accent-hover: #143d32;
   --ff-danger: #8b2e2e;
   --ff-danger-hover: #6f2424;
+  --ff-positive: #0f5c45;
+  --ff-warning: #8a4b00;
+  --ff-toggle-track: #e8e8e3;
+  --ff-toggle-idle: #3f3f3f;
   --ff-radius: 6px;
   --ff-max: 720px;
   --ff-hero-max: 960px;

@@ -542,7 +542,7 @@ export default function ReceiptDetailPage() {
                   };
                   const severityIcons = {
                     error: <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />,
-                    warning: <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />,
+                    warning: <AlertTriangle className="w-4 h-4 text-[var(--ff-warning)] flex-shrink-0 mt-0.5" />,
                     info: <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />,
                   };
                   return (
@@ -565,7 +565,7 @@ export default function ReceiptDetailPage() {
                   <h2 className="font-semibold text-gray-900">Editar dados</h2>
                   <button 
                     onClick={() => setIsEditing(false)}
-                    className="-my-2 -mr-3 min-h-11 px-3 text-sm text-gray-500 touch-manipulation"
+                    className="-my-2 -mr-3 min-h-11 px-3 text-sm text-[var(--ff-text-muted)] touch-manipulation"
                   >
                     Cancelar
                   </button>
@@ -587,12 +587,12 @@ export default function ReceiptDetailPage() {
                     ))}
                   </select>
                   {document.suggested_type && document.document_type === 'unclassified' ? (
-                    <p className="mt-1 text-sm text-gray-500">
+                    <p className="mt-1 text-sm text-[var(--ff-text-muted)]">
                       Sugestão: {documentTypeLabel(document.suggested_type)}
                     </p>
                   ) : null}
                   {document.at_document_type ? (
-                    <p className="mt-1 text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
+                    <p className="mt-1 text-sm text-[var(--ff-text-muted)]">Tipo AT: {document.at_document_type}</p>
                   ) : null}
                 </div>
 
@@ -608,7 +608,7 @@ export default function ReceiptDetailPage() {
                     className="input"
                   />
                   {document.suggested_invoice_number && document.document_type === 'unclassified' ? (
-                    <p className="mt-1 text-sm text-gray-500">
+                    <p className="mt-1 text-sm text-[var(--ff-text-muted)]">
                       Sugestão de n.º {document.suggested_invoice_number}
                     </p>
                   ) : null}
@@ -685,7 +685,7 @@ export default function ReceiptDetailPage() {
                 ) : null}
                 {document.status === 'needs_review' && !isComplete() && (
                   <div className="card p-3 bg-amber-50 border-amber-200 flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className="w-5 h-5 text-[var(--ff-warning)] flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-amber-800">
                       Alguns dados não foram lidos. Toque em Editar dados para os preencher.
                     </p>
@@ -696,21 +696,21 @@ export default function ReceiptDetailPage() {
                 <div className="card divide-y divide-gray-100">
                   <div className="p-4 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Receipt className="w-5 h-5 text-gray-500" />
+                      <Receipt className="w-5 h-5 text-[var(--ff-text-muted)]" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-500">Tipo</p>
+                      <p className="text-sm text-[var(--ff-text-muted)]">Tipo</p>
                       <p className="font-semibold text-gray-900">
                         {documentTypeLabel(document.document_type)}
                       </p>
                       {document.document_type === 'unclassified' && document.suggested_type ? (
-                        <p className="text-sm text-gray-500">Sugestão: {documentTypeLabel(document.suggested_type)}</p>
+                        <p className="text-sm text-[var(--ff-text-muted)]">Sugestão: {documentTypeLabel(document.suggested_type)}</p>
                       ) : null}
                       {document.at_document_type ? (
-                        <p className="text-sm text-gray-500">Tipo AT: {document.at_document_type}</p>
+                        <p className="text-sm text-[var(--ff-text-muted)]">Tipo AT: {document.at_document_type}</p>
                       ) : null}
                       {(document.invoice_number || document.suggested_invoice_number) ? (
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-[var(--ff-text-muted)]">
                           {document.invoice_number
                             ? `N.º ${document.invoice_number}`
                             : `Sugestão de n.º ${document.suggested_invoice_number}`}
@@ -722,12 +722,12 @@ export default function ReceiptDetailPage() {
                   {/* Vendor */}
                   <div className="p-4 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Building2 className="w-5 h-5 text-gray-500" />
+                      <Building2 className="w-5 h-5 text-[var(--ff-text-muted)]" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-500">Fornecedor</p>
+                      <p className="text-sm text-[var(--ff-text-muted)]">Fornecedor</p>
                       <p className="font-semibold text-gray-900 truncate">
-                        {document.vendor_name || <span className="text-gray-400">Não detetado</span>}
+                        {document.vendor_name || <span className="text-[var(--ff-text-muted)]">Não detetado</span>}
                       </p>
                     </div>
                   </div>
@@ -735,12 +735,12 @@ export default function ReceiptDetailPage() {
                   {/* Date */}
                   <div className="p-4 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Calendar className="w-5 h-5 text-gray-500" />
+                      <Calendar className="w-5 h-5 text-[var(--ff-text-muted)]" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-500">Data</p>
+                      <p className="text-sm text-[var(--ff-text-muted)]">Data</p>
                       <p className="font-semibold text-gray-900">
-                        {document.document_date ? formatDate(document.document_date) : <span className="text-gray-400">Não detetado</span>}
+                        {document.document_date ? formatDate(document.document_date) : <span className="text-[var(--ff-text-muted)]">Não detetado</span>}
                       </p>
                     </div>
                   </div>
@@ -751,15 +751,15 @@ export default function ReceiptDetailPage() {
                       <Euro className="w-5 h-5 text-primary-600" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm text-gray-500">Total</p>
+                      <p className="text-sm text-[var(--ff-text-muted)]">Total</p>
                       <p className="text-xl font-bold text-gray-900">
-                        {document.gross_amount ? formatCurrency(document.gross_amount) : <span className="text-gray-400">—</span>}
+                        {document.gross_amount ? formatCurrency(document.gross_amount) : <span className="text-[var(--ff-text-muted)]">—</span>}
                       </p>
                     </div>
                     {/* VAT breakdown */}
                     {document.vat_amount && (
                       <div className="text-right">
-                        <p className="text-xs text-gray-500">IVA {getVatRateDisplay()}</p>
+                        <p className="text-xs text-[var(--ff-text-muted)]">IVA {getVatRateDisplay()}</p>
                         <p className="text-sm font-medium text-gray-700">
                           {formatCurrency(document.vat_amount)}
                         </p>
@@ -815,12 +815,12 @@ export default function ReceiptDetailPage() {
                 {/* Confidence indicator */}
                 {document.ocr_confidence && (
                   <div className="flex items-center justify-between px-1">
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-[var(--ff-text-muted)]">
                       Lido automaticamente
                     </span>
                     <span className={`text-xs font-medium ${
-                      getConfidenceLevel() === 'high' ? 'text-green-600' :
-                      getConfidenceLevel() === 'medium' ? 'text-amber-600' : 'text-red-600'
+                      getConfidenceLevel() === 'high' ? 'text-[var(--ff-positive)]' :
+                      getConfidenceLevel() === 'medium' ? 'text-[var(--ff-warning)]' : 'text-red-600'
                     }`}>
                       {parseFloat(document.ocr_confidence).toFixed(0)}% de confiança
                     </span>
@@ -845,15 +845,15 @@ export default function ReceiptDetailPage() {
                 className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-gray-50 text-gray-700 font-medium touch-manipulation transition-colors active:bg-gray-100"
               >
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-500" />
+                  <Clock className="w-4 h-4 text-[var(--ff-text-muted)]" />
                   <span className="text-sm">
                     Histórico{auditTrail ? ` (${auditTrail.total})` : ''}
                   </span>
                 </div>
                 {showAuditTrail ? (
-                  <ChevronUp className="w-4 h-4 text-gray-400" />
+                  <ChevronUp className="w-4 h-4 text-[var(--ff-text-muted)]" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                  <ChevronDown className="w-4 h-4 text-[var(--ff-text-muted)]" />
                 )}
               </button>
 
@@ -861,7 +861,7 @@ export default function ReceiptDetailPage() {
                 <div className="mt-2 card p-4">
                   {isAuditLoading ? (
                     <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                      <Loader2 className="w-5 h-5 text-[var(--ff-text-muted)] animate-spin" />
                     </div>
                   ) : auditTrail && auditTrail.entries.length > 0 ? (
                     <div className="relative">
@@ -891,7 +891,7 @@ export default function ReceiptDetailPage() {
                             <li key={entry.id} className="relative flex gap-3 pl-0">
                               {/* Timeline dot / icon */}
                               <div className="relative z-10 w-[30px] h-[30px] rounded-full bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
-                                <ActionIcon className="w-3.5 h-3.5 text-gray-500" />
+                                <ActionIcon className="w-3.5 h-3.5 text-[var(--ff-text-muted)]" />
                               </div>
 
                               {/* Content */}
@@ -909,9 +909,9 @@ export default function ReceiptDetailPage() {
                                 {changes && Object.keys(changes).length > 0 && (
                                   <div className="mt-1 space-y-0.5">
                                     {Object.entries(changes).map(([field, vals]) => (
-                                      <p key={field} className="text-xs text-gray-500">
+                                      <p key={field} className="text-xs text-[var(--ff-text-muted)]">
                                         <span className="font-medium">{field}:</span>{' '}
-                                        <span className="text-gray-400">{String(vals.old ?? '—')}</span>
+                                        <span className="text-[var(--ff-text-muted)]">{String(vals.old ?? '—')}</span>
                                         {' → '}
                                         <span className="text-gray-700">{String(vals.new ?? '—')}</span>
                                       </p>
@@ -919,7 +919,7 @@ export default function ReceiptDetailPage() {
                                   </div>
                                 )}
 
-                                <p className="text-xs text-gray-400 mt-0.5">
+                                <p className="text-xs text-[var(--ff-text-muted)] mt-0.5">
                                   {relativeTime(entry.created_at)}
                                 </p>
                               </div>
@@ -929,7 +929,7 @@ export default function ReceiptDetailPage() {
                       </ul>
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-400 text-center py-3">
+                    <p className="text-sm text-[var(--ff-text-muted)] text-center py-3">
                       Sem histórico disponível
                     </p>
                   )}
@@ -967,11 +967,11 @@ export default function ReceiptDetailPage() {
             {!isEditing && (
               <dl className="flex justify-between text-sm mb-3" aria-label="Valores do recibo">
                 <div className="flex gap-1.5">
-                  <dt className="text-gray-500">Total</dt>
+                  <dt className="text-[var(--ff-text-muted)]">Total</dt>
                   <dd className="font-semibold text-gray-900">{formatCurrency(document.gross_amount)}</dd>
                 </div>
                 <div className="flex gap-1.5">
-                  <dt className="text-gray-500">IVA</dt>
+                  <dt className="text-[var(--ff-text-muted)]">IVA</dt>
                   <dd className="font-semibold text-gray-900">{formatCurrency(document.vat_amount)}</dd>
                 </div>
               </dl>
@@ -1034,7 +1034,7 @@ export default function ReceiptDetailPage() {
                     ))}
                   </select>
                   {document.suggested_type ? (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-[var(--ff-text-muted)]">
                       Sugestão: {documentTypeLabel(document.suggested_type)}
                     </p>
                   ) : null}
@@ -1094,7 +1094,7 @@ export default function ReceiptDetailPage() {
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h2 id="category-picker-title" className="text-lg font-semibold text-gray-900">Categoria</h2>
-              <button onClick={() => setShowCategoryPicker(false)} aria-label="Fechar" className="p-3 -m-2 text-gray-400 touch-manipulation">
+              <button onClick={() => setShowCategoryPicker(false)} aria-label="Fechar" className="p-3 -m-2 text-[var(--ff-text-muted)] touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1142,7 +1142,7 @@ export default function ReceiptDetailPage() {
           >
             <div className="flex items-center justify-between mb-4">
               <h2 id="delete-modal-title" className="text-lg font-semibold text-gray-900">Remover recibo</h2>
-              <button onClick={handleDeleteCancel} aria-label="Fechar" className="p-3 -m-2 text-gray-400 touch-manipulation">
+              <button onClick={handleDeleteCancel} aria-label="Fechar" className="p-3 -m-2 text-[var(--ff-text-muted)] touch-manipulation">
                 <X className="w-5 h-5" />
               </button>
             </div>
