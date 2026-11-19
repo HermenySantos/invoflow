@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ModalLayer } from '@/components/layout/ModalLayer';
 import { LAYERS } from '@/components/layout/layers';
 
@@ -112,5 +112,85 @@ describe('ModalLayer', () => {
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     expect(closeViewer).toHaveBeenCalledTimes(1);
     expect(closeSheet).not.toHaveBeenCalled();
+  });
+
+  it('marks the rest of <body> inert and aria-hidden while open, and restores it on close', () => {
+    const outside = document.createElement('div');
+    outside.setAttribute('aria-hidden', 'false');
+    document.body.appendChild(outside);
+    const { opener } = openSheet();
+    const page = opener.closest('body > *')!;
+    const overlay = screen.getByRole('dialog').parentElement!;
+
+    for (const el of [page, outside]) {
+      expect(el).toHaveAttribute('inert');
+      expect(el).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(overlay).not.toHaveAttribute('inert');
+    expect(overlay).not.toHaveAttribute('aria-hidden');
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(page).not.toHaveAttribute('inert');
+    expect(page).not.toHaveAttribute('aria-hidden');
+    expect(outside).not.toHaveAttribute('inert');
+    expect(outside).toHaveAttribute('aria-hidden', 'false');
+    outside.remove();
+  });
+
+  it('closes by z-order on Escape when the sheet mounts after the viewer', () => {
+    function Both() {
+      const [viewer, setViewer] = useState(true);
+      const [sheet, setSheet] = useState(false);
+      useEffect(() => setSheet(true), []);
+      return (
+        <>
+          {viewer && (
+            <ModalLayer layer="viewer" onClose={() => setViewer(false)}>
+              <button>Visor</button>
+            </ModalLayer>
+          )}
+          {sheet && (
+            <ModalLayer layer="sheet" onClose={() => setSheet(false)}>
+              <button>Folha</button>
+            </ModalLayer>
+          )}
+        </>
+      );
+    }
+    render(<Both />);
+    const viewer = screen.getByRole('button', { name: 'Visor' });
+    const sheetOverlay = screen.getByText('Folha').parentElement!;
+    expect(viewer).toHaveFocus();
+    expect(sheetOverlay).toHaveAttribute('inert');
+    expect(viewer.parentElement).not.toHaveAttribute('inert');
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByText('Visor')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Folha' })).toBeInTheDocument();
+    expect(sheetOverlay).not.toHaveAttribute('inert');
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByText('Folha')).not.toBeInTheDocument();
+  });
+
+  it('returns focus to returnFocusRef when the opener has left the document', () => {
+    function Swap() {
+      const [open, setOpen] = useState(false);
+      const back = useRef<HTMLButtonElement>(null);
+      return open ? (
+        <ModalLayer layer="viewer" onClose={() => setOpen(false)} returnFocusRef={back}>
+          <button>Visor</button>
+        </ModalLayer>
+      ) : (
+        <button ref={back} onClick={() => setOpen(true)}>Abrir</button>
+      );
+    }
+    render(<Swap />);
+    const first = screen.getByRole('button', { name: 'Abrir' });
+    first.focus();
+    fireEvent.click(first);
+    expect(first.isConnected).toBe(false);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: 'Abrir' })).toHaveFocus();
   });
 });
