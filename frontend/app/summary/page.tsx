@@ -8,6 +8,7 @@ import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { isDemoMode } from "@/lib/demoUser";
 import { paymentDeadline } from "@/lib/deadlines";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
+import { ReceiptSlipIcon } from "@/components/icons/ReceiptSlipIcon";
 import {
   Download,
   AlertCircle,
@@ -100,6 +101,8 @@ export default function SummaryPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  // null until known; the summary is per period, so an empty period says nothing about the account.
+  const [hasAnyDocuments, setHasAnyDocuments] = useState<boolean | null>(null);
 
   // Period navigation
   const [periodType, setPeriodType] = useState<"month" | "quarter">("quarter");
@@ -139,6 +142,23 @@ export default function SummaryPage() {
       setIsLoading(false);
     }
   }, [periodType, year, periodValue]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getDocuments({ page_size: 1 })
+      .then((data) => {
+        if (!cancelled) setHasAnyDocuments(data.total > 0);
+      })
+      .catch((err) => {
+        console.error(err);
+        // Fall back to the full dashboard rather than hide a real account's figures.
+        if (!cancelled) setHasAnyDocuments(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     fetchSummary();
@@ -271,6 +291,26 @@ export default function SummaryPage() {
   };
 
   // ── Render ──
+
+  if (hasAnyDocuments === null) {
+    return (
+      <AppLayout title="IVA">
+        <div className="p-4 pb-8">
+          <LoadingSkeleton />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!hasAnyDocuments && !(summary && summary.total_documents > 0)) {
+    return (
+      <AppLayout title="IVA">
+        <div className="p-4 pb-8">
+          <FirstRunEmptyState />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout title="IVA">
@@ -719,12 +759,16 @@ function ConfidenceBadge({ percent }: { percent: number }) {
   const radius = 14;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percent / 100) * circumference;
-  const color = percent >= 80 ? 'text-emerald-500' : percent >= 50 ? 'text-amber-500' : 'text-red-500';
-  const strokeColor = percent >= 80 ? '#10b981' : percent >= 50 ? '#f59e0b' : '#ef4444';
+  const color =
+    percent <= 0
+      ? 'text-[var(--ff-text-muted)]'
+      : percent >= 80 ? 'text-emerald-500' : percent >= 50 ? 'text-amber-500' : 'text-red-500';
+  const strokeColor =
+    percent <= 0 ? 'var(--ff-text-muted)' : percent >= 80 ? '#10b981' : percent >= 50 ? '#f59e0b' : '#ef4444';
 
   return (
-    <div className="relative w-10 h-10 flex-shrink-0">
-      <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+    <div className="relative w-12 h-12 flex-shrink-0">
+      <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
         <circle
           cx="18"
           cy="18"
@@ -745,7 +789,7 @@ function ConfidenceBadge({ percent }: { percent: number }) {
           strokeLinecap="round"
         />
       </svg>
-      <span className={clsx('absolute inset-0 flex items-center justify-center text-[10px] font-bold', color)}>
+      <span className={clsx('absolute inset-0 flex items-center justify-center text-xs font-bold', color)}>
         {percent}%
       </span>
     </div>
@@ -792,6 +836,21 @@ function StatusRow({
         <span className="text-sm text-gray-600">{label}</span>
       </div>
       <span className="text-sm font-medium text-gray-900">{count}</span>
+    </div>
+  );
+}
+
+function FirstRunEmptyState() {
+  return (
+    <div className="card p-8 text-center">
+      <ReceiptSlipIcon className="w-6 h-6 text-[var(--ff-accent)] mx-auto mb-4" />
+      <h2 className="text-lg font-medium text-gray-900 mb-1">Ainda sem recibos</h2>
+      <p className="text-gray-500 mb-4">
+        Carregue o primeiro recibo para ver aqui o resumo do IVA.
+      </p>
+      <Link href="/upload" className="btn-primary btn-md">
+        Carregar recibo
+      </Link>
     </div>
   );
 }

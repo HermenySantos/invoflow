@@ -8,7 +8,6 @@ import {
   EXPENSE_CATEGORY_LIST,
 } from "@/lib/categories";
 import {
-  Receipt,
   AlertCircle,
   AlertTriangle,
   CheckCircle,
@@ -33,6 +32,7 @@ import {
 } from "lucide-react";
 import { clsx } from 'clsx';
 import Link from 'next/link';
+import { ReceiptSlipIcon } from '@/components/icons/ReceiptSlipIcon';
 
 // Map icon name strings to Lucide components
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -68,6 +68,10 @@ export default function ReceiptsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const hasFilters = Boolean(activeCategory || search || dateFrom || dateTo);
+  // A new account sees only the first-run prompt; filters arrive with the first receipt
+  // and then stay, so clearing a filter that matched nothing does not unmount the inputs.
+  const [hasSeenDocuments, setHasSeenDocuments] = useState(false);
+  const showFilters = hasSeenDocuments || documents.length > 0 || hasFilters;
 
   // Search after the user pauses typing, not on every key.
   useEffect(() => {
@@ -87,6 +91,7 @@ export default function ReceiptsPage() {
         date_to: dateTo || undefined,
       });
       setDocuments(data.documents);
+      if (data.documents.length > 0) setHasSeenDocuments(true);
     } catch (err) {
       setError("Não foi possível carregar os recibos.");
       console.error(err);
@@ -191,42 +196,44 @@ export default function ReceiptsPage() {
   return (
     <AppLayout title="Recibos">
       <section className="p-4" aria-label="Lista de recibos">
-        <div className="mb-3 space-y-2">
-          <label className="relative block">
-            <span className="sr-only">Procurar recibos</span>
-            <Search
-              className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Fornecedor, NIF ou nº da fatura"
-              className="input pl-9"
-            />
-          </label>
-          <div className="flex gap-2">
-            <label className="flex-1 text-xs text-gray-500">
-              De
+        {showFilters ? (
+          <div className="mb-3 space-y-2">
+            <label className="relative block">
+              <span className="sr-only">Procurar recibos</span>
+              <Search
+                className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+                aria-hidden="true"
+              />
               <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="input mt-1 min-h-11 lg:min-h-0"
+                type="search"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Fornecedor, NIF ou nº da fatura"
+                className="input pl-9"
               />
             </label>
-            <label className="flex-1 text-xs text-gray-500">
-              Até
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="input mt-1 min-h-11 lg:min-h-0"
-              />
-            </label>
+            <div className="flex gap-2">
+              <label className="flex-1 text-xs text-gray-500">
+                De
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="input mt-1 min-h-11 lg:min-h-0"
+                />
+              </label>
+              <label className="flex-1 text-xs text-gray-500">
+                Até
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="input mt-1 min-h-11 lg:min-h-0"
+                />
+              </label>
+            </div>
           </div>
-        </div>
+        ) : null}
         {isLoading ? (
           <div
             className="space-y-3"
@@ -267,10 +274,7 @@ export default function ReceiptsPage() {
           </div>
         ) : documents.length === 0 && !hasFilters ? (
           <div className="card p-8 text-center">
-            <Receipt
-              className="w-16 h-16 text-gray-300 mx-auto mb-4"
-              aria-hidden="true"
-            />
+            <ReceiptSlipIcon className="w-6 h-6 text-[var(--ff-accent)] mx-auto mb-4" />
             <h2 className="text-lg font-medium text-gray-900 mb-1">
               Ainda sem recibos
             </h2>
@@ -333,10 +337,7 @@ export default function ReceiptsPage() {
             {/* Empty filtered state */}
             {documents.length === 0 && hasFilters ? (
               <div className="card p-6 text-center">
-                <Receipt
-                  className="w-12 h-12 text-gray-300 mx-auto mb-3"
-                  aria-hidden="true"
-                />
+                <ReceiptSlipIcon className="w-6 h-6 text-[var(--ff-accent)] mx-auto mb-3" />
                 <p className="text-gray-500">Nenhum recibo corresponde aos filtros</p>
                 <button
                   onClick={() => {

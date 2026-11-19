@@ -16,6 +16,7 @@ vi.mock('@/lib/api', async () => {
     ...actual,
     api: {
       getSummary: vi.fn(),
+      getDocuments: vi.fn(),
       downloadExport: vi.fn(),
       upsertVatSales: vi.fn(),
     },
@@ -65,6 +66,7 @@ describe('summary IVA limits', () => {
     const storage = memoryStorage();
     storage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
     vi.stubGlobal('localStorage', storage);
+    vi.mocked(api.getDocuments).mockResolvedValue({ documents: [], total: 2, page: 1, page_size: 1, has_more: true });
     vi.mocked(api.getSummary).mockResolvedValue(summary());
   });
 
