@@ -9,6 +9,9 @@ import { DOCUMENT_TYPE_OPTIONS, PRINTED_PAIR_LABEL, SERIES_MISMATCH_DETAIL, SERI
 import { ImageViewer } from '@/components/review';
 import { PtDateInput } from '@/components/forms/PtDateInput';
 import { saveErrorMessage } from '@/lib/saveError';
+import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
+import { rateLimitButton } from '@/lib/rateLimitCopy';
+import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { requestScrollRestore } from '@/lib/mainScroll';
 import { 
   getExpenseCategoryInfo,
@@ -106,6 +109,16 @@ export default function ReceiptDetailPage() {
   /* Set before the first await, so a double tap sends one DELETE even before isDeleting re-renders */
   const deletingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const saveWait = useRetryCountdown();
+  const showSaveError = (err: unknown) => {
+    const wait = rateLimitWait(err);
+    if (wait !== null) {
+      setError(null);
+      saveWait.start(wait, saveErrorMessage(err));
+      return;
+    }
+    setError(saveErrorMessage(err));
+  };
   
   // Edit mode - only when user explicitly wants to edit
   const [isEditing, setIsEditing] = useState(false);
@@ -321,7 +334,7 @@ export default function ReceiptDetailPage() {
       backToList();
     } catch (err) {
       console.error('Failed to confirm:', err);
-      setError(saveErrorMessage(err));
+      showSaveError(err);
     } finally {
       setIsSaving(false);
     }
@@ -357,7 +370,7 @@ export default function ReceiptDetailPage() {
       backToList();
     } catch (err) {
       console.error('Failed to save:', err);
-      setError(saveErrorMessage(err));
+      showSaveError(err);
     } finally {
       setIsSaving(false);
     }
@@ -969,6 +982,7 @@ export default function ReceiptDetailPage() {
                 <span className="text-sm text-red-800">{error}</span>
               </div>
             )}
+            {saveWait.message && <RateLimitNotice message={saveWait.message} className="mb-3" />}
             {/* Keep the amounts in view next to the action that confirms them */}
             {!isEditing && (
               <dl className="flex justify-between text-sm mb-3" aria-label="Valores do recibo">
@@ -1005,13 +1019,18 @@ export default function ReceiptDetailPage() {
               ) : null}
               <button
                 onClick={handleSaveEdit}
-                disabled={isSaving || (editSeriesMismatch && (!editCanOverride || !acceptSeriesMismatch))}
+                disabled={isSaving || saveWait.seconds !== null || (editSeriesMismatch && (!editCanOverride || !acceptSeriesMismatch))}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     A guardar...
+                  </>
+                ) : saveWait.seconds !== null ? (
+                  <>
+                    <Clock className="w-5 h-5" aria-hidden="true" />
+                    {rateLimitButton(saveWait.seconds)}
                   </>
                 ) : (
                   <>
@@ -1067,13 +1086,18 @@ export default function ReceiptDetailPage() {
               ) : null}
               <button
                 onClick={handleConfirm}
-                disabled={isSaving || !isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && (!confirmCanOverride || !acceptSeriesMismatch))}
+                disabled={isSaving || saveWait.seconds !== null || !isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && (!confirmCanOverride || !acceptSeriesMismatch))}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     A guardar...
+                  </>
+                ) : saveWait.seconds !== null ? (
+                  <>
+                    <Clock className="w-5 h-5" aria-hidden="true" />
+                    {rateLimitButton(saveWait.seconds)}
                   </>
                 ) : (
                   <>

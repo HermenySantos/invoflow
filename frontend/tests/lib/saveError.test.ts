@@ -10,6 +10,7 @@ import {
   SAVE_UNREACHABLE_ERROR,
   saveErrorMessage,
 } from '@/lib/saveError';
+import { rateLimitSaveStatus } from '@/lib/rateLimitCopy';
 
 const EDIT_BUSY =
   'Está a decorrer uma importação do e-Fatura nesta conta. As alterações não foram ' +
@@ -198,5 +199,14 @@ describe('saveErrorMessage', () => {
 
   it('uses the API answer over the offline flag: the server did reply', () => {
     expect(saveErrorMessage({ status: 503, message: EDIT_BUSY }, true)).toBe(EDIT_BUSY);
+  });
+
+  it('names the wait on a 429 and says the changes were not saved, never SAVE_GENERIC_ERROR', () => {
+    const detail = 'Demasiados pedidos. Aguarde 17 s e tente novamente.';
+    const withHeader = saveErrorMessage({ status: 429, message: detail, retryAfter: 42 }, false);
+    expect(withHeader).toBe(rateLimitSaveStatus(42));
+    expect(withHeader).not.toBe(SAVE_GENERIC_ERROR);
+    expect(withHeader).not.toMatch(/Tente (novamente|outra vez)/i);
+    expect(saveErrorMessage({ status: 429, message: detail }, false)).toBe(rateLimitSaveStatus(17));
   });
 });

@@ -4,12 +4,33 @@
  */
 
 import { readDemoUser } from './demoUser';
+import { parseRetryAfter } from './rateLimit';
 
 const API_BASE = '/api';
 
-interface ApiError {
+export interface ApiError {
   message: string;
   status: number;
+  /** Seconds from Retry-After, when the response sent one. */
+  retryAfter: number | null;
+}
+
+/** The {status, message, retryAfter} every failed API call throws, so callers can tell a 429 from a 500. */
+async function apiErrorFrom(response: Response, fallbackMessage: string): Promise<ApiError> {
+  const error: ApiError = {
+    message: fallbackMessage,
+    status: response.status,
+    retryAfter: parseRetryAfter(response.headers?.get('Retry-After')),
+  };
+  try {
+    const data = await response.json();
+    // HTTPException sends {detail}; the global handlers also nest {error: {message}}.
+    const detail = typeof data.detail === 'string' ? data.detail : undefined;
+    error.message = detail || data.error?.message || data.message || error.message;
+  } catch {
+    // Ignore JSON parse errors
+  }
+  return error;
 }
 
 class ApiClient {
@@ -62,19 +83,7 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error: ApiError = {
-        message: `API Error: ${response.statusText}`,
-        status: response.status,
-      };
-      try {
-        const data = await response.json();
-        // HTTPException sends {detail}; the global handlers also nest {error: {message}}.
-        const detail = typeof data.detail === 'string' ? data.detail : undefined;
-        error.message = detail || data.error?.message || data.message || error.message;
-      } catch {
-        // Ignore JSON parse errors
-      }
-      throw error;
+      throw await apiErrorFrom(response, `API Error: ${response.statusText}`);
     }
 
     // Handle 204 No Content and other empty responses
@@ -204,7 +213,7 @@ class ApiClient {
       headers: await this.authHeaders(),
     });
     if (!response.ok) {
-      throw new Error('Export failed');
+      throw await apiErrorFrom(response, 'Export failed');
     }
     const blob = await response.blob();
     const disposition = response.headers.get('Content-Disposition') || '';
@@ -258,7 +267,7 @@ class ApiClient {
     });
 
     if (!uploadResponse.ok) {
-      throw new Error('Failed to upload file');
+      throw await apiErrorFrom(uploadResponse, 'Failed to upload file');
     }
 
     // Step 3: Create document record (triggers OCR)

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -35,6 +35,54 @@ describe('ScanReceipt upload errors', () => {
     vi.mocked(api.uploadFile).mockRejectedValue(new Error('Failed to upload file'));
     chooseFile();
     expect(await screen.findByText('O carregamento falhou. Tente outra vez.')).toBeInTheDocument();
+  });
+});
+
+describe('ScanReceipt when the upload is rate limited (429)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(api.uploadFile).mockReset();
+  });
+
+  it('keeps the file, says when to retry, counts down on the button and re-enables it at 0', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(api.uploadFile)
+      .mockRejectedValueOnce({
+        status: 429,
+        message: 'Demasiados pedidos. Aguarde 30 s e tente novamente.',
+        retryAfter: 3,
+      })
+      .mockResolvedValueOnce({} as never);
+    chooseFile();
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(
+      'O ficheiro continua selecionado. Aguarde um momento. Pode tentar de novo dentro de 3 s.',
+    );
+    expect(notice.textContent).not.toMatch(/Tente (novamente|outra vez)/i);
+    expect(notice.className).not.toMatch(/red|danger/);
+    expect(screen.queryByText('O carregamento falhou. Tente outra vez.')).not.toBeInTheDocument();
+    // The file is still selected: its preview stays and no reselect is needed.
+    expect(screen.getByRole('img', { name: 'Pré-visualização' })).toBeInTheDocument();
+
+    const button = screen.getByRole('button', { name: 'Tentar de novo em 3 s' });
+    expect(button).toBeDisabled();
+    expect(notice).not.toContainElement(button);
+    expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
+
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByRole('button', { name: 'Tentar de novo em 2 s' })).toBeDisabled();
+    expect(screen.getByRole('status')).toBe(notice);
+    expect(notice).toHaveTextContent('dentro de 3 s');
+
+    act(() => vi.advanceTimersByTime(2000));
+    const again = screen.getByRole('button', { name: 'Carregar' });
+    expect(again).toBeEnabled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    fireEvent.click(again);
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.uploadFile).mock.calls[1][0]).toBe(vi.mocked(api.uploadFile).mock.calls[0][0]);
   });
 });
 
