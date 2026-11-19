@@ -67,9 +67,14 @@ def validate_configuration() -> List[str]:
                 "CLERK_SECRET_KEY is not set. "
                 "Set it, or set MOCK_AUTH=1 when APP_ENV is development or test."
             )
-        if not settings.clerk_frontend_api:
-            warnings.append(
-                "CLERK_FRONTEND_API is not set. JWT issuer validation may fail."
+        if not settings.clerk_frontend_api.strip():
+            errors.append(
+                "CLERK_FRONTEND_API is not set. Session token issuers cannot be verified."
+            )
+        if not settings.clerk_authorized_parties:
+            errors.append(
+                "CLERK_AUTHORIZED_PARTIES is not set. List the web origins allowed "
+                "in a session token's azp claim, e.g. https://app.example.pt."
             )
     else:
         warnings.append(

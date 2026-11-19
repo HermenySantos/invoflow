@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 from typing import Union
 
@@ -25,6 +26,16 @@ def known_app_env(app_env: str) -> bool:
     return app_env_name(app_env) in _KNOWN_APP_ENVS
 
 
+def _string_list(value):
+    """A JSON list or a comma-separated string from the environment, as a list."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("["):
+            return json.loads(stripped)
+        return [part.strip() for part in stripped.split(",") if part.strip()]
+    return value
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -39,7 +50,10 @@ class Settings(BaseSettings):
     clerk_secret_key: str = ""
     clerk_publishable_key: str = ""
     clerk_jwks_url: str = ""
-    clerk_frontend_api: str = ""  # e.g., "clerk.your-app.com"
+    # e.g. "clerk.your-app.com". Session tokens must have iss == https://<this>.
+    clerk_frontend_api: str = ""
+    # Web origins allowed in a session token's azp claim. Empty rejects every token.
+    clerk_authorized_parties: Union[list[str], str] = []
     auth_mock_mode: bool = False
     mock_auth: str = ""
 
@@ -99,14 +113,12 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors(cls, value):
-        if isinstance(value, str):
-            stripped = value.strip()
-            if stripped.startswith("["):
-                import json
+        return _string_list(value)
 
-                return json.loads(stripped)
-            return [part.strip() for part in stripped.split(",") if part.strip()]
-        return value
+    @field_validator("clerk_authorized_parties", mode="before")
+    @classmethod
+    def parse_authorized_parties(cls, value):
+        return [party.strip().rstrip("/") for party in _string_list(value) if party.strip()]
 
     class Config:
         env_file = ".env"
