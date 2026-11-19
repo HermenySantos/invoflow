@@ -9,8 +9,12 @@ import { safeNextPath } from '@/lib/safeNext';
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INVALID_EMAIL_MESSAGE = 'Introduza um email válido.';
+
 function SignInForm() {
   const [email, setEmail] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signIn } = useAuth();
@@ -18,7 +22,12 @@ function SignInForm() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    signIn(email || 'demo@invoflow.test');
+    const typed = email.trim();
+    if (!EMAIL_PATTERN.test(typed)) {
+      setError(INVALID_EMAIL_MESSAGE);
+      return;
+    }
+    signIn(typed);
     router.push(next);
   };
 
@@ -40,18 +49,28 @@ function SignInForm() {
             </label>
             <input
               id="email"
-              type="text"
-              inputMode="email"
+              type="email"
+              required
               autoComplete="username"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               enterKeyHint="go"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (error) setError(null);
+              }}
               placeholder="voce@empresa.pt"
               className="input"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'email-error' : undefined}
             />
+            {error && (
+              <p id="email-error" role="alert" className="mt-1 text-sm text-[var(--ff-danger)]">
+                {error}
+              </p>
+            )}
           </div>
           <button type="submit" className="landing-btn landing-btn-primary w-full">
             Continuar
