@@ -6,6 +6,9 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { parseAmountInput } from "@/lib/amount";
 import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { isDemoMode } from "@/lib/demoUser";
+import { rateLimitWait, useRetryCountdown } from "@/lib/rateLimit";
+import { rateLimitButton, rateLimitStatus } from "@/lib/rateLimitCopy";
+import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { paymentDeadline } from "@/lib/deadlines";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
 import { ReceiptSlipIcon } from "@/components/icons/ReceiptSlipIcon";
@@ -101,6 +104,7 @@ export default function SummaryPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const exportWait = useRetryCountdown();
   // null until known; the summary is per period, so an empty period says nothing about the account.
   const [hasAnyDocuments, setHasAnyDocuments] = useState<boolean | null>(null);
 
@@ -284,6 +288,11 @@ export default function SummaryPage() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Export failed:", err);
+      const wait = rateLimitWait(err);
+      if (wait !== null) {
+        exportWait.start(wait, rateLimitStatus(wait));
+        return;
+      }
       setExportError("Exportação falhou. Tente novamente.");
     } finally {
       setIsExporting(false);
@@ -662,16 +671,26 @@ export default function SummaryPage() {
                 <span className="text-sm text-red-800">{exportError}</span>
               </div>
             )}
+            {exportWait.message && <RateLimitNotice message={exportWait.message} />}
 
             {/* ─── 9. Export Button ─── */}
             <div className="space-y-1.5">
               <button
                 onClick={handleExport}
-                disabled={isExporting || summary.total_documents === 0}
+                disabled={isExporting || exportWait.seconds !== null || summary.total_documents === 0}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
-                <Download className="w-5 h-5" />
-                {isExporting ? "A gerar..." : "Enviar ao Contabilista"}
+                {exportWait.seconds !== null ? (
+                  <>
+                    <Clock className="w-5 h-5" aria-hidden="true" />
+                    {rateLimitButton(exportWait.seconds)}
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    {isExporting ? "A gerar..." : "Enviar ao Contabilista"}
+                  </>
+                )}
               </button>
               <p className="text-xs text-center text-[var(--ff-text-muted)]">
                 Inclui {summary.total_documents} recibo

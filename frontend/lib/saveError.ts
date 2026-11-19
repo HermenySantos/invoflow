@@ -1,3 +1,5 @@
+import { rateLimitWait } from './rateLimit';
+import { rateLimitSaveStatus } from './rateLimitCopy';
 import { SERIES_MISMATCH_DETAIL } from './reviewEdit';
 
 export const SAVE_OFFLINE_ERROR =
@@ -87,6 +89,8 @@ function browserOffline(): boolean {
  */
 export function saveErrorMessage(err: unknown, offline: boolean = browserOffline()): string {
   if (isApiFailure(err)) {
+    const wait = rateLimitWait(err);
+    if (wait !== null) return rateLimitSaveStatus(wait);
     const message = err.message.trim();
     if (isKnownPtPtDetail(err.status, message)) return message;
     if (STATUS_FALLBACKS[err.status]) return STATUS_FALLBACKS[err.status];

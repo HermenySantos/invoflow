@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { Camera, Check, ImagePlus, Loader2, Upload, X } from 'lucide-react';
+import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
+import { rateLimitButton, rateLimitUploadStatus } from '@/lib/rateLimitCopy';
+import { RateLimitNotice } from '@/components/RateLimitNotice';
+import { Camera, Check, Clock, ImagePlus, Loader2, Upload, X } from 'lucide-react';
 import { clsx } from 'clsx';
 
 type UploadState = 'idle' | 'preview' | 'uploading' | 'success' | 'error';
@@ -17,6 +20,7 @@ export function ScanReceipt() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const uploadWait = useRetryCountdown();
 
   useEffect(() => {
     return () => {
@@ -69,6 +73,12 @@ export function ScanReceipt() {
       }, 800);
     } catch (err) {
       console.error('Upload failed:', err);
+      const wait = rateLimitWait(err);
+      if (wait !== null) {
+        uploadWait.start(wait, rateLimitUploadStatus(wait));
+        setState('preview');
+        return;
+      }
       const message =
         typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string'
           ? err.message
@@ -160,6 +170,8 @@ export function ScanReceipt() {
             </div>
           )}
 
+          {uploadWait.message && <RateLimitNotice message={uploadWait.message} />}
+
           {state === 'success' && (
             <div className="card p-4 bg-green-50 border-green-200 flex items-center gap-3">
               <Check className="w-6 h-6 text-green-600" />
@@ -182,7 +194,7 @@ export function ScanReceipt() {
               </button>
               <button
                 onClick={handleUpload}
-                disabled={state === 'uploading'}
+                disabled={state === 'uploading' || uploadWait.seconds !== null}
                 className={clsx(
                   'btn-primary btn-lg flex-1 flex items-center justify-center gap-2',
                   state === 'uploading' && 'opacity-75'
@@ -192,6 +204,11 @@ export function ScanReceipt() {
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     A carregar…
+                  </>
+                ) : uploadWait.seconds !== null ? (
+                  <>
+                    <Clock className="w-5 h-5" aria-hidden="true" />
+                    {rateLimitButton(uploadWait.seconds)}
                   </>
                 ) : (
                   <>
