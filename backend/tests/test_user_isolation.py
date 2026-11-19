@@ -8,6 +8,7 @@ test_every_api_route_is_covered fails when a route is added without an attack.
 """
 
 import io
+import json
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -287,6 +288,17 @@ def _export(client: TestClient, w: World) -> list[httpx.Response]:
     return [r]
 
 
+@attack("GET", "/api/account/export")
+def _account_export(client: TestClient, w: World) -> list[httpx.Response]:
+    r = client.get("/api/account/export", headers=w.b)
+    assert r.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        assert not [n for n in zf.namelist() if n.startswith("ficheiros/")]
+        assert json.loads(zf.read("documentos.json")) == []
+        assert json.loads(zf.read("iva_vendas.json")) == []
+    return [r]
+
+
 # ── files ──
 
 
@@ -403,6 +415,8 @@ def test_owner_sees_what_the_leak_scan_looks_for(client: TestClient, world: Worl
     assert client.get("/api/summary", params=PERIOD, headers=a).json()["total_documents"] == len(world.doc_ids)
     assert world.vat_id in _visible_text(client.get("/api/vat-sales", headers=a))
     assert VENDOR in _visible_text(client.get("/api/export", params=PERIOD, headers=a))
+    account = _visible_text(client.get("/api/account/export", headers=a))
+    assert all(s in account for s in (VENDOR, NOTE, world.filename, world.vat_id, *world.doc_ids))
     file_url = client.get(f"/api/documents/{world.scan_id}", headers=a).json()["file_url"]
     assert client.get(file_url).content == get_storage_service().get_file(world.storage_key)
 

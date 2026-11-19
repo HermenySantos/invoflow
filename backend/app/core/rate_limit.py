@@ -39,5 +39,6 @@ RATE_LIMITS = {
     "default": "100/minute",
     "upload": "10/minute",      # Stricter limit for uploads
     "export": "5/minute",       # Export is expensive
+    "account_export": "2/minute;10/hour",  # Reads every receipt file the user owns
     "auth": "20/minute",        # Auth endpoints
 }
