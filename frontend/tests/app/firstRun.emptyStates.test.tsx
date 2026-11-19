@@ -180,7 +180,7 @@ describe('IVA dashboard once a document exists', () => {
     renderInApp(<SummaryPage />);
 
     const ringLabel = (await screen.findAllByText('25%')).find((el) => el.closest('.relative.w-12'))!;
-    expect(ringLabel).toHaveClass('text-xs', 'text-red-500');
+    expect(ringLabel).toHaveClass('text-xs', 'text-[var(--ff-danger)]');
   });
 });
 

@@ -185,7 +185,7 @@ export function ImageViewer({
       <div className={`relative bg-gray-100 rounded-xl flex flex-col items-center justify-center p-8 ${className}`}>
         <FileText className="w-16 h-16 text-gray-400 mb-3" />
         <p className="text-sm font-medium text-gray-700">{filename || 'Documento PDF'}</p>
-        <p className="text-xs text-gray-500 mt-1">Pré-visualização de PDF indisponível</p>
+        <p className="text-xs text-[var(--ff-text-muted)] mt-1">Pré-visualização de PDF indisponível</p>
         {src && (
           <a 
             href={src} 
@@ -205,7 +205,7 @@ export function ImageViewer({
     return (
       <div className={`relative bg-gray-100 rounded-xl flex flex-col items-center justify-center p-8 ${className}`}>
         <FileText className="w-16 h-16 text-gray-300 mb-3" />
-        <p className="text-sm text-gray-500">Sem imagem disponível</p>
+        <p className="text-sm text-[var(--ff-text-muted)]">Sem imagem disponível</p>
       </div>
     );
   }
@@ -235,7 +235,7 @@ export function ImageViewer({
       {hasError && (
         <div className="absolute inset-0 bg-gray-100 flex flex-col items-center justify-center">
           <FileText className="w-12 h-12 text-gray-400 mb-2" />
-          <p className="text-sm text-gray-500">Não foi possível carregar a imagem</p>
+          <p className="text-sm text-[var(--ff-text-muted)]">Não foi possível carregar a imagem</p>
         </div>
       )}
 

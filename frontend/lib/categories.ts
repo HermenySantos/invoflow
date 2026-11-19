@@ -212,7 +212,7 @@ export const IRS_SECTORS: Record<string, CategoryInfo> = {
     label: 'Isento',
     icon: 'Ban',
     color: 'bg-gray-50',
-    textColor: 'text-gray-400',
+    textColor: 'text-[var(--ff-text-muted)]',
     deductiblePct: 0,
   },
 };

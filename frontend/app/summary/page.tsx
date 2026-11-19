@@ -333,7 +333,7 @@ export default function SummaryPage() {
             {/* ─── 2. Main IVA Card (Hero) ─── */}
             <div className="card p-6 relative overflow-hidden">
               <div className="flex items-start justify-between mb-1">
-                <span className="text-sm font-medium text-gray-500">
+                <span className="text-sm font-medium text-[var(--ff-text-muted)]">
                   IVA estimado — {getPeriodLabel(periodType, year, periodValue)}
                 </span>
                 {hasVatOnSales &&
@@ -348,12 +348,12 @@ export default function SummaryPage() {
                   <div
                     className={clsx(
                       "text-4xl font-bold tracking-tight",
-                      isRefund ? "text-emerald-600" : "text-gray-900",
+                      isRefund ? "text-[var(--ff-positive)]" : "text-gray-900",
                     )}
                   >
                     {formatCurrency(summary.estimated_iva_payable)}
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-[var(--ff-text-muted)] mt-1">
                     {isRefund ? "Reembolso estimado" : "Estimativa a pagar"}
                   </p>
                 </>
@@ -362,7 +362,7 @@ export default function SummaryPage() {
                   <p className="text-lg font-semibold text-gray-900 mt-2">
                     Falta o IVA das vendas
                   </p>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-[var(--ff-text-muted)] mt-1">
                     Sem ele não conseguimos estimar o IVA a pagar.
                   </p>
                   <button
@@ -389,7 +389,7 @@ export default function SummaryPage() {
               {/* Confidence badge */}
               <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100">
                 <ConfidenceBadge percent={summary.confidence_percent} />
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-[var(--ff-text-muted)]">
                   Baseado em {summary.ready_count} de {summary.total_documents}{" "}
                   documentos revistos
                 </span>
@@ -408,10 +408,10 @@ export default function SummaryPage() {
               </div>
               {parseFloat(summary.deductible_vat_pending) > 0 && (
                 <div className="flex items-center justify-between py-2.5">
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-[var(--ff-text-muted)]">
                     Em recibos por rever (fora da estimativa)
                   </span>
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-[var(--ff-text-muted)]">
                     {formatCurrency(summary.deductible_vat_pending)}
                   </span>
                 </div>
@@ -428,7 +428,7 @@ export default function SummaryPage() {
                           {item.vendor_name || "Sem fornecedor"}
                           {item.invoice_number ? ` · ${item.invoice_number}` : ""}
                         </Link>
-                        <span className="text-gray-500"> — {item.reason}</span>
+                        <span className="text-[var(--ff-text-muted)]"> — {item.reason}</span>
                       </li>
                     ))}
                   </ul>
@@ -442,7 +442,7 @@ export default function SummaryPage() {
                   {isEditingVatSales ? (
                     /* ─── 4. VAT on Sales Input ─── */
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm text-gray-400">€</span>
+                      <span className="text-sm text-[var(--ff-text-muted)]">€</span>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -459,14 +459,14 @@ export default function SummaryPage() {
                       <button
                         onClick={handleSaveVatSales}
                         disabled={isSavingVatSales}
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 -my-2 rounded-md text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 touch-manipulation lg:min-h-0 lg:min-w-0"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 -my-2 rounded-md text-[var(--ff-positive)] hover:bg-emerald-50 disabled:opacity-50 touch-manipulation lg:min-h-0 lg:min-w-0"
                         aria-label="Guardar"
                       >
                         <Check className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setIsEditingVatSales(false)}
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 -my-2 rounded-md text-gray-400 hover:bg-gray-100 touch-manipulation lg:min-h-0 lg:min-w-0"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2.5 -my-2 rounded-md text-[var(--ff-text-muted)] hover:bg-gray-100 touch-manipulation lg:min-h-0 lg:min-w-0"
                         aria-label="Cancelar"
                       >
                         <X className="w-4 h-4" />
@@ -481,7 +481,7 @@ export default function SummaryPage() {
                       </span>
                       <button
                         onClick={startEditingVatSales}
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-3 -m-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 touch-manipulation lg:min-h-0 lg:min-w-0"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center p-3 -m-2 rounded-md text-[var(--ff-text-muted)] hover:text-gray-600 hover:bg-gray-100 touch-manipulation lg:min-h-0 lg:min-w-0"
                         aria-label="Editar IVA vendas"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -497,7 +497,7 @@ export default function SummaryPage() {
                 <span
                   className={clsx(
                     "text-sm font-bold",
-                    isRefund ? "text-emerald-600" : "text-gray-900",
+                    isRefund ? "text-[var(--ff-positive)]" : "text-gray-900",
                   )}
                 >
                   {hasVatOnSales ? formatCurrency(summary.estimated_iva_payable) : "—"}
@@ -528,8 +528,8 @@ export default function SummaryPage() {
                     daysRemaining < 7
                       ? "text-red-600"
                       : daysRemaining <= 14
-                        ? "text-amber-600"
-                        : "text-emerald-600",
+                        ? "text-[var(--ff-warning)]"
+                        : "text-[var(--ff-positive)]",
                   )}
                 />
               </div>
@@ -543,8 +543,8 @@ export default function SummaryPage() {
                     daysRemaining < 7
                       ? "text-red-600"
                       : daysRemaining <= 14
-                        ? "text-amber-600"
-                        : "text-emerald-600",
+                        ? "text-[var(--ff-warning)]"
+                        : "text-[var(--ff-positive)]",
                   )}
                 >
                   {daysRemaining > 0
@@ -571,7 +571,7 @@ export default function SummaryPage() {
                 bgColor="bg-purple-50"
               />
               <StatCard
-                icon={<ShieldCheck className="w-4 h-4 text-emerald-600" />}
+                icon={<ShieldCheck className="w-4 h-4 text-[var(--ff-positive)]" />}
                 label="Dedutível"
                 value={formatCurrency(summary.deductible_vat)}
                 bgColor="bg-emerald-50"
@@ -601,7 +601,7 @@ export default function SummaryPage() {
                   count={summary.needs_review_count}
                 />
                 <StatusRow
-                  icon={<Clock className="w-4 h-4 text-gray-400" />}
+                  icon={<Clock className="w-4 h-4 text-[var(--ff-text-muted)]" />}
                   label="Em processamento"
                   count={summary.processing_count}
                 />
@@ -619,7 +619,7 @@ export default function SummaryPage() {
             {summary.warnings.length > 0 && (
               <div className="card p-4 bg-amber-50 border-amber-200">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <AlertCircle className="w-5 h-5 text-[var(--ff-warning)] flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium text-amber-900">Atenção</h3>
                     <ul className="mt-1 text-sm text-amber-800 space-y-1">
@@ -673,7 +673,7 @@ export default function SummaryPage() {
                 <Download className="w-5 h-5" />
                 {isExporting ? "A gerar..." : "Enviar ao Contabilista"}
               </button>
-              <p className="text-xs text-center text-gray-400">
+              <p className="text-xs text-center text-[var(--ff-text-muted)]">
                 Inclui {summary.total_documents} recibo
                 {summary.total_documents !== 1 ? "s" : ""} · Período:{" "}
                 {getPeriodLabel(periodType, year, periodValue)}
@@ -705,14 +705,14 @@ function PeriodSelector({
     <div className="space-y-3">
       {/* Period type toggle */}
       <div className="flex items-center justify-center">
-        <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+        <div className="inline-flex bg-[var(--ff-toggle-track)] rounded-lg p-0.5">
           <button
             onClick={() => onToggleType('month')}
             className={clsx(
               'min-h-11 px-4 py-1.5 text-sm font-medium rounded-md transition-colors lg:min-h-0',
               periodType === 'month'
                 ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-[var(--ff-toggle-idle)] hover:text-gray-900'
             )}
           >
             Mês
@@ -723,7 +723,7 @@ function PeriodSelector({
               'min-h-11 px-4 py-1.5 text-sm font-medium rounded-md transition-colors lg:min-h-0',
               periodType === 'quarter'
                 ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-[var(--ff-toggle-idle)] hover:text-gray-900'
             )}
           >
             Trimestre
@@ -762,7 +762,7 @@ function ConfidenceBadge({ percent }: { percent: number }) {
   const color =
     percent <= 0
       ? 'text-[var(--ff-text-muted)]'
-      : percent >= 80 ? 'text-emerald-500' : percent >= 50 ? 'text-amber-500' : 'text-red-500';
+      : percent >= 80 ? 'text-[var(--ff-positive)]' : percent >= 50 ? 'text-[var(--ff-warning)]' : 'text-[var(--ff-danger)]';
   const strokeColor =
     percent <= 0 ? 'var(--ff-text-muted)' : percent >= 80 ? '#10b981' : percent >= 50 ? '#f59e0b' : '#ef4444';
 
@@ -813,7 +813,7 @@ function StatCard({
         <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center', bgColor)}>
           {icon}
         </div>
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
+        <p className="text-xs text-[var(--ff-text-muted)] font-medium">{label}</p>
       </div>
       <p className="text-xl font-semibold text-gray-900">{value}</p>
     </div>
@@ -845,7 +845,7 @@ function FirstRunEmptyState() {
     <div className="card p-8 text-center">
       <ReceiptSlipIcon className="w-6 h-6 text-[var(--ff-accent)] mx-auto mb-4" />
       <h2 className="text-lg font-medium text-gray-900 mb-1">Ainda sem recibos</h2>
-      <p className="text-gray-500 mb-4">
+      <p className="text-[var(--ff-text-muted)] mb-4">
         Carregue o primeiro recibo para ver aqui o resumo do IVA.
       </p>
       <Link href="/upload" className="btn-primary btn-md">
@@ -902,7 +902,7 @@ function DeductibleBadge({ pct }: { pct: number | undefined }) {
           ? "bg-emerald-100 text-emerald-700"
           : pct > 0
             ? "bg-amber-100 text-amber-700"
-            : "bg-gray-100 text-gray-500",
+            : "bg-gray-100 text-[var(--ff-text-muted)]",
       )}
     >
       {pct}%
@@ -963,7 +963,7 @@ function CategoryBreakdownSection({
                       {formatCurrency(item.total)}
                     </span>
                     {item.deductible_vat && (
-                      <span className="text-[10px] text-emerald-600 font-medium">
+                      <span className="text-[10px] text-[var(--ff-positive)] font-medium">
                         IVA ded. {formatCurrency(item.deductible_vat)}
                       </span>
                     )}
@@ -979,10 +979,10 @@ function CategoryBreakdownSection({
                   />
                 </div>
                 <div className="flex items-center justify-between mt-0.5">
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[var(--ff-text-muted)]">
                     {item.count} recibo{item.count !== 1 ? "s" : ""}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[var(--ff-text-muted)]">
                     {pct.toFixed(0)}%
                   </span>
                 </div>
@@ -995,7 +995,7 @@ function CategoryBreakdownSection({
       {items.length > 4 && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full mt-3 flex items-center justify-center gap-1 text-sm text-gray-500 font-medium touch-manipulation py-3"
+          className="w-full mt-3 flex items-center justify-center gap-1 text-sm text-[var(--ff-text-muted)] font-medium touch-manipulation py-3"
         >
           {expanded ? (
             <>
