@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Camera, Receipt, PieChart } from 'lucide-react';
+import { Camera, PieChart } from 'lucide-react';
 import { clsx } from 'clsx';
+import { ReceiptSlipIcon } from '@/components/icons/ReceiptSlipIcon';
 
 const navItems = [
   { href: '/upload', match: ['/upload', '/scan'], icon: Camera, label: 'Carregar' },
-  { href: '/receipts', match: ['/receipts'], icon: Receipt, label: 'Recibos' },
+  { href: '/receipts', match: ['/receipts'], icon: ReceiptSlipIcon, label: 'Recibos' },
   { href: '/summary', match: ['/summary'], icon: PieChart, label: 'IVA' },
 ];
 
