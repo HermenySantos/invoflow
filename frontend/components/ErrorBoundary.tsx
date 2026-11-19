@@ -65,19 +65,20 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       // Default error UI
+      // Copy owned by the Conversion Lead (COPY-TOKENS-v1); change only with their sign-off.
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-lg p-6 max-w-md w-full text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-8 h-8 text-red-600" />
+        <div className="min-h-screen bg-[var(--ff-bg)] flex items-center justify-center p-4 text-[var(--ff-text)]">
+          <div className="card p-6 max-w-md w-full text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-[var(--ff-danger)]" aria-hidden="true" />
             </div>
-            
-            <h1 className="text-xl font-semibold text-gray-900 mb-2">
-              Something went wrong
+
+            <h1 className="text-[20px] font-semibold mb-2">
+              Algo correu mal
             </h1>
-            
-            <p className="text-gray-600 mb-6">
-              An unexpected error occurred. Please try again or reload the page.
+
+            <p className="mx-auto max-w-[36ch] text-[var(--ff-text-muted)] mb-6">
+              Não conseguimos mostrar esta página. Pode tentar outra vez ou voltar aos recibos.
             </p>
             
             {/* Show error details in development */}
@@ -94,22 +95,33 @@ export class ErrorBoundary extends Component<Props, State> {
               </div>
             )}
             
-            <div className="flex gap-3 justify-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
+                type="button"
                 onClick={this.handleRetry}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                className="btn-primary btn-md min-h-11 lg:min-h-11 gap-2"
               >
-                <RefreshCw className="w-4 h-4" />
-                Try Again
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
+                Tentar outra vez
               </button>
-              
+
               <button
+                type="button"
                 onClick={this.handleReload}
-                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors"
+                className="btn-secondary btn-md min-h-11 lg:min-h-11"
               >
-                Reload Page
+                Recarregar a página
               </button>
             </div>
+
+            {/* A client <Link> would keep this root-layout boundary in its error state; a full load resets it. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href="/receipts"
+              className="mt-3 inline-flex min-h-11 min-w-11 items-center justify-center px-4 font-medium text-[var(--ff-accent)] underline-offset-4 hover:underline"
+            >
+              Ir para os recibos
+            </a>
           </div>
         </div>
       );
