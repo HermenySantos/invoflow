@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import axe from 'axe-core';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import type { Document } from '@/lib/api';
@@ -115,6 +116,33 @@ describe('receipt page on a phone', () => {
     const dialog = screen.getByRole('alertdialog', { name: 'Remover recibo' });
     expect(within(dialog).getByRole('button', { name: 'Remover' })).toHaveClass('min-h-11');
     expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toHaveClass('min-h-11');
+  });
+
+  it('styles Remover as the dark danger fill and states only what removal hides', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Remover recibo' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Remover recibo' });
+    const remove = within(dialog).getByRole('button', { name: 'Remover' });
+
+    expect(remove).toHaveClass('btn-danger');
+    expect(remove.className).not.toMatch(/\bbg-red-\d+/);
+    expect(dialog).toHaveTextContent(
+      /^Remover recibo\s*O recibo deixa de aparecer na lista, no resumo e na exportação\.\s*CancelarRemover$/,
+    );
+    expect(document.body.textContent).not.toMatch(/lei exige|como a lei|original fica guardado/i);
+  });
+
+  it('labels every field of the edit form', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar dados' }));
+
+    expect(screen.getByLabelText('Data do documento')).toHaveAttribute('id', 'edit-document-date');
+    for (const name of ['Fornecedor', 'Total (€)', 'IVA (€)']) {
+      expect(screen.getByLabelText(name)).toBeInTheDocument();
+    }
+    const form = screen.getByRole('heading', { name: 'Editar dados' }).closest('.card') as HTMLElement;
+    const { violations } = await axe.run(form, { runOnly: { type: 'rule', values: ['label'] } });
+    expect(violations).toEqual([]);
   });
 
   it('falls back to a plain label when the vendor is unknown', async () => {

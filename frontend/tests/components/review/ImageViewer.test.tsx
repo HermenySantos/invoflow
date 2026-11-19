@@ -89,6 +89,19 @@ describe('ImageViewer', () => {
     expect(screen.getByLabelText('Ver em ecrã inteiro')).toBeInTheDocument();
   });
 
+  it('puts the fullscreen close on an opaque 44 px plate that shows over a white image', () => {
+    render(<ImageViewer src="https://example.com/image.jpg" />);
+    fireEvent.click(screen.getByLabelText('Ver em ecrã inteiro'));
+
+    const close = screen.getByLabelText('Fechar ecrã inteiro');
+    expect(close).toHaveClass('h-11', 'w-11', 'rounded-full');
+    expect(close.className).not.toMatch(/bg-white\/|hover:bg-/);
+    const style = getComputedStyle(close);
+    expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0.72)');
+    expect(style.color).toBe('rgb(255, 255, 255)');
+    expect(close.style.border).toBe('1px solid rgba(255, 255, 255, 0.2)');
+  });
+
   it('shows loading skeleton initially', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     
