@@ -108,6 +108,8 @@ jobs:
         run: |
           alembic downgrade base
           alembic upgrade head
+      - name: Production config refuses unsafe settings and serves with valid ones on Postgres 16
+        run: PRODUCTION_START_DATABASE_URL="$DATABASE_URL" python -m pytest -q tests/test_production_startup.py
 
   frontend:
     runs-on: ubuntu-latest
