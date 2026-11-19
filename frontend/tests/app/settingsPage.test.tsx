@@ -222,18 +222,59 @@ describe('Exportar os meus dados', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('says to wait a minute when rate limited', async () => {
-    vi.mocked(global.fetch).mockResolvedValue(new Response('{}', { status: 429 }));
-    signInDemo();
-    renderSettings();
+  it('when rate limited, names the wait in a calm status and counts down on the button until it re-enables', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(global.fetch)
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ detail: 'Demasiados pedidos. Aguarde 50 s e tente novamente.', error: { code: 'RATE_LIMITED' } }),
+            { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '3' } },
+          ),
+        )
+        .mockResolvedValueOnce(zipResponse());
+      signInDemo();
+      renderSettings();
 
-    await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: 'Exportar os meus dados' }));
-    });
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: 'Exportar os meus dados' }));
+      });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Já pediu várias exportações. Aguarde um minuto e tente novamente.',
-    );
+      const notice = await screen.findByTestId('rate-limit-notice');
+      expect(notice).toHaveAttribute('role', 'status');
+      expect(notice).toHaveTextContent('Aguarde um momento. Pode tentar de novo dentro de 3 s.');
+      expect(notice.textContent).not.toMatch(/Tente (novamente|outra vez)/i);
+      expect(notice.outerHTML).not.toMatch(/red-|danger/);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+      const button = screen.getByRole('button', { name: 'Tentar de novo em 3 s' });
+      expect(button).toBeDisabled();
+      expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByRole('button', { name: 'Tentar de novo em 2 s' })).toBeDisabled();
+      expect(screen.getByTestId('rate-limit-notice')).toBe(notice);
+      expect(notice).toHaveTextContent('dentro de 3 s');
+
+      act(() => vi.advanceTimersByTime(2000));
+      const again = screen.getByRole('button', { name: 'Exportar os meus dados' });
+      expect(again).toBeEnabled();
+      expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(again);
+      });
+      await waitFor(() => expect(clicked).toEqual(['Invoflow_meus_dados_20261119_101500.zip']));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders the 429 status in body-text tokens with at least 4.5:1 contrast on the page and card backgrounds', () => {
+    const css = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+    const token = (name: string) => css.match(new RegExp(`--ff-${name}:\\s*(#[0-9a-f]{6});`))![1];
+    expect(contrast(token('text'), token('surface'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token('text'), token('bg'))).toBeGreaterThanOrEqual(4.5);
   });
 
   it('shows the error toast when the network request throws', async () => {

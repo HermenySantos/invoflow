@@ -227,8 +227,7 @@ class ApiClient {
       headers: await this.authHeaders(),
     });
     if (!response.ok) {
-      const error: ApiError = { message: 'Account export failed', status: response.status };
-      throw error;
+      throw await apiErrorFrom(response, 'Account export failed');
     }
     const blob = await response.blob();
     const disposition = response.headers.get('Content-Disposition') || '';

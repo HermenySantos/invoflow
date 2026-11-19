@@ -47,6 +47,7 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
   it('keeps the file, says when to retry, counts down on the button and re-enables it at 0', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.mocked(api.uploadFile)
+      .mockReset()
       .mockRejectedValueOnce({
         status: 429,
         message: 'Demasiados pedidos. Aguarde 30 s e tente novamente.',

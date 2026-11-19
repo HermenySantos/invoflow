@@ -1,15 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Loader2, X } from 'lucide-react';
+import { Clock, Download, Loader2, X } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { SignOutConfirm } from '@/components/settings/SignOutConfirm';
 import { DeleteAccountSheet } from '@/components/settings/DeleteAccountSheet';
+import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { api } from '@/lib/api';
+import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
+import { rateLimitButton, rateLimitStatus } from '@/lib/rateLimitCopy';
 
 const EXPORT_FAILED = 'Não foi possível exportar os seus dados. Tente novamente.';
-const EXPORT_RATE_LIMITED = 'Já pediu várias exportações. Aguarde um minuto e tente novamente.';
 
 /** On unless NEXT_PUBLIC_ACCOUNT_EXPORT=0, which matches a backend with ACCOUNT_EXPORT_ENABLED=false. */
 const accountExportEnabled = () => process.env.NEXT_PUBLIC_ACCOUNT_EXPORT !== '0';
@@ -39,6 +41,7 @@ function SettingsContent() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const exportWait = useRetryCountdown();
   const exportEnabled = accountExportEnabled();
   const name = user?.name?.trim();
 
@@ -49,8 +52,12 @@ function SettingsContent() {
       const { blob, filename } = await api.downloadAccountExport();
       saveBlob(blob, filename);
     } catch (err) {
-      const status = (err as { status?: number } | null)?.status;
-      setExportError(status === 429 ? EXPORT_RATE_LIMITED : EXPORT_FAILED);
+      const wait = rateLimitWait(err);
+      if (wait !== null) {
+        exportWait.start(wait, rateLimitStatus(wait));
+      } else {
+        setExportError(EXPORT_FAILED);
+      }
     } finally {
       setExporting(false);
     }
@@ -93,21 +100,31 @@ function SettingsContent() {
             <button
               type="button"
               onClick={exportData}
-              disabled={exporting}
+              disabled={exporting || exportWait.seconds !== null}
               aria-busy={exporting || undefined}
               aria-describedby="export-description"
               className="w-full btn-secondary btn-md min-h-11 gap-2"
             >
-              {exporting ? (
-                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              {exportWait.seconds !== null ? (
+                <>
+                  <Clock className="w-4 h-4" aria-hidden="true" />
+                  {rateLimitButton(exportWait.seconds)}
+                </>
               ) : (
-                <Download className="w-4 h-4" aria-hidden="true" />
+                <>
+                  {exporting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="w-4 h-4" aria-hidden="true" />
+                  )}
+                  Exportar os meus dados
+                </>
               )}
-              Exportar os meus dados
             </button>
             <p id="export-description" className="mt-2 text-sm text-[var(--ff-text-muted)]">
               Um ficheiro ZIP com os seus recibos, os dados de cada documento e o IVA das vendas que introduziu.
             </p>
+            {exportWait.message && <RateLimitNotice message={exportWait.message} className="mt-3" />}
             <p role="status" className="sr-only">
               {exporting ? 'A preparar o ficheiro…' : ''}
             </p>

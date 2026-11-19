@@ -44,6 +44,16 @@ def test_frontend_allowlist_has_every_save_detail(detail):
     assert detail in _frontend_allowlist()
 
 
+def test_rate_limited_detail_carries_the_wait_the_frontend_reads():
+    import re
+
+    from app.core.rate_limit import RATE_LIMITED_MESSAGE
+
+    frontend = (FRONTEND_LIB / "rateLimit.ts").read_text(encoding="utf-8")
+    assert "/Aguarde (\\d+) s/" in frontend
+    assert re.search(r"Aguarde (\d+) s", RATE_LIMITED_MESSAGE.format(seconds=42)).group(1) == "42"
+
+
 def test_duplicate_details_are_the_ones_the_frontend_matches():
     source = DOCUMENTS_API.read_text(encoding="utf-8")
     assert f'"{DUPLICATE_WITHOUT_NUMBER}"' in source
