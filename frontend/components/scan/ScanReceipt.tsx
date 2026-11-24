@@ -103,7 +103,7 @@ export function ScanReceipt() {
   };
 
   return (
-    <div className="p-4">
+    <div className="p-4 md:px-0">
       <input
         ref={cameraInputRef}
         type="file"

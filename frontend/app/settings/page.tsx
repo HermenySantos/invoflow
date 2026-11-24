@@ -64,7 +64,7 @@ function SettingsContent() {
   };
 
   return (
-    <div className="max-w-lg mx-auto px-4 pt-6 space-y-8">
+    <div className="space-y-8 px-4 pt-6 md:px-0">
       <section aria-labelledby="account-heading">
         <h2 id="account-heading" className="sr-only">
           Conta
@@ -167,7 +167,7 @@ function SettingsContent() {
       {exportError && (
         <div
           role="alert"
-          className="fixed inset-x-4 bottom-24 z-50 mx-auto max-w-lg card flex items-start gap-3 p-4 shadow-lg border-[var(--ff-danger)]"
+          className="fixed inset-x-4 bottom-24 z-50 mx-auto max-w-lg card flex items-start gap-3 p-4 shadow-lg border-[var(--ff-danger)] lg:bottom-6"
         >
           <p className="flex-1 text-sm text-[var(--ff-danger)]">{exportError}</p>
           <button

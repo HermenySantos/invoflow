@@ -555,3 +555,6 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* The sticky receipt action bar is about 195px. Keep focused controls above it. */
+main#main-content:has([data-testid="receipt-action-bar"]){scroll-padding-top:4rem;scroll-padding-bottom:13rem}

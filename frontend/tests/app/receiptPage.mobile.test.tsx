@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import axe from 'axe-core';
@@ -86,6 +88,30 @@ describe('receipt page on a phone', () => {
     expect(bar.parentElement!.className).toContain('min-h-[calc(100dvh-var(--ff-nav-h))]');
     // Cancels the scroll area's pb-4, so the bar rests on the nav at the end of the page too.
     expect(bar.parentElement).toHaveClass('-mb-4');
+  });
+
+  it('from lg, keeps a sticky image column and the action bar in the form column', async () => {
+    renderPage();
+    const image = await screen.findByAltText('Recibo de Padaria Central');
+    const bar = screen.getByTestId('receipt-action-bar');
+    const imageCol = image.closest('[data-testid="receipt-image-column"]') as HTMLElement;
+    const page = bar.parentElement as HTMLElement;
+
+    expect(imageCol).toBeTruthy();
+    expect(page).toContainElement(imageCol);
+    expect(page.className).toContain('lg:grid-cols-[minmax(352px,2fr)_minmax(0,3fr)]');
+    expect(image.parentElement).toHaveClass('aspect-[4/3]', 'lg:aspect-[3/4]', 'lg:max-h-[calc(100dvh-8rem)]');
+    expect(page.className).toContain('lg:gap-x-6');
+    expect(imageCol).toHaveClass('lg:sticky', 'lg:col-start-1', 'lg:row-span-2');
+    expect(bar).toHaveClass('lg:col-start-2', 'lg:row-start-3');
+    expect(imageCol.contains(bar)).toBe(false);
+  });
+
+  it('pads the scrollport so the sticky action bar cannot cover the focused control', () => {
+    const css = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+    expect(css).toContain(
+      'main#main-content:has([data-testid="receipt-action-bar"]){scroll-padding-top:4rem;scroll-padding-bottom:13rem}',
+    );
   });
 
   it('labels the image and the header buttons in Portuguese', async () => {

@@ -304,7 +304,7 @@ export default function SummaryPage() {
   if (hasAnyDocuments === null) {
     return (
       <AppLayout title="IVA">
-        <div className="p-4 pb-8">
+        <div className="p-4 pb-8 md:px-0">
           <LoadingSkeleton />
         </div>
       </AppLayout>
@@ -314,7 +314,7 @@ export default function SummaryPage() {
   if (!hasAnyDocuments && !(summary && summary.total_documents > 0)) {
     return (
       <AppLayout title="IVA">
-        <div className="p-4 pb-8">
+        <div className="p-4 pb-8 md:px-0">
           <FirstRunEmptyState />
         </div>
       </AppLayout>
@@ -323,7 +323,7 @@ export default function SummaryPage() {
 
   return (
     <AppLayout title="IVA">
-      <div className="p-4 space-y-4 pb-8">
+      <div className="p-4 space-y-4 pb-8 md:px-0">
         {/* ─── 1. Period Selector ─── */}
         <PeriodSelector
           periodType={periodType}
