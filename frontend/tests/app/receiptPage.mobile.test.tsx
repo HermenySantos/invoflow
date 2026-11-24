@@ -134,12 +134,22 @@ describe('receipt page on a phone', () => {
     );
   });
 
-  it('puts the receipt pane in the document while the receipt is still loading, before the action bar', () => {
+  it('puts the loading skeleton on the same desktop grid, before the action bar', () => {
     vi.mocked(api.getDocument).mockReturnValue(new Promise(() => {}));
     renderPage();
-    const pane = document.querySelector('.receipt-pane');
+    const pane = document.querySelector('.receipt-pane') as HTMLElement;
     expect(pane).toBeTruthy();
-    expect(pane?.closest('main')).toHaveAttribute('id', 'main-content');
+    expect(pane.closest('main')).toHaveAttribute('id', 'main-content');
+    expect(pane.className).toContain('lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr]');
+    expect(pane.className).toContain('xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr]');
+    expect(pane.querySelector('header')).toHaveClass('lg:col-span-full');
+    const image = screen.getByTestId('receipt-image-column');
+    const form = screen.getByTestId('receipt-form-column');
+    expect(image).toHaveClass('hidden', 'lg:block', 'lg:col-start-1');
+    expect(form).toHaveClass('lg:col-start-2', 'lg:px-0');
+    const frame = screen.getByTestId('receipt-image-frame');
+    expect(frame).toHaveClass('aspect-[4/3]', 'lg:min-w-[320px]', 'lg:min-h-[180px]', 'lg:max-h-[calc(100dvh-8rem)]');
+    expect(form.querySelector('.lg\\:hidden')).toBeTruthy();
     expect(screen.queryByTestId('receipt-action-bar')).not.toBeInTheDocument();
   });
 

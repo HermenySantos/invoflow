@@ -137,6 +137,7 @@ export default function ReceiptDetailPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const loadSeq = useRef(0);
   const actionBarRef = useRef<HTMLDivElement>(null);
+  const saveErrorRef = useRef<HTMLDivElement>(null);
   /* width / height of the loaded file; a ratio for another file_url is ignored, so the frame stays 3/4 */
   const [imageBox, setImageBox] = useState<{ url: string; ratio: number } | null>(null);
   const fileUrl = document?.file_url ?? null;
@@ -502,6 +503,8 @@ export default function ReceiptDetailPage() {
       document.at_invoice_number,
     );
   const detailColumns = !!document && !isLoading;
+  /* The skeleton uses the same tracks, so the form does not jump when the receipt arrives. */
+  const desktopColumns = isLoading || detailColumns;
   const imageAspect = imageBox && imageBox.url === fileUrl ? imageBox.ratio : null;
   const barMounted = !!document && !isLoading;
 
@@ -530,7 +533,8 @@ export default function ReceiptDetailPage() {
     };
   }, [barMounted]);
 
-  /* A capped bar scrolls to keep the focused button in view, which hides a new 409/503. */
+  /* A capped bar scrolls to keep the focused button in view, which hides a new 409/503.
+     Disabling that button drops focus to the body, so the error itself takes it. */
   useEffect(() => {
     if (!error) return;
     const bar = actionBarRef.current;
@@ -538,8 +542,15 @@ export default function ReceiptDetailPage() {
     const pinTop = () => {
       bar.scrollTop = 0;
     };
+    const focusError = () => {
+      saveErrorRef.current?.focus({ preventScroll: true });
+    };
     pinTop();
-    const frame = requestAnimationFrame(pinTop);
+    focusError();
+    const frame = requestAnimationFrame(() => {
+      pinTop();
+      focusError();
+    });
     return () => cancelAnimationFrame(frame);
   }, [error]);
 
@@ -548,7 +559,7 @@ export default function ReceiptDetailPage() {
       {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;
           -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar.
           md:-mx-8 cancels the shell's 32px inset so the header and action bar stay full-bleed. */}
-      <div className={`receipt-pane -mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:min-h-[100dvh]${detailColumns ? ' lg:grid lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr] xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
+      <div className={`receipt-pane -mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:min-h-[100dvh]${desktopColumns ? ' lg:grid lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr] xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top lg:col-span-full lg:row-start-1">
         <div className="flex items-center justify-between h-14 px-4 md:px-8">
@@ -567,10 +578,10 @@ export default function ReceiptDetailPage() {
         </div>
       </header>
 
-      {detailColumns && document ? (
+      {isLoading || (detailColumns && document) ? (
         <div
           data-testid="receipt-image-column"
-          className="px-4 pt-4 md:px-8 lg:sticky lg:top-14 lg:z-[45] lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:self-start lg:pl-8 lg:pr-0 lg:pt-6"
+          className={`px-4 pt-4 md:px-8 lg:sticky lg:top-14 lg:z-[45] lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:self-start lg:pl-8 lg:pr-0 lg:pt-6${isLoading ? ' hidden lg:block' : ''}`}
         >
           <div className="card overflow-hidden lg:min-w-[320px]">
             <div
@@ -578,24 +589,28 @@ export default function ReceiptDetailPage() {
               className="aspect-[4/3] w-full bg-gray-100 lg:w-full lg:max-h-[calc(100dvh-8rem)] lg:min-h-[180px] lg:min-w-[320px] lg:[aspect-ratio:var(--receipt-image-aspect,3/4)]"
               style={{ '--receipt-image-aspect': imageAspect ? String(imageAspect) : '3 / 4' } as CSSProperties}
             >
-              <ImageViewer
-                src={document.file_url}
-                alt={document.vendor_name ? `Recibo de ${document.vendor_name}` : 'Recibo'}
-                mimeType={document.mime_type}
-                filename={document.original_filename}
-                onIntrinsicSize={reportImageSize}
-                className="h-full w-full"
-              />
+              {document ? (
+                <ImageViewer
+                  src={document.file_url}
+                  alt={document.vendor_name ? `Recibo de ${document.vendor_name}` : 'Recibo'}
+                  mimeType={document.mime_type}
+                  filename={document.original_filename}
+                  onIntrinsicSize={reportImageSize}
+                  className="h-full w-full"
+                />
+              ) : (
+                <div className="h-full w-full animate-pulse bg-gray-200" />
+              )}
             </div>
           </div>
         </div>
       ) : null}
 
       {/* Content */}
-      <div data-testid={detailColumns ? 'receipt-form-column' : undefined} className={`w-full flex-1 p-4 space-y-4 md:px-8${detailColumns ? ' lg:col-start-2 lg:row-start-2 lg:px-0 lg:pt-6' : ''}`}>
+      <div data-testid={desktopColumns ? 'receipt-form-column' : undefined} className={`w-full flex-1 p-4 space-y-4 md:px-8${desktopColumns ? ' lg:col-start-2 lg:row-start-2 lg:px-0 lg:pt-6' : ''}`}>
         {isLoading ? (
           <div className="space-y-4">
-            <div className="card aspect-[4/3] animate-pulse bg-gray-200" />
+            <div className="card aspect-[4/3] animate-pulse bg-gray-200 lg:hidden" />
             <div className="card p-4 space-y-3 animate-pulse">
               <div className="h-6 bg-gray-200 rounded w-2/3" />
               <div className="h-4 bg-gray-200 rounded w-1/3" />
@@ -1042,7 +1057,12 @@ export default function ReceiptDetailPage() {
           <div className="w-full">
             {/* In the action bar, so a 409 or 503 is not hidden under it on a small screen */}
             {error && (
-              <div role="alert" className="mb-3 p-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
+              <div
+                ref={saveErrorRef}
+                role="alert"
+                tabIndex={-1}
+                className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#1b4d3e]"
+              >
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 <span className="text-sm text-red-800">{error}</span>
               </div>

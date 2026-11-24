@@ -29,11 +29,15 @@ concurrency:
 
 jobs:
   clerk-key:
-    # Expressions cannot trim a variable. This job records whether the value,
-    # with surrounding whitespace removed, has the case-sensitive pk_live_ prefix.
+    # Skip before a runner starts when this was not a successful same-repo push.
+    # workflow_dispatch still checks the key. Expressions cannot trim a variable,
+    # so this job records the trimmed value and whether it has the case-sensitive
+    # pk_live_ prefix. The image build uses that trimmed value.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     outputs:
       live: ${{ steps.check.outputs.live }}
+      key: ${{ steps.check.outputs.key }}
     steps:
       - id: check
         env:
@@ -42,6 +46,7 @@ jobs:
           key="$CLERK_PUBLISHABLE_KEY"
           key="${key#"${key%%[![:space:]]*}"}"
           key="${key%"${key##*[![:space:]]}"}"
+          echo "key=${key}" >> "$GITHUB_OUTPUT"
           case "$key" in
             pk_live_*) echo "live=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "live=false" >> "$GITHUB_OUTPUT" ;;
@@ -79,7 +84,7 @@ jobs:
           context: frontend
           push: true
           build-args: |
-            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ vars.CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ needs.clerk-key.outputs.key }}
           tags: |
             ghcr.io/hermenysantos/invoflow-web:${{ steps.tag.outputs.tag }}
             ghcr.io/hermenysantos/invoflow-web:latest
