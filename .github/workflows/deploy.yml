@@ -2,11 +2,12 @@ name: Deploy
 
 # Images are built and pushed to GHCR only when the repository variable
 # CLERK_PUBLISHABLE_KEY is set (Settings > Secrets and variables > Actions >
-# Variables). It must be a repository variable, not a secret, because the
-# publishable key is baked into the frontend bundle. When it is unset or
-# empty, the images job is skipped so the workflow is grey/skipped instead of
-# red (frontend/scripts/require-clerk-key.mjs would otherwise fail
-# `npm run build`). Do not pass NEXT_PUBLIC_DEMO_AUTH=1 on this path.
+# Variables) and starts with pk_. It must be a repository variable, not a
+# secret, because the publishable key is baked into the frontend bundle.
+# When the variable is unset, the images and deploy jobs are skipped (the
+# run itself may show as successful/green, not red).
+# frontend/scripts/require-clerk-key.mjs would otherwise fail `npm run build`.
+# Do not pass NEXT_PUBLIC_DEMO_AUTH=1 on this path.
 # The deploy job is skipped until the DEPLOY_HOST secret exists. It uses the
 # production environment; required reviewers are a repository setting.
 on:
@@ -26,7 +27,10 @@ concurrency:
 
 jobs:
   images:
-    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && vars.CLERK_PUBLISHABLE_KEY != '' }}
+    # Fork PRs and pull_request runs must never build or deploy. workflow_run's
+    # branches filter matches the head branch name, so a fork PR named main
+    # would otherwise trigger this job.
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)) && startsWith(vars.CLERK_PUBLISHABLE_KEY, 'pk_') }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -100,7 +104,7 @@ jobs:
             docker compose -f docker-compose.prod.yml --env-file .env up -d --build --remove-orphans
             docker logout ghcr.io
             for i in $(seq 1 30); do
-              if docker compose -f docker-compose.prod.yml --env-file .env exec -T api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/detailed')" >/dev/null; then echo "ready on $IMAGE_TAG"; exit 0; fi
+              if docker compose -f docker-compose.prod.yml --env-file .env exec -T api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/detailed', timeout=5)" >/dev/null; then echo "ready on $IMAGE_TAG"; exit 0; fi
               sleep 5
             done
             echo "readiness check failed after deploy" >&2

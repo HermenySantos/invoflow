@@ -1,6 +1,6 @@
 # Deploying Invoflow
 
-One EU server running Docker Compose. Receipt files and nightly database backups go to Cloudflare R2. Every green CI run on `main` builds and pushes images when the repository variable `CLERK_PUBLISHABLE_KEY` is set, and deploys only when `DEPLOY_HOST` is set too. If the Clerk variable is unset, the images job is skipped (grey, not red).
+One EU server running Docker Compose. Receipt files and nightly database backups go to Cloudflare R2. Every green CI run on `main` builds and pushes images when the repository variable `CLERK_PUBLISHABLE_KEY` is set and starts with `pk_`, and deploys only when `DEPLOY_HOST` is set too. If the Clerk variable is unset, the images and deploy jobs are skipped (the run itself may show as successful/green, not red).
 
 ```
 Caddy (HTTPS) ─┬─ /api, /health → api  (FastAPI + Tesseract + QR, migrations on start)
@@ -58,9 +58,9 @@ Gildo creates the accounts, because they need payment or identity. Claude never 
 
 4. In GitHub (repo → Settings), add:
    - **Secrets:** `DEPLOY_HOST` (the server IP), `DEPLOY_USER` = `deploy`, and `DEPLOY_SSH_KEY` (the contents of the private key `invoflow_deploy`).
-   - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. This must be a repository variable, not a secret. The publishable key is built into the browser bundle, so it is meant to be public. Until it is set, Deploy skips the images job (grey, not red). A demo bundle is a separate build with `NEXT_PUBLIC_DEMO_AUTH=1`, and production does not set that flag.
+   - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. This must be a repository variable, not a secret. The publishable key is built into the browser bundle, so it is meant to be public. The workflow treats it as set only when the value starts with `pk_`. Until it is set, the images and deploy jobs are skipped (the run itself may show as successful/green, not red). A demo bundle is a separate build with `NEXT_PUBLIC_DEMO_AUTH=1`, and production does not set that flag.
    - **Environment:** create one named `production`. You can make it require your approval before every deploy.
-5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. Images build and push to GHCR only when the repository variable `CLERK_PUBLISHABLE_KEY` is set. Deploy runs only when `DEPLOY_HOST` is set too: the workflow copies the stack files to `/opt/invoflow`, pulls the images and starts everything. The API runs `alembic upgrade head` before serving, and the workflow waits for the in-container readiness check at `http://127.0.0.1:8000/health/detailed`. Caddy exposes only `/health` publicly.
+5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. Images build and push to GHCR only when the repository variable `CLERK_PUBLISHABLE_KEY` is set and starts with `pk_`, and only for a push in this repository (a fork pull request never builds or deploys). Deploy runs only when `DEPLOY_HOST` is set too: the workflow copies the stack files to `/opt/invoflow`, pulls the images and starts everything. The API runs `alembic upgrade head` before serving, and the workflow waits for the in-container readiness check at `http://127.0.0.1:8000/health/detailed` (5 second timeout). Caddy exposes only `/health` publicly.
 
 Delete `invoflow_deploy` and `my-prod.env` from your laptop once they're stored in GitHub and on the server.
 
