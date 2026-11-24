@@ -153,5 +153,5 @@ describe('receipts date filters read dd/mm/aaaa', () => {
     fireEvent.change(from, { target: { value: '32/13/2026' } });
     fireEvent.blur(from);
     expect((await run()).violations).toEqual([]);
-  }, 15000);
+  });
 });

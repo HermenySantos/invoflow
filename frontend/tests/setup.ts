@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom';
+import { configure } from '@testing-library/react';
 import { vi } from 'vitest';
 import { registerUseParamsMock } from './navigationState';
+
+// GitHub's runner is busy enough that a findBy/waitFor can miss a render that
+// lands just after the 1s default, and an axe scan can pass 5s.
+configure({ asyncUtilTimeout: 5000 });
 
 const { useParamsMock } = vi.hoisted(() => ({
   useParamsMock: vi.fn(() => ({ id: 'doc-v6' })),

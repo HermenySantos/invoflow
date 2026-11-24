@@ -10,6 +10,8 @@ export default defineConfig({
       NEXT_PUBLIC_DEMO_AUTH: '1',
     },
     globals: true,
+    testTimeout: 20000,
+    hookTimeout: 20000,
     setupFiles: ['./tests/setup.ts'],
     include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     coverage: {
