@@ -1,6 +1,6 @@
 # Deploying Invoflow
 
-One EU server running Docker Compose. Receipt files and nightly database backups go to Cloudflare R2. Every green CI run on `main` deploys automatically.
+One EU server running Docker Compose. Receipt files and nightly database backups go to Cloudflare R2. Every green CI run on `main` builds and pushes images when the repository variable `CLERK_PUBLISHABLE_KEY` is set, and deploys only when `DEPLOY_HOST` is set too. If the Clerk variable is unset, the images job is skipped (grey, not red).
 
 ```
 Caddy (HTTPS) ─┬─ /api, /health → api  (FastAPI + Tesseract + QR, migrations on start)
@@ -58,9 +58,9 @@ Gildo creates the accounts, because they need payment or identity. Claude never 
 
 4. In GitHub (repo → Settings), add:
    - **Secrets:** `DEPLOY_HOST` (the server IP), `DEPLOY_USER` = `deploy`, and `DEPLOY_SSH_KEY` (the contents of the private key `invoflow_deploy`).
-   - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. The publishable key is built into the browser bundle, so it is meant to be public. The frontend image build fails when this variable is empty. A demo bundle is a separate build with `NEXT_PUBLIC_DEMO_AUTH=1`, and production does not set that flag.
+   - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. This must be a repository variable, not a secret. The publishable key is built into the browser bundle, so it is meant to be public. Until it is set, Deploy skips the images job (grey, not red). A demo bundle is a separate build with `NEXT_PUBLIC_DEMO_AUTH=1`, and production does not set that flag.
    - **Environment:** create one named `production`. You can make it require your approval before every deploy.
-5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. The workflow builds both images and pushes them to GHCR. It then copies the stack files to `/opt/invoflow`, pulls the images and starts everything. The API runs `alembic upgrade head` before serving, and the workflow waits for `https://DOMAIN/health`.
+5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. Images build and push to GHCR only when the repository variable `CLERK_PUBLISHABLE_KEY` is set. Deploy runs only when `DEPLOY_HOST` is set too: the workflow copies the stack files to `/opt/invoflow`, pulls the images and starts everything. The API runs `alembic upgrade head` before serving, and the workflow waits for the in-container readiness check at `http://127.0.0.1:8000/health/detailed`. Caddy exposes only `/health` publicly.
 
 Delete `invoflow_deploy` and `my-prod.env` from your laptop once they're stored in GitHub and on the server.
 
@@ -88,7 +88,7 @@ alias dc='docker compose -f docker-compose.prod.yml --env-file .env'
 | `/health` | Liveness: is the process up? Restart the container if it fails. | OCR configuration only, no database. | 200, or 503 when OCR is misconfigured. |
 | `/health/detailed` | Readiness: send traffic only while it is 200. Point a load balancer here. | OCR configuration and a `SELECT 1` on the database (Postgres or SQLite). | 200, or 503 with `"checks": {"database": "down"}` when the database is unreachable. |
 
-The body never contains the connection string or the database error; the API logs only the error type. Caddy forwards only `/health`, so probe `/health/detailed` from inside the network, at `http://api:8000/health/detailed`.
+The body never contains the connection string or the database error; the API logs only the error type. Caddy forwards only `/health`, so probe `/health/detailed` from inside the network, at `http://api:8000/health/detailed`. The Deploy workflow probes `/health/detailed` after rollout. The compose api healthcheck stays on `/health` (liveness).
 
 **Practise a restore once a month** on the rehearsal stack or a scratch server. A backup you have never restored doesn't count.
 
