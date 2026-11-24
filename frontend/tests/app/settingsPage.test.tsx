@@ -59,16 +59,14 @@ describe('/settings', () => {
     expect(screen.getByRole('heading', { name: 'Zona de perigo' })).toHaveClass('text-sm', 'font-semibold');
   });
 
-  it('links the header account control to /settings at 44×44 instead of a raw Sair button', async () => {
+  it('links bottom-nav Conta to /settings, with no header avatar link and no Sair button', async () => {
     signInDemo();
     renderSettings();
 
-    const headerAccount = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
-    expect(headerAccount).toHaveClass('hidden');
+    expect(within(await screen.findByRole('banner')).queryByRole('link', { name: 'Conta' })).not.toBeInTheDocument();
     const account = screen.getAllByRole('link', { name: 'Conta' }).find((link) => link.closest('nav')?.className.includes('border-t'));
     expect(account).toHaveAttribute('href', '/settings');
     expect(account).toHaveAttribute('aria-current', 'page');
-    expect(headerAccount).toHaveClass('h-11', 'w-11');
     expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
   });
 

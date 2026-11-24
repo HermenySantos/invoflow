@@ -556,12 +556,18 @@ body {
   display: none;
 }
 
-/* Receipt detail: the scrollport follows the action bar, which grows with a 409/503.
+/* 100cqw is this scrollport. The container has to exist before the action bar does,
+   or a loading, error or missing receipt measures cqw as the viewport and the pane
+   runs 220px past the rail. */
+main#main-content:has(.receipt-pane) {
+  container-type: inline-size;
+}
+
+/* The scrollport follows the action bar, which grows with a 409/503.
    Bottom padding applies only while focus is in the form, so image controls do not
-   scroll the form. 100cqw is this scrollport, so the detail shell can span the pane. */
+   scroll the form. */
 main#main-content:has([data-testid="receipt-action-bar"]) {
   scroll-padding-top: 4rem;
-  container-type: inline-size;
 }
 
 main#main-content:has([data-testid="receipt-form-column"]:focus-within) {

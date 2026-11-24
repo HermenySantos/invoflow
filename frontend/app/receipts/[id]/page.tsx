@@ -530,6 +530,19 @@ export default function ReceiptDetailPage() {
     };
   }, [barMounted]);
 
+  /* A capped bar scrolls to keep the focused button in view, which hides a new 409/503. */
+  useEffect(() => {
+    if (!error) return;
+    const bar = actionBarRef.current;
+    if (!bar) return;
+    const pinTop = () => {
+      bar.scrollTop = 0;
+    };
+    pinTop();
+    const frame = requestAnimationFrame(pinTop);
+    return () => cancelAnimationFrame(frame);
+  }, [error]);
+
   return (
     <AppLayout>
       {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;

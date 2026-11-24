@@ -73,15 +73,11 @@ describe('desktop left rail', () => {
     }
   });
 
-  it('keeps a single Conta link in the bottom nav below 1024; the header avatar is hidden', async () => {
+  it('keeps a single Conta link in the bottom nav below 1024, and none in the header', async () => {
     pathname.current = '/settings';
     renderShell();
 
-    const headerAccount = (await screen.findByRole('banner')).querySelector('a') as HTMLAnchorElement;
-    expect(headerAccount).toHaveAttribute('href', '/settings');
-    expect(headerAccount).toHaveClass('hidden');
-    expect(headerAccount.className).not.toMatch(/(?:^|\s)lg:hidden(?:\s|$)/);
-
+    expect((await screen.findByRole('banner')).querySelector('a')).toBeNull();
     const bottomAccount = within(bottomNav()).getByRole('link', { name: 'Conta' });
     expect(bottomAccount).toHaveAttribute('href', '/settings');
     expect(bottomAccount).toHaveAttribute('aria-current', 'page');
@@ -163,8 +159,7 @@ describe('desktop left rail', () => {
     expect(rail.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(main.compareDocumentPosition(bottom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const headerAccount = screen.getByRole('banner').querySelector('a')!;
-    expect(headerAccount).toHaveClass('hidden');
+    expect(screen.getByRole('banner').querySelector('a')).toBeNull();
 
     const column = main.firstElementChild as HTMLElement;
     expect(column).toHaveClass('max-w-lg', 'md:max-w-3xl', 'md:px-8', 'lg:max-w-4xl', 'lg:mx-0');

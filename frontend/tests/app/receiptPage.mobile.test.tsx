@@ -134,12 +134,22 @@ describe('receipt page on a phone', () => {
     );
   });
 
+  it('puts the receipt pane in the document while the receipt is still loading, before the action bar', () => {
+    vi.mocked(api.getDocument).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const pane = document.querySelector('.receipt-pane');
+    expect(pane).toBeTruthy();
+    expect(pane?.closest('main')).toHaveAttribute('id', 'main-content');
+    expect(screen.queryByTestId('receipt-action-bar')).not.toBeInTheDocument();
+  });
+
   it('pads the scrollport so the sticky action bar cannot cover the focused control', () => {
     const css = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
     expect(css).toContain('scroll-padding-top: 4rem');
     expect(css).toContain('scroll-padding-bottom: calc(var(--receipt-bar-h, 13rem) + 1rem)');
     expect(css).toContain('[data-testid="receipt-form-column"]:focus-within');
     expect(css).not.toContain('scroll-padding-bottom: 13rem');
+    expect(css).toMatch(/main#main-content:has\(\.receipt-pane\)\s*\{[^}]*container-type:\s*inline-size/);
   });
 
   it('labels the image and the header buttons in Portuguese', async () => {
