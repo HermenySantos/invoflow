@@ -15,7 +15,7 @@ Files here:
 | File | What it is |
 |---|---|
 | `docker-compose.prod.yml` | The production stack. |
-| `Caddyfile` | HTTPS, routing and security headers. |
+| `Caddyfile` | HTTPS, routing and security headers. `www.<domain>` permanently redirects to the main domain. |
 | `.env.example` | Every setting the server needs. Copy it to `/opt/invoflow/.env` on the server. |
 | `backup/` | Daily `pg_dump` to R2 (`backup.sh`) and the restore script (`restore.sh`). |
 | `server-setup.sh` | One-time hardening of a fresh Ubuntu 24.04 server. |
@@ -26,7 +26,7 @@ Files here:
 Gildo creates the accounts, because they need payment or identity. Claude never handles the real keys.
 
 1. **Server:** Hetzner Cloud CX22 or similar, Ubuntu 24.04, in an EU location (Germany or Finland). Add your own SSH key when you create it.
-2. **Domain:** point it at Cloudflare DNS. Add an `A` record for the domain (and `AAAA` if the server has IPv6) to the server's IP, with **DNS only** (grey cloud), so Caddy can get its certificate.
+2. **Domain:** point it at Cloudflare DNS. Add an `A` record for the domain and for `www` (and `AAAA` records if the server has IPv6) to the server's IP, with **DNS only** (grey cloud), so Caddy can get its certificate.
 3. **Cloudflare R2:**
    - Create the buckets `invoflow-documents` and `invoflow-backups` in the **EU jurisdiction**.
    - Turn on **object versioning** for `invoflow-documents`.

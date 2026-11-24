@@ -1,4 +1,4 @@
-# HTTPS certificates are obtained and renewed automatically for {$DOMAIN}.
+# HTTPS certificates are obtained and renewed automatically for {$DOMAIN} and www.{$DOMAIN}.
 {$DOMAIN} {
 	encode zstd gzip
 
@@ -24,4 +24,9 @@
 		output stdout
 		format console
 	}
+}
+
+# www is only a permanent redirect to the main domain, keeping path and query.
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
 }
