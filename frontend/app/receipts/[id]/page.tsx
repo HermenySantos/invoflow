@@ -499,7 +499,7 @@ export default function ReceiptDetailPage() {
       {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;
           -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar.
           md:-mx-8 cancels the shell's 32px inset so the header and action bar stay full-bleed. */}
-      <div className={`-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:min-h-[100dvh]${detailColumns ? ' lg:grid lg:grid-cols-[minmax(320px,2fr)_minmax(0,3fr)] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
+      <div className={`-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:min-h-[100dvh]${detailColumns ? ' lg:grid lg:grid-cols-[minmax(352px,2fr)_minmax(0,3fr)] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top lg:col-span-2 lg:row-start-1">
         <div className="flex items-center justify-between h-14 px-4 md:px-8">
@@ -529,7 +529,7 @@ export default function ReceiptDetailPage() {
               alt={document.vendor_name ? `Recibo de ${document.vendor_name}` : 'Recibo'}
               mimeType={document.mime_type}
               filename={document.original_filename}
-              className="aspect-[4/3] bg-gray-100"
+              className="aspect-[4/3] bg-gray-100 lg:aspect-[3/4] lg:max-h-[calc(100dvh-8rem)]"
             />
           </div>
         </div>
