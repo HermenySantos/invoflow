@@ -817,13 +817,13 @@ export default function ReceiptDetailPage() {
                 })()}
 
                 {/* VAT deductible % (CIVA art. 21) */}
-                <label className="flex items-center justify-between gap-3 px-1 text-sm text-gray-600">
+                <label className="flex min-w-0 items-center justify-between gap-3 px-1 text-sm text-gray-600">
                   <span>IVA dedutível</span>
                   <select
                     value={document.deductible_pct_override ?? ''}
                     onChange={(e) => handleDeductibleChange(e.target.value)}
                     disabled={isSavingCategory}
-                    className="input w-auto py-1.5"
+                    className="input w-auto min-w-0 max-w-full py-1.5"
                   >
                     <option value="">
                       Regra da categoria
