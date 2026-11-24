@@ -28,5 +28,10 @@
 
 # www is only a permanent redirect to the main domain, keeping path and query.
 www.{$DOMAIN} {
-	redir https://{$DOMAIN}{uri} permanent
+	redir "https://{$DOMAIN}{uri}" permanent
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
 }
