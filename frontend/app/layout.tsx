@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Sans, Inter } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
+import { ptPT } from '@clerk/localizations';
 import './globals.css';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -63,7 +64,7 @@ export default function RootLayout({
   return (
     <html lang="pt-PT" className={`${plex.variable} ${inter.variable}`}>
       <body>
-        {clerkEnabled ? <ClerkProvider>{app}</ClerkProvider> : app}
+        {clerkEnabled ? <ClerkProvider localization={ptPT}>{app}</ClerkProvider> : app}
       </body>
     </html>
   );
