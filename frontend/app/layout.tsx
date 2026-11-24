@@ -7,6 +7,7 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineProvider } from '@/components/providers/OfflineProvider';
 import { APP_NAME, THEME_COLOR } from '@/lib/pwa';
+import { CLERK_SIGN_IN_URL, CLERK_SIGN_UP_URL } from '@/lib/clerkRoutes';
 
 const plex = IBM_Plex_Sans({
   subsets: ['latin'],
@@ -64,7 +65,7 @@ export default function RootLayout({
   return (
     <html lang="pt-PT" className={`${plex.variable} ${inter.variable}`}>
       <body>
-        {clerkEnabled ? <ClerkProvider localization={ptPT}>{app}</ClerkProvider> : app}
+        {clerkEnabled ? <ClerkProvider localization={ptPT} signInUrl={CLERK_SIGN_IN_URL} signUpUrl={CLERK_SIGN_UP_URL}>{app}</ClerkProvider> : app}
       </body>
     </html>
   );

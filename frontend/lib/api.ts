@@ -3,6 +3,7 @@
  * Handles all HTTP requests with Clerk authentication.
  */
 
+import { getToken as getClerkToken } from '@clerk/nextjs';
 import { readDemoUser } from './demoUser';
 import { parseRetryAfter } from './rateLimit';
 
@@ -35,25 +36,19 @@ async function apiErrorFrom(response: Response, fallbackMessage: string): Promis
 
 class ApiClient {
   /**
-   * Get the auth token from Clerk.
-   * Returns null if not authenticated (e.g., during SSR or before sign-in).
+   * The Clerk session token, or null when Clerk is off (demo mode) or the user is signed out.
+   *
+   * Pages fetch on mount, and on a full page load that runs before clerk-js has finished
+   * loading. Clerk's getToken waits for Clerk to be ready instead of reading window.Clerk
+   * too early, which sent the request without a token and got a 401 (issue: /receipts
+   * right after sign-up). Its errors (load timeout, offline) propagate so no request goes
+   * out unauthenticated by accident.
    */
   private async getAuthToken(): Promise<string | null> {
-    // In browser, get token from Clerk's client-side session
-    if (typeof window !== 'undefined') {
-      try {
-        // @clerk/nextjs exposes the session token via __clerk_session cookie
-        // but the proper way is to use the useAuth hook. Since we're in a
-        // non-React context, we use the global Clerk instance.
-        const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string | null> } } }).Clerk;
-        if (clerk?.session) {
-          return await clerk.session.getToken();
-        }
-      } catch {
-        // Fall through to null
-      }
+    if (typeof window === 'undefined' || !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+      return null;
     }
-    return null;
+    return getClerkToken();
   }
 
   /** Clerk bearer token when signed in with Clerk; otherwise the demo user's id. */

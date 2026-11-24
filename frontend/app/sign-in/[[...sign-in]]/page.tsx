@@ -81,12 +81,22 @@ function SignInForm() {
   );
 }
 
+/** Clerk honours its own ?redirect_url= (set by the middleware); ?next= (set by AppLayout) is the fallback. */
+function ClerkSignIn() {
+  const searchParams = useSearchParams();
+  return (
+    <div className="landing min-h-screen flex items-center justify-center px-4">
+      <SignIn fallbackRedirectUrl={safeNextPath(searchParams.get('next'))} signUpUrl="/sign-up" />
+    </div>
+  );
+}
+
 export default function SignInPage() {
   if (clerkEnabled) {
     return (
-      <div className="landing min-h-screen flex items-center justify-center px-4">
-        <SignIn fallbackRedirectUrl="/upload" signUpUrl="/sign-up" />
-      </div>
+      <Suspense fallback={<div className="landing min-h-screen" />}>
+        <ClerkSignIn />
+      </Suspense>
     );
   }
 
