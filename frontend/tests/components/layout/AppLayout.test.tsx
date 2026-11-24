@@ -66,7 +66,7 @@ describe('AppLayout on a phone', () => {
     expect(nav).toHaveClass('print:hidden');
   });
 
-  it('puts a 44×44 account link to /settings in the header, with the user initial, and no Sair button', async () => {
+  it('has no header avatar link; Conta lives in the bottom nav, and there is no Sair button', async () => {
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
     render(
       <AuthProvider>
@@ -76,10 +76,9 @@ describe('AppLayout on a phone', () => {
       </AuthProvider>,
     );
 
-    const account = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
+    expect(within(await screen.findByRole('banner')).queryByRole('link', { name: 'Conta' })).not.toBeInTheDocument();
+    const account = screen.getAllByRole('link', { name: 'Conta' }).find((link) => link.closest('nav')?.className.includes('border-t'));
     expect(account).toHaveAttribute('href', '/settings');
-    expect(account).toHaveClass('h-11', 'w-11');
-    expect(account).toHaveTextContent('A');
     expect(account).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
   });

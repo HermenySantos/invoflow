@@ -82,9 +82,13 @@ describe('receipt page GIL-208 N-6', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(BUSY);
+    expect(alert).toHaveAttribute('tabindex', '-1');
+    expect(alert).toHaveClass('focus:ring-2', 'focus:ring-inset', 'focus:ring-[#1b4d3e]');
+    expect(alert).toHaveFocus();
     const bar = screen.getByRole('button', { name: 'Está correto' }).closest('[data-testid="receipt-action-bar"]');
     expect(bar).not.toBeNull();
     expect(bar).toContainElement(alert);
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Está correto' }));
   });
 
   it('shows PT-PT copy, not "Failed to fetch", for a save while offline', async () => {

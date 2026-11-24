@@ -1,9 +1,7 @@
 'use client';
 
 import { ReactNode, useEffect } from 'react';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { User } from 'lucide-react';
 import { BottomNav } from './BottomNav';
 import { LeftRail } from './LeftRail';
 import { MainScrollArea } from './MainScrollArea';
@@ -17,11 +15,9 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const initial = (user?.name || user?.email || '').trim().charAt(0).toUpperCase();
-  const onSettings = pathname === '/settings';
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -68,19 +64,6 @@ export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
                 )}
                 <h1 className="text-lg font-semibold">{title}</h1>
               </div>
-              <Link
-                href="/settings"
-                aria-label="Conta"
-                aria-current={onSettings ? 'page' : undefined}
-                className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full touch-manipulation focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)] lg:hidden"
-              >
-                <span
-                  aria-hidden="true"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ff-border)] bg-[var(--ff-surface)] text-sm font-semibold text-[var(--ff-accent)]"
-                >
-                  {initial || <User className="h-4 w-4" />}
-                </span>
-              </Link>
             </div>
           </header>
         )}

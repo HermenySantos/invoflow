@@ -92,7 +92,10 @@ describe('summary tap targets on a phone', () => {
   it("gives 'Introduzir IVA das vendas', the pencil and the excluded receipt link 44 px", () => {
     expectMobileHeight(screen.getByRole('button', { name: 'Introduzir IVA das vendas' }));
     expectMobileSquare(screen.getByRole('button', { name: 'Editar IVA vendas' }));
-    expectMobileHeight(screen.getByRole('link', { name: 'Oficina do Bairro · FT A/1' }));
+    const excluded = screen.getByRole('link', { name: 'Oficina do Bairro · FT A/1' });
+    expectMobileHeight(excluded);
+    expect(excluded).toHaveClass('break-words', 'min-w-0');
+    expect(excluded.querySelector('span')).toHaveClass('break-words', 'min-w-0');
   });
 
   it('gives the VAT on sales input and its save and cancel buttons 44 px', () => {

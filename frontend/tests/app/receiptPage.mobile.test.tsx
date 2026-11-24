@@ -99,19 +99,67 @@ describe('receipt page on a phone', () => {
 
     expect(imageCol).toBeTruthy();
     expect(page).toContainElement(imageCol);
-    expect(page.className).toContain('lg:grid-cols-[minmax(352px,2fr)_minmax(0,3fr)]');
-    expect(image.parentElement).toHaveClass('aspect-[4/3]', 'lg:aspect-[3/4]', 'lg:max-h-[calc(100dvh-8rem)]');
+    expect(page.className).toContain('lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr]');
+    expect(page.className).toContain('xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr]');
+    expect(page.className).not.toContain('lg:w-[100cqw]');
+    const frame = screen.getByTestId('receipt-image-frame');
+    expect(frame).toHaveClass('lg:w-full', 'aspect-[4/3]', 'lg:max-h-[calc(100dvh-8rem)]', 'lg:min-h-[180px]');
+    expect(frame.className).toContain('lg:[aspect-ratio:var(--receipt-image-aspect,3/4)]');
+    expect(imageCol).toHaveClass('lg:z-[45]');
+    expect(page.querySelector('header')).toHaveClass('lg:col-span-full');
+    expect(image.parentElement?.className ?? '').not.toContain('max-h-');
     expect(page.className).toContain('lg:gap-x-6');
     expect(imageCol).toHaveClass('lg:sticky', 'lg:col-start-1', 'lg:row-span-2');
     expect(bar).toHaveClass('lg:col-start-2', 'lg:row-start-3');
     expect(imageCol.contains(bar)).toBe(false);
   });
 
+  it('follows a wide image at lg and stacks the deductible label under 360px', async () => {
+    renderPage();
+    const img = (await screen.findByAltText('Recibo de Padaria Central')) as HTMLImageElement;
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 1600 });
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 900 });
+    fireEvent.load(img);
+
+    const frame = screen.getByTestId('receipt-image-frame');
+    expect(frame.style.getPropertyValue('--receipt-image-aspect')).toBe(String(1600 / 900));
+    expect(frame).toHaveClass('lg:w-full', 'lg:min-w-[320px]', 'lg:min-h-[180px]');
+    expect(frame.className).not.toContain('lg:w-[min(478px');
+    const shell = screen.getByTestId('receipt-action-bar').parentElement as HTMLElement;
+    expect(shell).toHaveClass('lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr]');
+    expect(shell.className).not.toContain('max-content');
+    expect(screen.getByText('IVA dedutível').closest('label')).toHaveClass(
+      'max-[359px]:flex-col',
+      'max-[359px]:items-stretch',
+    );
+  });
+
+  it('puts the loading skeleton on the same desktop grid, before the action bar', () => {
+    vi.mocked(api.getDocument).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const pane = document.querySelector('.receipt-pane') as HTMLElement;
+    expect(pane).toBeTruthy();
+    expect(pane.closest('main')).toHaveAttribute('id', 'main-content');
+    expect(pane.className).toContain('lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr]');
+    expect(pane.className).toContain('xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr]');
+    expect(pane.querySelector('header')).toHaveClass('lg:col-span-full');
+    const image = screen.getByTestId('receipt-image-column');
+    const form = screen.getByTestId('receipt-form-column');
+    expect(image).toHaveClass('hidden', 'lg:block', 'lg:col-start-1');
+    expect(form).toHaveClass('lg:col-start-2', 'lg:px-0');
+    const frame = screen.getByTestId('receipt-image-frame');
+    expect(frame).toHaveClass('aspect-[4/3]', 'lg:min-w-[320px]', 'lg:min-h-[180px]', 'lg:max-h-[calc(100dvh-8rem)]');
+    expect(form.querySelector('.lg\\:hidden')).toBeTruthy();
+    expect(screen.queryByTestId('receipt-action-bar')).not.toBeInTheDocument();
+  });
+
   it('pads the scrollport so the sticky action bar cannot cover the focused control', () => {
     const css = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
-    expect(css).toContain(
-      'main#main-content:has([data-testid="receipt-action-bar"]){scroll-padding-top:4rem;scroll-padding-bottom:13rem}',
-    );
+    expect(css).toContain('scroll-padding-top: 4rem');
+    expect(css).toContain('scroll-padding-bottom: calc(var(--receipt-bar-h, 13rem) + 1rem)');
+    expect(css).toContain('[data-testid="receipt-form-column"]:focus-within');
+    expect(css).not.toContain('scroll-padding-bottom: 13rem');
+    expect(css).toMatch(/main#main-content:has\(\.receipt-pane\)\s*\{[^}]*container-type:\s*inline-size/);
   });
 
   it('labels the image and the header buttons in Portuguese', async () => {

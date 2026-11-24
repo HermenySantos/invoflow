@@ -432,10 +432,12 @@ export default function SummaryPage() {
                   </p>
                   <ul className="mt-1">
                     {(summary.excluded_documents ?? []).map((item) => (
-                      <li key={item.id} className="text-sm text-gray-600">
-                        <Link href={`/receipts/${item.id}`} className="inline-flex min-h-11 items-center py-2 underline touch-manipulation lg:inline-block lg:min-h-0">
-                          {item.vendor_name || "Sem fornecedor"}
-                          {item.invoice_number ? ` · ${item.invoice_number}` : ""}
+                      <li key={item.id} className="min-w-0 break-words text-sm text-gray-600">
+                        <Link href={`/receipts/${item.id}`} className="inline-flex min-h-11 min-w-0 max-w-full items-center break-words py-2 underline touch-manipulation lg:inline-block lg:min-h-0">
+                          <span className="min-w-0 break-words">
+                            {item.vendor_name || "Sem fornecedor"}
+                            {item.invoice_number ? ` · ${item.invoice_number}` : ""}
+                          </span>
                         </Link>
                         <span className="text-[var(--ff-text-muted)]"> — {item.reason}</span>
                       </li>

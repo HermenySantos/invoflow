@@ -2,8 +2,10 @@ name: Deploy
 
 # Images are built and pushed to GHCR only when the repository variable
 # CLERK_PUBLISHABLE_KEY is set (Settings > Secrets and variables > Actions >
-# Variables) and starts with pk_. It must be a repository variable, not a
-# secret, because the publishable key is baked into the frontend bundle.
+# Variables) and, after trimming whitespace, starts with pk_live_ (case-sensitive).
+# A live key is required. It must be a
+# repository variable, not a secret, because the publishable key is baked
+# into the frontend bundle.
 # When the variable is unset, the images and deploy jobs are skipped (the
 # run itself may show as successful/green, not red).
 # frontend/scripts/require-clerk-key.mjs would otherwise fail `npm run build`.
@@ -26,11 +28,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  clerk-key:
+    # Skip before a runner starts when this was not a successful same-repo push.
+    # workflow_dispatch still checks the key. Expressions cannot trim a variable,
+    # so this job records the trimmed value and whether it has the case-sensitive
+    # pk_live_ prefix. The image build uses that trimmed value.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    outputs:
+      live: ${{ steps.check.outputs.live }}
+      key: ${{ steps.check.outputs.key }}
+    steps:
+      - id: check
+        env:
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+        run: |
+          key="$CLERK_PUBLISHABLE_KEY"
+          key="${key#"${key%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          echo "key=${key}" >> "$GITHUB_OUTPUT"
+          case "$key" in
+            pk_live_*) echo "live=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "live=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
   images:
+    needs: clerk-key
     # Fork PRs and pull_request runs must never build or deploy. workflow_run's
     # branches filter matches the head branch name, so a fork PR named main
     # would otherwise trigger this job.
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)) && startsWith(vars.CLERK_PUBLISHABLE_KEY, 'pk_') }}
+    if: ${{ needs.clerk-key.outputs.live == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)) }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -57,7 +84,7 @@ jobs:
           context: frontend
           push: true
           build-args: |
-            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ vars.CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ needs.clerk-key.outputs.key }}
           tags: |
             ghcr.io/hermenysantos/invoflow-web:${{ steps.tag.outputs.tag }}
             ghcr.io/hermenysantos/invoflow-web:latest

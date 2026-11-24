@@ -83,6 +83,29 @@ describe('ImageViewer', () => {
     expect(zoomOutButton).toBeDisabled();
   });
 
+  it('drops the inline frame sizing in fullscreen so the viewer is not a short band', () => {
+    render(
+      <ImageViewer
+        src="https://example.com/image.jpg"
+        className="aspect-[3/4] lg:max-h-[calc(100dvh-8rem)]"
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Ver em ecrã inteiro'));
+    const frame = screen.getByRole('img').parentElement as HTMLElement;
+    expect(frame.className).not.toMatch(/aspect-|max-h-/);
+    expect(frame).toHaveClass('h-full', 'w-full');
+  });
+
+  it('reports the loaded image intrinsic size', () => {
+    const onIntrinsicSize = vi.fn();
+    render(<ImageViewer src="https://example.com/wide.jpg" onIntrinsicSize={onIntrinsicSize} />);
+    const img = screen.getByRole('img') as HTMLImageElement;
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 4000 });
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 300 });
+    fireEvent.load(img);
+    expect(onIntrinsicSize).toHaveBeenCalledWith(4000, 300);
+  });
+
   it('has fullscreen toggle button', () => {
     render(<ImageViewer src="https://example.com/image.jpg" />);
     

@@ -73,6 +73,16 @@ describe('desktop left rail', () => {
     }
   });
 
+  it('keeps a single Conta link in the bottom nav below 1024, and none in the header', async () => {
+    pathname.current = '/settings';
+    renderShell();
+
+    expect((await screen.findByRole('banner')).querySelector('a')).toBeNull();
+    const bottomAccount = within(bottomNav()).getByRole('link', { name: 'Conta' });
+    expect(bottomAccount).toHaveAttribute('href', '/settings');
+    expect(bottomAccount).toHaveAttribute('aria-current', 'page');
+  });
+
   it('hides the bottom nav from 1024px up and the rail below that, so only one nav is shown', async () => {
     pathname.current = '/receipts';
     renderShell();
@@ -149,8 +159,7 @@ describe('desktop left rail', () => {
     expect(rail.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(main.compareDocumentPosition(bottom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const headerAccount = screen.getByRole('banner').querySelector('a')!;
-    expect(headerAccount).toHaveClass('lg:hidden');
+    expect(screen.getByRole('banner').querySelector('a')).toBeNull();
 
     const column = main.firstElementChild as HTMLElement;
     expect(column).toHaveClass('max-w-lg', 'md:max-w-3xl', 'md:px-8', 'lg:max-w-4xl', 'lg:mx-0');
