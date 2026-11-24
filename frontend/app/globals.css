@@ -556,5 +556,38 @@ body {
   display: none;
 }
 
-/* The sticky receipt action bar is about 195px. Keep focused controls above it. */
-main#main-content:has([data-testid="receipt-action-bar"]){scroll-padding-top:4rem;scroll-padding-bottom:13rem}
+/* Receipt detail: the scrollport follows the action bar, which grows with a 409/503.
+   Bottom padding applies only while focus is in the form, so image controls do not
+   scroll the form. 100cqw is this scrollport, so the detail shell can span the pane. */
+main#main-content:has([data-testid="receipt-action-bar"]) {
+  scroll-padding-top: 4rem;
+  container-type: inline-size;
+}
+
+main#main-content:has([data-testid="receipt-form-column"]:focus-within) {
+  scroll-padding-bottom: calc(var(--receipt-bar-h, 13rem) + 1rem);
+}
+
+/* Below lg the image is in the same column as the form, so its controls need the same reserve.
+   From lg the image sticks beside the form and must not scroll it. */
+@media (max-width: 1023px) {
+  main#main-content:has([data-testid="receipt-image-column"]:focus-within) {
+    scroll-padding-bottom: calc(var(--receipt-bar-h, 13rem) + 1rem);
+  }
+}
+
+/* The action bar sits in the form column; its border still runs the whole pane. */
+@media (min-width: 1024px) {
+  [data-testid="receipt-action-bar"]::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    left: calc(100% - 100cqw);
+    width: 100cqw;
+    height: 1px;
+    background: #e5e7eb;
+    transform: translateY(-1px);
+    pointer-events: none;
+  }
+}

@@ -18,6 +18,8 @@ interface ImageViewerProps {
   mimeType?: string;
   filename?: string;
   className?: string;
+  /** Natural pixel size once the image has loaded. */
+  onIntrinsicSize?: (width: number, height: number) => void;
 }
 
 const ZOOM_LEVELS = [1, 1.5, 2, 2.5, 3];
@@ -29,7 +31,8 @@ export function ImageViewer({
   alt = 'Pré-visualização do documento',
   mimeType,
   filename,
-  className = ''
+  className = '',
+  onIntrinsicSize,
 }: ImageViewerProps) {
   const [zoomIndex, setZoomIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -43,16 +46,25 @@ export function ImageViewer({
   const imageRef = useRef<HTMLImageElement>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const lastTouchDistance = useRef<number | null>(null);
+  const onIntrinsicSizeRef = useRef(onIntrinsicSize);
+
+  useEffect(() => {
+    onIntrinsicSizeRef.current = onIntrinsicSize;
+  }, [onIntrinsicSize]);
 
   const zoom = ZOOM_LEVELS[zoomIndex];
   const isPdf = mimeType?.includes('pdf');
 
-  // Reset state when src changes
+  // Reset state when src changes. A cached image can already be complete before onLoad.
   useEffect(() => {
     setIsLoading(true);
     setHasError(false);
     setZoomIndex(0);
     setPosition({ x: 0, y: 0 });
+    const img = imageRef.current;
+    if (img?.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      onIntrinsicSizeRef.current?.(img.naturalWidth, img.naturalHeight);
+    }
   }, [src]);
 
   const handleZoomIn = useCallback(() => {
@@ -169,9 +181,13 @@ export function ImageViewer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen, handleZoomIn, handleZoomOut]);
 
-  const handleImageLoad = () => {
+  const handleImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
     setIsLoading(false);
     setHasError(false);
+    const img = event.currentTarget;
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      onIntrinsicSizeRef.current?.(img.naturalWidth, img.naturalHeight);
+    }
   };
 
   const handleImageError = () => {
@@ -213,7 +229,7 @@ export function ImageViewer({
   const imageContent = (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden ${isFullscreen ? 'w-full h-full' : 'rounded-xl'} ${className}`}
+      className={`relative overflow-hidden ${isFullscreen ? 'h-full w-full' : `rounded-xl ${className}`}`}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

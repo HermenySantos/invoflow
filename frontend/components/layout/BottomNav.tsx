@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
-import { isNavItemActive, primaryNavItems } from './navItems';
+import { accountNavItem, isNavItemActive, primaryNavItems } from './navItems';
+
+/** Same destinations as the rail. Conta is here so /settings has aria-current below 1024. */
+const items = [...primaryNavItems, accountNavItem];
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -14,7 +17,7 @@ export function BottomNav() {
       aria-label="Navegação principal"
     >
       <ul className="m-0 mx-auto flex h-16 max-w-lg list-none items-center justify-around p-0 md:max-w-3xl md:px-8">
-        {primaryNavItems.map(({ href, match, icon: Icon, label }) => {
+        {items.map(({ href, match, icon: Icon, label }) => {
           const isActive = isNavItemActive(pathname, match);
           return (
             <li key={href} className="h-full flex-1">

@@ -73,6 +73,21 @@ describe('desktop left rail', () => {
     }
   });
 
+  it('marks the header Conta link, the one shown below 1024, as the current page on /settings', async () => {
+    pathname.current = '/settings';
+    renderShell();
+
+    const headerAccount = (await screen.findByRole('banner')).querySelector('a') as HTMLAnchorElement;
+    expect(headerAccount).toHaveAttribute('href', '/settings');
+    expect(headerAccount).toHaveAttribute('aria-current', 'page');
+    expect(headerAccount).toHaveClass('lg:hidden');
+    expect(headerAccount).toHaveAccessibleName('Conta');
+
+    const bottomAccount = within(bottomNav()).getByRole('link', { name: 'Conta' });
+    expect(bottomAccount).toHaveAttribute('href', '/settings');
+    expect(bottomAccount).toHaveAttribute('aria-current', 'page');
+  });
+
   it('hides the bottom nav from 1024px up and the rail below that, so only one nav is shown', async () => {
     pathname.current = '/receipts';
     renderShell();

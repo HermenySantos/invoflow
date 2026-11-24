@@ -7,6 +7,7 @@ import { User } from 'lucide-react';
 import { BottomNav } from './BottomNav';
 import { LeftRail } from './LeftRail';
 import { MainScrollArea } from './MainScrollArea';
+import { accountNavItem, isNavItemActive } from './navItems';
 import { useAuth } from '@/components/providers/AuthProvider';
 
 interface AppLayoutProps {
@@ -21,7 +22,7 @@ export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const initial = (user?.name || user?.email || '').trim().charAt(0).toUpperCase();
-  const onSettings = pathname === '/settings';
+  const onSettings = isNavItemActive(pathname, accountNavItem.match);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

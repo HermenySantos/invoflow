@@ -2,8 +2,9 @@ name: Deploy
 
 # Images are built and pushed to GHCR only when the repository variable
 # CLERK_PUBLISHABLE_KEY is set (Settings > Secrets and variables > Actions >
-# Variables) and starts with pk_. It must be a repository variable, not a
-# secret, because the publishable key is baked into the frontend bundle.
+# Variables) and starts with pk_live_. A live key is required. It must be a
+# repository variable, not a secret, because the publishable key is baked
+# into the frontend bundle.
 # When the variable is unset, the images and deploy jobs are skipped (the
 # run itself may show as successful/green, not red).
 # frontend/scripts/require-clerk-key.mjs would otherwise fail `npm run build`.
@@ -30,7 +31,7 @@ jobs:
     # Fork PRs and pull_request runs must never build or deploy. workflow_run's
     # branches filter matches the head branch name, so a fork PR named main
     # would otherwise trigger this job.
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)) && startsWith(vars.CLERK_PUBLISHABLE_KEY, 'pk_') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)) && startsWith(vars.CLERK_PUBLISHABLE_KEY, 'pk_live_') }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
