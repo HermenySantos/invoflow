@@ -196,7 +196,7 @@ export default function ReceiptsPage() {
 
   return (
     <AppLayout title="Recibos">
-      <section className="p-4" aria-label="Lista de recibos">
+      <section className="p-4 md:px-0" aria-label="Lista de recibos">
         {showFilters ? (
           <div className="mb-3 space-y-2">
             <label className="relative block">

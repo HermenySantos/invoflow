@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from '@/app/settings/page';
 import { DeleteAccountSheet, isDeleteConfirmed } from '@/components/settings/DeleteAccountSheet';
@@ -63,7 +63,7 @@ describe('/settings', () => {
     signInDemo();
     renderSettings();
 
-    const account = await screen.findByRole('link', { name: 'Conta' });
+    const account = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
     expect(account).toHaveAttribute('href', '/settings');
     expect(account).toHaveAttribute('aria-current', 'page');
     expect(account).toHaveClass('h-11', 'w-11');

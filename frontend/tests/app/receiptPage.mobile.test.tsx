@@ -88,6 +88,22 @@ describe('receipt page on a phone', () => {
     expect(bar.parentElement).toHaveClass('-mb-4');
   });
 
+  it('from lg, keeps a sticky image column and the action bar in the form column', async () => {
+    renderPage();
+    const image = await screen.findByAltText('Recibo de Padaria Central');
+    const bar = screen.getByTestId('receipt-action-bar');
+    const imageCol = image.closest('[data-testid="receipt-image-column"]') as HTMLElement;
+    const page = bar.parentElement as HTMLElement;
+
+    expect(imageCol).toBeTruthy();
+    expect(page).toContainElement(imageCol);
+    expect(page.className).toContain('lg:grid-cols-[minmax(320px,2fr)_minmax(0,3fr)]');
+    expect(page.className).toContain('lg:gap-x-6');
+    expect(imageCol).toHaveClass('lg:sticky', 'lg:col-start-1', 'lg:row-span-2');
+    expect(bar).toHaveClass('lg:col-start-2', 'lg:row-start-3');
+    expect(imageCol.contains(bar)).toBe(false);
+  });
+
   it('labels the image and the header buttons in Portuguese', async () => {
     renderPage();
     expect(await screen.findByAltText('Recibo de Padaria Central')).toBeInTheDocument();

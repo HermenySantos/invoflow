@@ -76,7 +76,7 @@ export function MainScrollArea({ children }: { children: ReactNode }) {
       tabIndex={-1}
     >
       {/* Bottom padding so the last row clears the nav at the end of the scroll */}
-      <div className="max-w-lg mx-auto pb-4">{children}</div>
+      <div className="mx-auto w-full max-w-lg pb-4 md:max-w-3xl md:px-8 lg:mx-0 lg:max-w-4xl">{children}</div>
     </main>
   );
 }

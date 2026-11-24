@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { AuthProvider, useAuth } from '@/components/providers/AuthProvider';
@@ -25,19 +25,24 @@ describe('AppLayout on a phone', () => {
       </AuthProvider>,
     );
 
-    const nav = await screen.findByRole('navigation', { name: 'Navegação principal' });
+    const nav = (await screen.findAllByRole('navigation', { name: 'Navegação principal' }))
+      .find((el) => el.className.includes('border-t'))!;
     const main = screen.getByRole('main');
-    const shell = main.parentElement!;
+    const pane = main.parentElement!;
+    const shell = pane.parentElement!;
 
     // A fixed nav over a scrolling page hid whatever control was at the fold (360x800).
     expect(nav.className).not.toMatch(/\b(fixed|absolute|sticky)\b/);
     expect(nav.className).toContain('shrink-0');
     expect(shell.className).toContain('h-[100dvh]');
     expect(shell.className).toContain('flex-col');
+    expect(pane.className).toContain('flex-1');
+    expect(pane.className).toContain('min-h-0');
+    expect(pane.className).toContain('flex-col');
     expect(main.className).toContain('flex-1');
     expect(main.className).toContain('min-h-0');
     expect(main.className).toContain('overflow-y-auto');
-    expect(main.nextElementSibling).toBe(nav);
+    expect(pane.nextElementSibling).toBe(nav);
     expect(main).toContainElement(screen.getByRole('button', { name: 'Editar IVA vendas' }));
     expect(main.firstElementChild).toHaveClass('pb-4');
   });
@@ -52,11 +57,12 @@ describe('AppLayout on a phone', () => {
       </AuthProvider>,
     );
 
-    const nav = await screen.findByRole('navigation', { name: 'Navegação principal' });
+    const nav = (await screen.findAllByRole('navigation', { name: 'Navegação principal' }))
+      .find((el) => el.className.includes('border-t'))!;
     const main = screen.getByRole('main');
     expect(main).toHaveAttribute('id', 'main-content');
     expect(main).toHaveClass('print:overflow-visible', 'print:h-auto');
-    expect(main.parentElement).toHaveClass('print:block', 'print:h-auto');
+    expect(main.parentElement?.parentElement).toHaveClass('print:block', 'print:h-auto');
     expect(nav).toHaveClass('print:hidden');
   });
 
@@ -70,7 +76,7 @@ describe('AppLayout on a phone', () => {
       </AuthProvider>,
     );
 
-    const account = await screen.findByRole('link', { name: 'Conta' });
+    const account = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
     expect(account).toHaveAttribute('href', '/settings');
     expect(account).toHaveClass('h-11', 'w-11');
     expect(account).toHaveTextContent('A');

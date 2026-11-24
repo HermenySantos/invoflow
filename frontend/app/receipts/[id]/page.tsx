@@ -492,15 +492,17 @@ export default function ReceiptDetailPage() {
       document.at_document_type,
       document.at_invoice_number,
     );
+  const detailColumns = !!document && !isLoading;
 
   return (
     <AppLayout>
       {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;
-          -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar */}
-      <div className="-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col">
+          -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar.
+          md:-mx-8 cancels the shell's 32px inset so the header and action bar stay full-bleed. */}
+      <div className={`-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:min-h-[100dvh]${detailColumns ? ' lg:grid lg:grid-cols-[minmax(320px,2fr)_minmax(0,3fr)] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top">
-        <div className="flex items-center justify-between h-14 px-4">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top lg:col-span-2 lg:row-start-1">
+        <div className="flex items-center justify-between h-14 px-4 md:px-8">
           <Link href="/receipts" aria-label="Voltar aos recibos" className="p-3 -ml-3 touch-manipulation">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </Link>
@@ -516,8 +518,25 @@ export default function ReceiptDetailPage() {
         </div>
       </header>
 
+      {detailColumns && document ? (
+        <div
+          data-testid="receipt-image-column"
+          className="px-4 pt-4 md:px-8 lg:sticky lg:top-14 lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:self-start lg:pl-8 lg:pr-0 lg:pt-6"
+        >
+          <div className="card overflow-hidden">
+            <ImageViewer
+              src={document.file_url}
+              alt={document.vendor_name ? `Recibo de ${document.vendor_name}` : 'Recibo'}
+              mimeType={document.mime_type}
+              filename={document.original_filename}
+              className="aspect-[4/3] bg-gray-100"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* Content */}
-      <div className="w-full flex-1 p-4 space-y-4 max-w-lg mx-auto">
+      <div className={`w-full flex-1 p-4 space-y-4 md:px-8${detailColumns ? ' lg:col-start-2 lg:row-start-2 lg:pl-0 lg:pr-8 lg:pt-6' : ''}`}>
         {isLoading ? (
           <div className="space-y-4">
             <div className="card aspect-[4/3] animate-pulse bg-gray-200" />
@@ -537,17 +556,6 @@ export default function ReceiptDetailPage() {
           </div>
         ) : document ? (
           <>
-            {/* Image preview */}
-            <div className="card overflow-hidden">
-              <ImageViewer
-                src={document.file_url}
-                alt={document.vendor_name ? `Recibo de ${document.vendor_name}` : 'Recibo'}
-                mimeType={document.mime_type}
-                filename={document.original_filename}
-                className="aspect-[4/3] bg-gray-100"
-              />
-            </div>
-
             {/* Validation Warnings Banner */}
             {document.validation_warnings && document.validation_warnings.length > 0 && (
               <div className="space-y-2">
@@ -972,9 +980,9 @@ export default function ReceiptDetailPage() {
       {document && !isLoading && (
         <div
           data-testid="receipt-action-bar"
-          className="sticky bottom-0 z-40 p-4 bg-white border-t border-gray-200"
+          className="sticky bottom-0 z-40 border-t border-gray-200 bg-white p-4 md:px-8 lg:col-start-2 lg:row-start-3 lg:pl-0 lg:pr-8"
         >
-          <div className="max-w-lg mx-auto">
+          <div className="w-full">
             {/* In the action bar, so a 409 or 503 is not hidden under it on a small screen */}
             {error && (
               <div role="alert" className="mb-3 p-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">

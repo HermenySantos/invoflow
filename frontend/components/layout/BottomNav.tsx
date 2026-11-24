@@ -2,39 +2,32 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Camera, PieChart } from 'lucide-react';
 import { clsx } from 'clsx';
-import { ReceiptSlipIcon } from '@/components/icons/ReceiptSlipIcon';
-
-const navItems = [
-  { href: '/upload', match: ['/upload', '/scan'], icon: Camera, label: 'Carregar' },
-  { href: '/receipts', match: ['/receipts'], icon: ReceiptSlipIcon, label: 'Recibos' },
-  { href: '/summary', match: ['/summary'], icon: PieChart, label: 'IVA' },
-];
+import { isNavItemActive, primaryNavItems } from './navItems';
 
 export function BottomNav() {
   const pathname = usePathname();
 
   return (
     <nav
-      className="shrink-0 print:hidden bg-[var(--ff-bg)] border-t border-[var(--ff-border)] safe-area-inset-bottom z-50"
+      className="z-50 shrink-0 border-t border-[var(--ff-border)] bg-[var(--ff-bg)] safe-area-inset-bottom print:hidden lg:hidden"
       aria-label="Navegação principal"
     >
-      <ul className="flex items-center justify-around h-16 max-w-lg mx-auto list-none m-0 p-0">
-        {navItems.map(({ href, match, icon: Icon, label }) => {
-          const isActive = match.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+      <ul className="m-0 mx-auto flex h-16 max-w-lg list-none items-center justify-around p-0 md:max-w-3xl md:px-8">
+        {primaryNavItems.map(({ href, match, icon: Icon, label }) => {
+          const isActive = isNavItemActive(pathname, match);
           return (
-            <li key={href} className="flex-1 h-full">
+            <li key={href} className="h-full flex-1">
               <Link
                 href={href}
                 className={clsx(
-                  'flex flex-col items-center justify-center w-full h-full transition-colors',
+                  'flex h-full w-full flex-col items-center justify-center transition-colors',
                   isActive ? 'text-primary-600' : 'text-gray-500 hover:text-gray-700'
                 )}
                 aria-current={isActive ? 'page' : undefined}
               >
-                <Icon className={clsx('w-6 h-6', isActive && 'stroke-[2.5]')} aria-hidden="true" />
-                <span className="text-xs mt-1 font-medium">{label}</span>
+                <Icon className={clsx('h-6 w-6', isActive && 'stroke-[2.5]')} aria-hidden="true" />
+                <span className="mt-1 text-xs font-medium">{label}</span>
               </Link>
             </li>
           );
