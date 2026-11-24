@@ -63,10 +63,12 @@ describe('/settings', () => {
     signInDemo();
     renderSettings();
 
-    const account = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
+    const headerAccount = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
+    expect(headerAccount).toHaveClass('hidden');
+    const account = screen.getAllByRole('link', { name: 'Conta' }).find((link) => link.closest('nav')?.className.includes('border-t'));
     expect(account).toHaveAttribute('href', '/settings');
     expect(account).toHaveAttribute('aria-current', 'page');
-    expect(account).toHaveClass('h-11', 'w-11');
+    expect(headerAccount).toHaveClass('h-11', 'w-11');
     expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
   });
 

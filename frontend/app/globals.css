@@ -576,18 +576,34 @@ main#main-content:has([data-testid="receipt-form-column"]:focus-within) {
   }
 }
 
-/* The action bar sits in the form column; its border still runs the whole pane. */
+/* The shell spans the main pane so the spare column, not the form, takes the extra width. */
+@media (min-width: 1024px) {
+  .receipt-pane {
+    width: 100cqw;
+    margin-left: -2rem;
+    margin-right: 0;
+  }
+}
+
+/* The action bar sits in the form column. The line runs the pane; the image column
+   (z-45) covers the part that would otherwise cross the pinned image. */
 @media (min-width: 1024px) {
   [data-testid="receipt-action-bar"]::before {
     content: "";
     position: absolute;
     z-index: 1;
     top: 0;
-    left: calc(100% - 100cqw);
+    left: calc(-1 * (352px + 1.5rem));
     width: 100cqw;
     height: 1px;
     background: #e5e7eb;
     transform: translateY(-1px);
     pointer-events: none;
+  }
+}
+
+@media (min-width: 1280px) {
+  [data-testid="receipt-action-bar"]::before {
+    left: calc(-1 * (510px + 1.5rem));
   }
 }

@@ -73,7 +73,7 @@ export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
                 href="/settings"
                 aria-label="Conta"
                 aria-current={onSettings ? 'page' : undefined}
-                className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full touch-manipulation focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)] lg:hidden"
+                className="hidden -mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full touch-manipulation focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)]"
               >
                 <span
                   aria-hidden="true"

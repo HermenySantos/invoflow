@@ -73,15 +73,14 @@ describe('desktop left rail', () => {
     }
   });
 
-  it('marks the header Conta link, the one shown below 1024, as the current page on /settings', async () => {
+  it('keeps a single Conta link in the bottom nav below 1024; the header avatar is hidden', async () => {
     pathname.current = '/settings';
     renderShell();
 
     const headerAccount = (await screen.findByRole('banner')).querySelector('a') as HTMLAnchorElement;
     expect(headerAccount).toHaveAttribute('href', '/settings');
-    expect(headerAccount).toHaveAttribute('aria-current', 'page');
-    expect(headerAccount).toHaveClass('lg:hidden');
-    expect(headerAccount).toHaveAccessibleName('Conta');
+    expect(headerAccount).toHaveClass('hidden');
+    expect(headerAccount.className).not.toMatch(/(?:^|\s)lg:hidden(?:\s|$)/);
 
     const bottomAccount = within(bottomNav()).getByRole('link', { name: 'Conta' });
     expect(bottomAccount).toHaveAttribute('href', '/settings');
@@ -165,7 +164,7 @@ describe('desktop left rail', () => {
     expect(main.compareDocumentPosition(bottom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     const headerAccount = screen.getByRole('banner').querySelector('a')!;
-    expect(headerAccount).toHaveClass('lg:hidden');
+    expect(headerAccount).toHaveClass('hidden');
 
     const column = main.firstElementChild as HTMLElement;
     expect(column).toHaveClass('max-w-lg', 'md:max-w-3xl', 'md:px-8', 'lg:max-w-4xl', 'lg:mx-0');

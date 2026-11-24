@@ -99,12 +99,14 @@ describe('receipt page on a phone', () => {
 
     expect(imageCol).toBeTruthy();
     expect(page).toContainElement(imageCol);
-    expect(page.className).toContain('lg:grid-cols-[352px_minmax(0,1fr)]');
-    expect(page.className).toContain('lg:w-[100cqw]');
+    expect(page.className).toContain('lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr]');
+    expect(page.className).toContain('xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr]');
+    expect(page.className).not.toContain('lg:w-[100cqw]');
     const frame = screen.getByTestId('receipt-image-frame');
-    expect(frame.parentElement).toHaveClass('lg:min-w-[320px]');
-    expect(frame).toHaveClass('aspect-[4/3]', 'lg:max-h-[calc(100dvh-8rem)]', 'lg:min-h-[180px]');
+    expect(frame).toHaveClass('lg:w-full', 'aspect-[4/3]', 'lg:max-h-[calc(100dvh-8rem)]', 'lg:min-h-[180px]');
     expect(frame.className).toContain('lg:[aspect-ratio:var(--receipt-image-aspect,3/4)]');
+    expect(imageCol).toHaveClass('lg:z-[45]');
+    expect(page.querySelector('header')).toHaveClass('lg:col-span-full');
     expect(image.parentElement?.className ?? '').not.toContain('max-h-');
     expect(page.className).toContain('lg:gap-x-6');
     expect(imageCol).toHaveClass('lg:sticky', 'lg:col-start-1', 'lg:row-span-2');
@@ -121,11 +123,11 @@ describe('receipt page on a phone', () => {
 
     const frame = screen.getByTestId('receipt-image-frame');
     expect(frame.style.getPropertyValue('--receipt-image-aspect')).toBe(String(1600 / 900));
-    expect(frame.className).toContain('lg:w-[min(478px,calc(100cqw-19.5rem))]');
-    expect(frame).toHaveClass('lg:min-w-[320px]', 'lg:min-h-[180px]');
-    expect(screen.getByTestId('receipt-action-bar').parentElement).toHaveClass(
-      'lg:grid-cols-[minmax(352px,max-content)_minmax(16rem,1fr)]',
-    );
+    expect(frame).toHaveClass('lg:w-full', 'lg:min-w-[320px]', 'lg:min-h-[180px]');
+    expect(frame.className).not.toContain('lg:w-[min(478px');
+    const shell = screen.getByTestId('receipt-action-bar').parentElement as HTMLElement;
+    expect(shell).toHaveClass('lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr]');
+    expect(shell.className).not.toContain('max-content');
     expect(screen.getByText('IVA dedutível').closest('label')).toHaveClass(
       'max-[359px]:flex-col',
       'max-[359px]:items-stretch',

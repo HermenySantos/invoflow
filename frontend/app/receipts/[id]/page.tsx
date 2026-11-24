@@ -503,7 +503,6 @@ export default function ReceiptDetailPage() {
     );
   const detailColumns = !!document && !isLoading;
   const imageAspect = imageBox && imageBox.url === fileUrl ? imageBox.ratio : null;
-  const imageLandscape = imageAspect !== null && imageAspect >= 1;
   const barMounted = !!document && !isLoading;
 
   useEffect(() => {
@@ -536,9 +535,9 @@ export default function ReceiptDetailPage() {
       {/* Column at least a screen tall, so the sticky action bar rests on the nav even when the content is short;
           -mb-4 cancels the scroll area's bottom padding, which would leave a strip under the bar.
           md:-mx-8 cancels the shell's 32px inset so the header and action bar stay full-bleed. */}
-      <div className={`-mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:-ml-8 lg:mr-0 lg:min-h-[100dvh] lg:w-[100cqw]${detailColumns ? imageLandscape ? ' lg:grid lg:grid-cols-[minmax(352px,max-content)_minmax(16rem,1fr)] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ' lg:grid lg:grid-cols-[352px_minmax(0,1fr)] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
+      <div className={`receipt-pane -mb-4 flex min-h-[calc(100dvh-var(--ff-nav-h))] flex-col md:-mx-8 lg:min-h-[100dvh]${detailColumns ? ' lg:grid lg:grid-cols-[352px_minmax(24.75rem,36rem)_1fr] xl:grid-cols-[510px_minmax(24.75rem,36rem)_1fr] lg:grid-rows-[auto_1fr_auto] lg:gap-x-6' : ''}`}>
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top lg:col-span-2 lg:row-start-1">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 safe-area-inset-top lg:col-span-full lg:row-start-1">
         <div className="flex items-center justify-between h-14 px-4 md:px-8">
           <Link href="/receipts" aria-label="Voltar aos recibos" className="p-3 -ml-3 touch-manipulation">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -558,12 +557,12 @@ export default function ReceiptDetailPage() {
       {detailColumns && document ? (
         <div
           data-testid="receipt-image-column"
-          className="px-4 pt-4 md:px-8 lg:sticky lg:top-14 lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:self-start lg:pl-8 lg:pr-0 lg:pt-6"
+          className="px-4 pt-4 md:px-8 lg:sticky lg:top-14 lg:z-[45] lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:self-start lg:pl-8 lg:pr-0 lg:pt-6"
         >
           <div className="card overflow-hidden lg:min-w-[320px]">
             <div
               data-testid="receipt-image-frame"
-              className={`aspect-[4/3] w-full bg-gray-100 lg:max-h-[calc(100dvh-8rem)] lg:min-h-[180px] lg:[aspect-ratio:var(--receipt-image-aspect,3/4)]${imageLandscape ? ' lg:w-[min(478px,calc(100cqw-19.5rem))] lg:min-w-[320px]' : ' lg:w-full'}`}
+              className="aspect-[4/3] w-full bg-gray-100 lg:w-full lg:max-h-[calc(100dvh-8rem)] lg:min-h-[180px] lg:min-w-[320px] lg:[aspect-ratio:var(--receipt-image-aspect,3/4)]"
               style={{ '--receipt-image-aspect': imageAspect ? String(imageAspect) : '3 / 4' } as CSSProperties}
             >
               <ImageViewer
@@ -580,7 +579,7 @@ export default function ReceiptDetailPage() {
       ) : null}
 
       {/* Content */}
-      <div data-testid={detailColumns ? 'receipt-form-column' : undefined} className={`w-full flex-1 p-4 space-y-4 md:px-8${detailColumns ? ' lg:col-start-2 lg:row-start-2 lg:pl-0 lg:pr-8 lg:pt-6' : ''}`}>
+      <div data-testid={detailColumns ? 'receipt-form-column' : undefined} className={`w-full flex-1 p-4 space-y-4 md:px-8${detailColumns ? ' lg:col-start-2 lg:row-start-2 lg:px-0 lg:pt-6' : ''}`}>
         {isLoading ? (
           <div className="space-y-4">
             <div className="card aspect-[4/3] animate-pulse bg-gray-200" />
@@ -1025,7 +1024,7 @@ export default function ReceiptDetailPage() {
         <div
           ref={actionBarRef}
           data-testid="receipt-action-bar"
-          className="sticky bottom-0 z-40 max-h-[calc(100dvh-var(--ff-nav-h)-10rem)] overflow-y-auto border-t border-gray-200 bg-white p-4 md:px-8 lg:col-start-2 lg:row-start-3 lg:max-h-none lg:overflow-visible lg:pl-0 lg:pr-8"
+          className="sticky bottom-0 z-40 max-h-[calc(100dvh-var(--ff-nav-h)-10rem)] overflow-y-auto border-t border-gray-200 bg-white p-4 md:px-8 lg:col-start-2 lg:row-start-3 lg:max-h-none lg:overflow-visible lg:px-0"
         >
           <div className="w-full">
             {/* In the action bar, so a 409 or 503 is not hidden under it on a small screen */}

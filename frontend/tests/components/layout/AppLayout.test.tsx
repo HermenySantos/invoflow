@@ -78,7 +78,7 @@ describe('AppLayout on a phone', () => {
 
     const account = within(await screen.findByRole('banner')).getByRole('link', { name: 'Conta' });
     expect(account).toHaveAttribute('href', '/settings');
-    expect(account).toHaveClass('h-11', 'w-11');
+    expect(account).toHaveClass('hidden', 'h-11', 'w-11');
     expect(account).toHaveTextContent('A');
     expect(account).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
