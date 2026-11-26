@@ -8,11 +8,12 @@ import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { isDemoMode } from "@/lib/demoUser";
 import { rateLimitWait, useRetryCountdown } from "@/lib/rateLimit";
 import { softDisabled } from "@/lib/softDisabled";
-import { rateLimitButton, rateLimitStatus, RATE_LIMIT_BUTTON_LABEL } from "@/lib/rateLimitCopy";
+import { rateLimitStatus } from "@/lib/rateLimitCopy";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { paymentDeadline } from "@/lib/deadlines";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
 import { ReceiptSlipIcon } from "@/components/icons/ReceiptSlipIcon";
+import { RateLimitButtonText } from "@/components/RateLimitButtonText";
 import {
   Download,
   AlertCircle,
@@ -680,7 +681,6 @@ export default function SummaryPage() {
             <div className="space-y-1.5">
               <button
                 {...softDisabled(isExporting || exportWait.seconds !== null)}
-                aria-label={exportWait.seconds !== null ? RATE_LIMIT_BUTTON_LABEL : undefined}
                 onClick={handleExport}
                 disabled={summary.total_documents === 0}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
@@ -688,7 +688,7 @@ export default function SummaryPage() {
                 {exportWait.seconds !== null ? (
                   <>
                     <Clock className="w-5 h-5" aria-hidden="true" />
-                    <span aria-hidden="true">{rateLimitButton(exportWait.seconds)}</span>
+                    <RateLimitButtonText seconds={exportWait.seconds} />
                   </>
                 ) : (
                   <>

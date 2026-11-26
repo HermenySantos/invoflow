@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
 import { softDisabled } from '@/lib/softDisabled';
-import { rateLimitButton, rateLimitUploadStatus, RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
+import { rateLimitUploadStatus } from '@/lib/rateLimitCopy';
 import { RateLimitNotice } from '@/components/RateLimitNotice';
+import { RateLimitButtonText } from '@/components/RateLimitButtonText';
 import { Camera, Check, Clock, ImagePlus, Loader2, Upload, X } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -203,7 +204,6 @@ export function ScanReceipt() {
                 </button>
                 <button
                   {...softDisabled(state === 'uploading' || uploadWait.seconds !== null)}
-                  aria-label={uploadWait.seconds !== null ? RATE_LIMIT_BUTTON_LABEL : undefined}
                   onClick={handleUpload}
                   className={clsx(
                     'btn-primary btn-lg flex-1 flex items-center justify-center gap-2',
@@ -218,7 +218,7 @@ export function ScanReceipt() {
                   ) : uploadWait.seconds !== null ? (
                     <>
                       <Clock className="w-5 h-5" aria-hidden="true" />
-                      <span aria-hidden="true">{rateLimitButton(uploadWait.seconds)}</span>
+                      <RateLimitButtonText seconds={uploadWait.seconds} />
                     </>
                   ) : (
                     <>

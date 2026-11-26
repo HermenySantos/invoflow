@@ -10,7 +10,8 @@ import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { api } from '@/lib/api';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
 import { softDisabled } from '@/lib/softDisabled';
-import { rateLimitButton, rateLimitStatus, RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
+import { rateLimitStatus } from '@/lib/rateLimitCopy';
+import { RateLimitButtonText } from '@/components/RateLimitButtonText';
 
 const EXPORT_FAILED = 'Não foi possível exportar os seus dados. Tente novamente.';
 
@@ -101,7 +102,6 @@ function SettingsContent() {
             <button
               type="button"
               {...softDisabled(exporting || exportWait.seconds !== null)}
-              aria-label={exportWait.seconds !== null ? RATE_LIMIT_BUTTON_LABEL : undefined}
               onClick={exportData}
               aria-busy={exporting || undefined}
               aria-describedby="export-description"
@@ -110,7 +110,7 @@ function SettingsContent() {
               {exportWait.seconds !== null ? (
                 <>
                   <Clock className="w-4 h-4" aria-hidden="true" />
-                  <span aria-hidden="true">{rateLimitButton(exportWait.seconds)}</span>
+                  <RateLimitButtonText seconds={exportWait.seconds} />
                 </>
               ) : (
                 <>

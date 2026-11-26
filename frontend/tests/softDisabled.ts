@@ -12,18 +12,35 @@ export function expectHeld(button: HTMLElement) {
   expect(document.activeElement).toBe(button);
 }
 
+/** Text drawn on screen: everything except sr-only (aria-hidden text is still painted). */
+export function visibleText(el: HTMLElement): string {
+  const copy = el.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('.sr-only').forEach((n) => n.remove());
+  return copy.textContent ?? '';
+}
+
+/** Visible text that is also exposed to assistive tech: the "label" WCAG 2.5.3 wants inside the name. */
+function visibleLabel(el: HTMLElement): string {
+  const copy = el.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('.sr-only, [aria-hidden="true"]').forEach((n) => n.remove());
+  return (copy.textContent ?? '').trim();
+}
+
 /**
- * Held during a 429 wait: the visible text counts down, but the accessible name is the fixed
- * COPY-TOKENS-v1 §4a label, so a focused screen reader does not re-read it every second (UI Lead F-2).
+ * Held during a 429 wait. The visible text counts down, but the accessible name is the fixed
+ * COPY-TOKENS-v1 §4a token, so a focused screen reader does not re-read it every second (UI Lead F-2).
+ * The name comes from content, never aria-label, and starts with the visible label (R2-1, WCAG 2.5.3).
  */
 export function expectCountingDown(button: HTMLElement, seconds: number) {
   expectHeld(button);
   expect(button).toHaveAccessibleName('Tentar de novo (aguarde um momento)');
   expect(button).toHaveAccessibleName(RATE_LIMIT_BUTTON_LABEL);
-  const visible = Array.from(button.querySelectorAll('[aria-hidden="true"]')).find((el) =>
-    /Tentar de novo em \d+ s/.test(el.textContent ?? ''),
-  );
-  expect(visible?.textContent).toBe(`Tentar de novo em ${seconds} s`);
+  expect(button).not.toHaveAttribute('aria-label');
+  expect(button).not.toHaveAttribute('aria-labelledby');
+  expect(button.querySelector('[aria-label],[aria-labelledby]')).toBeNull();
+  expect(visibleText(button)).toBe(`Tentar de novo em ${seconds} s`);
+  expect(visibleLabel(button)).toBe('Tentar de novo');
+  expect(RATE_LIMIT_BUTTON_LABEL.startsWith(visibleLabel(button))).toBe(true);
 }
 
 /** Usable again: neither disabled nor aria-disabled. */
