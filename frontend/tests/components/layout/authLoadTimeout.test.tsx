@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTH_LOAD_FAILED,
@@ -73,9 +73,8 @@ describe('protected page while clerk-js loads', () => {
     expect(screen.queryByText('A carregar…')).not.toBeInTheDocument();
     const alert = screen.getByRole('alert');
     // Locked copy (Conversion Lead, COPY-TOKENS-v1 §6).
-    expect(alert).toHaveTextContent(
-      'Não foi possível carregar a página. Pode ser da ligação à internet. Verifique-a e tente de novo.',
-    );
+    expect(within(alert).getByText('Não foi possível carregar a página.')).toBeInTheDocument();
+    expect(within(alert).getByText('Pode ser da ligação à internet. Verifique-a e tente de novo.')).toBeInTheDocument();
     expect(AUTH_LOAD_FAILED).toBe('Não foi possível carregar a página.');
     expect(AUTH_LOAD_FAILED_HINT).toBe('Pode ser da ligação à internet. Verifique-a e tente de novo.');
     expect(alert.outerHTML).not.toMatch(/red-|danger/);
