@@ -5,7 +5,8 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { api, Summary } from '@/lib/api';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../../rateLimitRegion';
-import { expectAvailable, expectWaiting } from '../../softDisabled';
+import { RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
+import { expectAvailable, expectCountingDown } from '../../softDisabled';
 
 vi.mock('@clerk/nextjs', () => ({
   useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
@@ -76,6 +77,7 @@ describe('summary export when rate limited (429)', () => {
     // ARIA22 step 1: the status region is already there, empty, before any 429.
     regionBefore = getRateLimitRegion();
     expectEmptyRegion(regionBefore);
+    exportButton.focus();
     fireEvent.click(exportButton);
   });
 
@@ -100,17 +102,20 @@ describe('summary export when rate limited (429)', () => {
 
   it('holds the export button (still focusable) and counts down outside any live region, then re-enables it at 0', async () => {
     const notice = await screen.findByTestId('rate-limit-notice');
-    const button = screen.getByRole('button', { name: `Tentar de novo em ${RETRY_AFTER} s` });
-    expectWaiting(button);
+    const button = screen.getByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
+    expectCountingDown(button, RETRY_AFTER);
     expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
 
+    // Three samples 1 s apart: the visible text ticks, the accessible name does not (UI Lead F-2).
     act(() => vi.advanceTimersByTime(1000));
-    expectWaiting(screen.getByRole('button', { name: `Tentar de novo em ${RETRY_AFTER - 1} s` }));
+    expectCountingDown(button, RETRY_AFTER - 1);
+    act(() => vi.advanceTimersByTime(1000));
+    expectCountingDown(button, RETRY_AFTER - 2);
     // The status node is inserted once and its text does not tick, so it is announced once.
     expect(screen.getByTestId('rate-limit-notice')).toBe(notice);
     expect(notice).toHaveTextContent(`dentro de ${RETRY_AFTER} s`);
 
-    act(() => vi.advanceTimersByTime((RETRY_AFTER - 1) * 1000));
+    act(() => vi.advanceTimersByTime((RETRY_AFTER - 2) * 1000));
     const again = screen.getByRole('button', { name: 'Enviar ao Contabilista' });
     expectAvailable(again);
     expect(again).toBe(button);

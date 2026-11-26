@@ -25,7 +25,7 @@ describe('danger button', () => {
     expect(css).toMatch(/--ff-radius:\s*6px;/);
     expect(applyOf('.btn-danger')).toEqual(expect.arrayContaining(['btn', 'text-white']));
     expect(css).toMatch(/\.btn-danger\s*\{[^}]*background:\s*var\(--ff-danger\);/);
-    expect(css).toMatch(/\.btn-danger:hover\s*\{[^}]*background:\s*var\(--ff-danger-hover\);/);
+    expect(css).toMatch(/\.btn-danger:hover:not\(\[aria-disabled="true"\]\)\s*\{[^}]*background:\s*var\(--ff-danger-hover\);/);
     expect(css).toMatch(/\.btn\s*\{[^}]*border-radius:\s*var\(--ff-radius\);/);
   });
 });

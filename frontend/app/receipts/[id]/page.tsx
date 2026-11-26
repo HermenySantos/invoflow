@@ -11,7 +11,7 @@ import { PtDateInput } from '@/components/forms/PtDateInput';
 import { saveErrorMessage } from '@/lib/saveError';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
 import { softDisabled } from '@/lib/softDisabled';
-import { rateLimitButton } from '@/lib/rateLimitCopy';
+import { rateLimitButton, RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
 import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { requestScrollRestore } from '@/lib/mainScroll';
 import { 
@@ -1105,6 +1105,7 @@ export default function ReceiptDetailPage() {
               ) : null}
               <button
                 {...softDisabled(isSaving || saveWait.seconds !== null)}
+                aria-label={saveWait.seconds !== null ? RATE_LIMIT_BUTTON_LABEL : undefined}
                 onClick={handleSaveEdit}
                 disabled={editSeriesMismatch && (!editCanOverride || !acceptSeriesMismatch)}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
@@ -1117,7 +1118,7 @@ export default function ReceiptDetailPage() {
                 ) : saveWait.seconds !== null ? (
                   <>
                     <Clock className="w-5 h-5" aria-hidden="true" />
-                    {rateLimitButton(saveWait.seconds)}
+                    <span aria-hidden="true">{rateLimitButton(saveWait.seconds)}</span>
                   </>
                 ) : (
                   <>
@@ -1173,6 +1174,7 @@ export default function ReceiptDetailPage() {
               ) : null}
               <button
                 {...softDisabled(isSaving || saveWait.seconds !== null)}
+                aria-label={saveWait.seconds !== null ? RATE_LIMIT_BUTTON_LABEL : undefined}
                 onClick={handleConfirm}
                 disabled={!isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && (!confirmCanOverride || !acceptSeriesMismatch))}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
@@ -1185,7 +1187,7 @@ export default function ReceiptDetailPage() {
                 ) : saveWait.seconds !== null ? (
                   <>
                     <Clock className="w-5 h-5" aria-hidden="true" />
-                    {rateLimitButton(saveWait.seconds)}
+                    <span aria-hidden="true">{rateLimitButton(saveWait.seconds)}</span>
                   </>
                 ) : (
                   <>
