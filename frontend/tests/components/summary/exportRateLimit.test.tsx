@@ -5,6 +5,7 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { api, Summary } from '@/lib/api';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../../rateLimitRegion';
+import { expectAvailable, expectWaiting } from '../../softDisabled';
 
 vi.mock('@clerk/nextjs', () => ({
   useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
@@ -97,21 +98,23 @@ describe('summary export when rate limited (429)', () => {
     expect(screen.queryByText('Exportação falhou. Tente novamente.')).not.toBeInTheDocument();
   });
 
-  it('disables the export button and counts down outside any live region, then re-enables it at 0', async () => {
+  it('holds the export button (still focusable) and counts down outside any live region, then re-enables it at 0', async () => {
     const notice = await screen.findByTestId('rate-limit-notice');
     const button = screen.getByRole('button', { name: `Tentar de novo em ${RETRY_AFTER} s` });
-    expect(button).toBeDisabled();
+    expectWaiting(button);
     expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
 
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByRole('button', { name: `Tentar de novo em ${RETRY_AFTER - 1} s` })).toBeDisabled();
+    expectWaiting(screen.getByRole('button', { name: `Tentar de novo em ${RETRY_AFTER - 1} s` }));
     // The status node is inserted once and its text does not tick, so it is announced once.
     expect(screen.getByTestId('rate-limit-notice')).toBe(notice);
     expect(notice).toHaveTextContent(`dentro de ${RETRY_AFTER} s`);
 
     act(() => vi.advanceTimersByTime((RETRY_AFTER - 1) * 1000));
     const again = screen.getByRole('button', { name: 'Enviar ao Contabilista' });
-    expect(again).toBeEnabled();
+    expectAvailable(again);
+    expect(again).toBe(button);
+    expect(document.activeElement).toBe(button);
     expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument();
     // The region stays mounted and empties, so nothing new is announced when the wait ends.
     expect(getRateLimitRegion()).toBe(regionBefore);

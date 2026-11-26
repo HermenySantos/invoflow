@@ -8,6 +8,7 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { hardNavigate } from '@/lib/navigate';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../rateLimitRegion';
+import { expectAvailable, expectWaiting } from '../softDisabled';
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -188,7 +189,9 @@ describe('Exportar os meus dados', () => {
 
     fireEvent.click(button);
     await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'));
-    expect(button).toBeDisabled();
+    expectWaiting(button);
+    fireEvent.click(button);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
     // Its own polite status, separate from (not nested in) the always-mounted 429 region.
     const busyStatus = screen.getByText('A preparar o ficheiro…').closest('[role="status"]');
     expect(busyStatus).not.toBeNull();
@@ -202,7 +205,7 @@ describe('Exportar os meus dados', () => {
       resolve(zipResponse());
     });
     await waitFor(() => expect(button).not.toHaveAttribute('aria-busy'));
-    expect(button).toBeEnabled();
+    expectAvailable(button);
     expect(clicked).toEqual(['Invoflow_meus_dados_20261119_101500.zip']);
     expect(URL.createObjectURL).toHaveBeenCalled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -260,17 +263,23 @@ describe('Exportar os meus dados', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
       const button = screen.getByRole('button', { name: 'Tentar de novo em 3 s' });
-      expect(button).toBeDisabled();
+      expectWaiting(button);
+      const callsDuringWait = vi.mocked(global.fetch).mock.calls.length;
+      fireEvent.click(button);
+      expect(global.fetch).toHaveBeenCalledTimes(callsDuringWait);
       expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
 
       act(() => vi.advanceTimersByTime(1000));
-      expect(screen.getByRole('button', { name: 'Tentar de novo em 2 s' })).toBeDisabled();
+      expectWaiting(screen.getByRole('button', { name: 'Tentar de novo em 2 s' }));
       expect(screen.getByTestId('rate-limit-notice')).toBe(notice);
       expect(notice).toHaveTextContent('dentro de 3 s');
 
       act(() => vi.advanceTimersByTime(2000));
       const again = screen.getByRole('button', { name: 'Exportar os meus dados' });
-      expect(again).toBeEnabled();
+      expectAvailable(again);
+      // The same button all along, so keyboard focus never left it.
+      expect(again).toBe(button);
+      expect(document.activeElement).toBe(button);
       expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument();
       expect(getRateLimitRegion()).toBe(regionBefore);
       expectEmptyRegion(regionBefore);

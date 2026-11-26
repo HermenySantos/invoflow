@@ -7,6 +7,7 @@ import { parseAmountInput } from "@/lib/amount";
 import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { isDemoMode } from "@/lib/demoUser";
 import { rateLimitWait, useRetryCountdown } from "@/lib/rateLimit";
+import { softDisabled } from "@/lib/softDisabled";
 import { rateLimitButton, rateLimitStatus } from "@/lib/rateLimitCopy";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { paymentDeadline } from "@/lib/deadlines";
@@ -678,8 +679,9 @@ export default function SummaryPage() {
             {/* ─── 9. Export Button ─── */}
             <div className="space-y-1.5">
               <button
+                {...softDisabled(isExporting || exportWait.seconds !== null)}
                 onClick={handleExport}
-                disabled={isExporting || exportWait.seconds !== null || summary.total_documents === 0}
+                disabled={summary.total_documents === 0}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {exportWait.seconds !== null ? (

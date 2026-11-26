@@ -63,7 +63,8 @@ scenario() {
 
 scenario "valid Caddyfile passes"                 validate same 0 "new Caddyfile is valid"            ""                 --
 scenario "invalid Caddyfile fails, no recreate"   validate same 1 "is invalid"                        "force-recreate"   -- VALIDATE_RC=1
-scenario "docker problem is not blamed on Caddyfile" validate same 1 "don't restart caddy until a deploy validates them" "caddy validate" -- RUN_RC=1
+scenario "docker problem: says the Caddyfile was not checked" validate same 1 "the new Caddyfile was not checked and the running caddy keeps its current config" "caddy validate" -- RUN_RC=1
+scenario "docker problem: warns not to restart caddy"   validate same 1 "don't restart caddy until a deploy validates them" "caddy validate" -- RUN_RC=1
 scenario "same file in container: reload"         apply    same 0 "caddy reloaded"                    "force-recreate"   --
 scenario "stale file in container: recreate"      apply    stale 0 "caddy recreated"                  "caddy reload"     --
 scenario "reload fails: recreate"                 apply    same 0 "caddy recreated"                   ""                 -- RELOAD_RC=1

@@ -10,6 +10,7 @@ vi.mock('@/lib/api', () => ({
 import { ScanReceipt } from '@/components/scan/ScanReceipt';
 import { api } from '@/lib/api';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../../rateLimitRegion';
+import { expectAvailable, expectWaiting } from '../../softDisabled';
 
 const FORMAT_MESSAGE =
   'Formato não suportado. Envie um JPEG, PNG, GIF, BMP, TIFF, WEBP, HEIC ou PDF.';
@@ -77,18 +78,20 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
     expect(screen.getByRole('img', { name: 'Pré-visualização' })).toBeInTheDocument();
 
     const button = screen.getByRole('button', { name: 'Tentar de novo em 3 s' });
-    expect(button).toBeDisabled();
+    expectWaiting(button);
     expect(notice).not.toContainElement(button);
     expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
 
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByRole('button', { name: 'Tentar de novo em 2 s' })).toBeDisabled();
+    expectWaiting(screen.getByRole('button', { name: 'Tentar de novo em 2 s' }));
     expect(screen.getByRole('status')).toBe(notice);
     expect(notice).toHaveTextContent('dentro de 3 s');
 
     act(() => vi.advanceTimersByTime(2000));
     const again = screen.getByRole('button', { name: 'Carregar' });
-    expect(again).toBeEnabled();
+    expectAvailable(again);
+    expect(again).toBe(button);
+    expect(document.activeElement).toBe(button);
     // The region stays mounted and empties, so nothing new is announced when the wait ends.
     expect(screen.getByRole('status')).toBe(regionBefore);
     expectEmptyRegion(regionBefore);

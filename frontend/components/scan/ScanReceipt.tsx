@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
+import { softDisabled } from '@/lib/softDisabled';
 import { rateLimitButton, rateLimitUploadStatus } from '@/lib/rateLimitCopy';
 import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { Camera, Check, Clock, ImagePlus, Loader2, Upload, X } from 'lucide-react';
@@ -201,8 +202,8 @@ export function ScanReceipt() {
                   Cancelar
                 </button>
                 <button
+                  {...softDisabled(state === 'uploading' || uploadWait.seconds !== null)}
                   onClick={handleUpload}
-                  disabled={state === 'uploading' || uploadWait.seconds !== null}
                   className={clsx(
                     'btn-primary btn-lg flex-1 flex items-center justify-center gap-2',
                     state === 'uploading' && 'opacity-75'
