@@ -56,5 +56,8 @@ export function useRetryCountdown() {
     setWait({ seconds, message });
   }, []);
 
-  return { seconds: wait?.seconds ?? null, message: wait?.message ?? null, start };
+  /** Ends the wait early (the text it showed no longer applies, e.g. the file was cancelled). */
+  const clear = useCallback(() => setWait(null), []);
+
+  return { seconds: wait?.seconds ?? null, message: wait?.message ?? null, start, clear };
 }
