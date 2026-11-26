@@ -1067,7 +1067,7 @@ export default function ReceiptDetailPage() {
                 <span className="text-sm text-red-800">{error}</span>
               </div>
             )}
-            {saveWait.message && <RateLimitNotice message={saveWait.message} className="mb-3" />}
+            <RateLimitNotice message={saveWait.message} className="mb-3" />
             {/* Keep the amounts in view next to the action that confirms them */}
             {!isEditing && (
               <dl className="flex justify-between text-sm mb-3" aria-label="Valores do recibo">

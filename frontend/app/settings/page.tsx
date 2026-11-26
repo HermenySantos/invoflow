@@ -124,7 +124,7 @@ function SettingsContent() {
             <p id="export-description" className="mt-2 text-sm text-[var(--ff-text-muted)]">
               Um ficheiro ZIP com os seus recibos, os dados de cada documento e o IVA das vendas que introduziu.
             </p>
-            {exportWait.message && <RateLimitNotice message={exportWait.message} className="mt-3" />}
+            <RateLimitNotice message={exportWait.message} className="mt-3" />
             <p role="status" className="sr-only">
               {exporting ? 'A preparar o ficheiro…' : ''}
             </p>
