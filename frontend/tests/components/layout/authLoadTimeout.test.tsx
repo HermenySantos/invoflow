@@ -72,8 +72,12 @@ describe('protected page while clerk-js loads', () => {
     act(() => vi.advanceTimersByTime(1));
     expect(screen.queryByText('A carregar…')).not.toBeInTheDocument();
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(AUTH_LOAD_FAILED);
-    expect(alert).toHaveTextContent(AUTH_LOAD_FAILED_HINT);
+    // Locked copy (Conversion Lead, COPY-TOKENS-v1 §6).
+    expect(alert).toHaveTextContent(
+      'Não foi possível carregar a página. Pode ser da ligação à internet. Verifique-a e tente de novo.',
+    );
+    expect(AUTH_LOAD_FAILED).toBe('Não foi possível carregar a página.');
+    expect(AUTH_LOAD_FAILED_HINT).toBe('Pode ser da ligação à internet. Verifique-a e tente de novo.');
     expect(alert.outerHTML).not.toMatch(/red-|danger/);
     // The button sits outside the alert, so only the message is announced.
     const retry = screen.getByRole('button', { name: 'Tentar de novo' });

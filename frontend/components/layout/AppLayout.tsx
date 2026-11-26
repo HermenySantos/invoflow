@@ -15,9 +15,9 @@ import { reloadPage } from '@/lib/navigate';
  */
 export const AUTH_LOAD_TIMEOUT_MS = 15_000;
 
-/** PT-PT copy pending Conversion Lead. */
+/** PT-PT copy: Conversion Lead, COPY-TOKENS-v1 §6. */
 export const AUTH_LOAD_FAILED = 'Não foi possível carregar a página.';
-export const AUTH_LOAD_FAILED_HINT = 'Verifique a ligação à internet e tente de novo.';
+export const AUTH_LOAD_FAILED_HINT = 'Pode ser da ligação à internet. Verifique-a e tente de novo.';
 
 function useTimedOut(active: boolean, ms: number) {
   const [timedOut, setTimedOut] = useState(false);
