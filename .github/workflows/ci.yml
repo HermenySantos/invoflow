@@ -146,11 +146,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint the rollout scripts
-        run: shellcheck deploy/apply-caddy.sh deploy/tests/apply-caddy.test.sh deploy/tests/deploy-wiring.test.sh
+        run: shellcheck deploy/apply-caddy.sh deploy/tests/apply-caddy.test.sh
       - name: Caddy rollout logic (fake docker)
         run: bash deploy/tests/apply-caddy.test.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Deploy workflow validates before it restarts anything
-        run: bash deploy/tests/deploy-wiring.test.sh
+        run: |
+          pip install PyYAML==6.0.2
+          python deploy/tests/deploy_wiring.py
+          cd deploy/tests && python deploy_wiring_mutations.py
       - name: Production Caddyfile is valid
         run: |
           for domain in invoflow.pt localhost; do
