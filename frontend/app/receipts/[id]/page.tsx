@@ -10,6 +10,7 @@ import { ImageViewer } from '@/components/review';
 import { PtDateInput } from '@/components/forms/PtDateInput';
 import { saveErrorMessage } from '@/lib/saveError';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
+import { softDisabled } from '@/lib/softDisabled';
 import { rateLimitButton } from '@/lib/rateLimitCopy';
 import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { requestScrollRestore } from '@/lib/mainScroll';
@@ -1103,8 +1104,9 @@ export default function ReceiptDetailPage() {
                 </div>
               ) : null}
               <button
+                {...softDisabled(isSaving || saveWait.seconds !== null)}
                 onClick={handleSaveEdit}
-                disabled={isSaving || saveWait.seconds !== null || (editSeriesMismatch && (!editCanOverride || !acceptSeriesMismatch))}
+                disabled={editSeriesMismatch && (!editCanOverride || !acceptSeriesMismatch)}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (
@@ -1170,8 +1172,9 @@ export default function ReceiptDetailPage() {
                 </div>
               ) : null}
               <button
+                {...softDisabled(isSaving || saveWait.seconds !== null)}
                 onClick={handleConfirm}
-                disabled={isSaving || saveWait.seconds !== null || !isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && (!confirmCanOverride || !acceptSeriesMismatch))}
+                disabled={!isConcreteDocumentType(confirmChosen) || (confirmSeriesMismatch && (!confirmCanOverride || !acceptSeriesMismatch))}
                 className="btn-primary btn-lg w-full flex items-center justify-center gap-2"
               >
                 {isSaving ? (

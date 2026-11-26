@@ -1,11 +1,52 @@
 'use client';
 
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { BottomNav } from './BottomNav';
 import { LeftRail } from './LeftRail';
 import { MainScrollArea } from './MainScrollArea';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { reloadPage } from '@/lib/navigate';
+
+/**
+ * How long to wait for clerk-js before giving up on the spinner. A blocked or offline clerk-js
+ * never finishes loading, which left protected pages on "A carregar…" forever (QA A-2). Clerk's
+ * getToken gives up after 10 s, so by then nothing on the page can load either.
+ */
+export const AUTH_LOAD_TIMEOUT_MS = 15_000;
+
+/** PT-PT copy pending Conversion Lead. */
+export const AUTH_LOAD_FAILED = 'Não foi possível carregar a página.';
+export const AUTH_LOAD_FAILED_HINT = 'Verifique a ligação à internet e tente de novo.';
+
+function useTimedOut(active: boolean, ms: number) {
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => setTimedOut(true), ms);
+    return () => clearTimeout(timer);
+  }, [active, ms]);
+  return active && timedOut;
+}
+
+function AuthLoadFailed() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="max-w-sm text-center">
+        <div role="alert">
+          <p className="font-medium text-[var(--ff-text)]">{AUTH_LOAD_FAILED}</p>
+          <p className="mt-1 text-sm text-[var(--ff-text-muted)]">{AUTH_LOAD_FAILED_HINT}</p>
+        </div>
+        <button type="button" onClick={reloadPage} className="btn-primary btn-md mt-4 min-h-11">
+          Tentar de novo
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -18,6 +59,7 @@ export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const loadTimedOut = useTimedOut(isLoading, AUTH_LOAD_TIMEOUT_MS);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -25,6 +67,10 @@ export function AppLayout({ children, title, eyebrow }: AppLayoutProps) {
       router.replace(`/sign-in${next}`);
     }
   }, [isAuthenticated, isLoading, pathname, router]);
+
+  if (loadTimedOut) {
+    return <AuthLoadFailed />;
+  }
 
   if (isLoading) {
     return (

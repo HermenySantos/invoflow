@@ -12,6 +12,7 @@ import {
 import ReceiptDetailPage from '@/app/receipts/[id]/page';
 import { getUseParamsMock } from '../navigationState';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../rateLimitRegion';
+import { expectAvailable, expectWaiting } from '../softDisabled';
 
 const ENGLISH_WORDS =
   /\b(conflict|invoice|already|exists|service|unavailable|error|invalid|request|data|failed|database|constraint|violation|entity|the)\b/i;
@@ -146,11 +147,13 @@ describe('receipt page save error copy from the API', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
       const button = screen.getByRole('button', { name: 'Tentar de novo em 2 s' });
-      expect(button).toBeDisabled();
+      expect(button).toBe(saveButton);
+      expectWaiting(button);
       act(() => vi.advanceTimersByTime(1000));
-      expect(screen.getByRole('button', { name: 'Tentar de novo em 1 s' })).toBeDisabled();
+      expectWaiting(screen.getByRole('button', { name: 'Tentar de novo em 1 s' }));
       act(() => vi.advanceTimersByTime(1000));
-      expect(screen.getByRole('button', { name: 'Está correto' })).toBeEnabled();
+      expectAvailable(screen.getByRole('button', { name: 'Está correto' }));
+      expect(document.activeElement).toBe(saveButton);
       expect(getRateLimitRegion()).toBe(regionBefore);
       expectEmptyRegion(regionBefore);
     } finally {

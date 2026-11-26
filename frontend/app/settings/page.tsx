@@ -9,6 +9,7 @@ import { DeleteAccountSheet } from '@/components/settings/DeleteAccountSheet';
 import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { api } from '@/lib/api';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
+import { softDisabled } from '@/lib/softDisabled';
 import { rateLimitButton, rateLimitStatus } from '@/lib/rateLimitCopy';
 
 const EXPORT_FAILED = 'Não foi possível exportar os seus dados. Tente novamente.';
@@ -99,8 +100,8 @@ function SettingsContent() {
           <>
             <button
               type="button"
+              {...softDisabled(exporting || exportWait.seconds !== null)}
               onClick={exportData}
-              disabled={exporting || exportWait.seconds !== null}
               aria-busy={exporting || undefined}
               aria-describedby="export-description"
               className="w-full btn-secondary btn-md min-h-11 gap-2"
