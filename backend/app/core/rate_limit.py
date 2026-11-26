@@ -50,6 +50,7 @@ RATE_LIMITS = {
     "export": lambda: settings.rate_limit_export,
     "efatura": lambda: settings.rate_limit_efatura,
     "account_export": lambda: settings.rate_limit_account_export,
+    "health": lambda: settings.rate_limit_health,
 }
 
 

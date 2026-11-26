@@ -89,7 +89,7 @@ alias dc='docker compose -f docker-compose.prod.yml --env-file .env'
 | `/health` | Liveness: is the process up? Restart the container if it fails. | OCR configuration only, no database. | 200, or 503 when OCR is misconfigured. |
 | `/health/detailed` | Readiness: send traffic only while it is 200. Point a load balancer here. | OCR configuration and a `SELECT 1` on the database (Postgres or SQLite). | 200, or 503 with `"checks": {"database": "down"}` when the database is unreachable. |
 
-The body never contains the connection string or the database error; the API logs only the error type. Caddy forwards only `/health`, so probe `/health/detailed` from inside the network, at `http://api:8000/health/detailed`. The Deploy workflow probes `/health/detailed` after rollout. The compose api healthcheck stays on `/health` (liveness).
+The body never contains the connection string or the database error; the API logs only the error type. Caddy forwards `/health` and `/health/*`, so both are public. `/health/detailed` is limited per client IP (`RATE_LIMIT_HEALTH`, default 30/minute; over the limit you get 429 + Retry-After) because it runs a database query. The Deploy workflow probes `/health/detailed` after rollout. The compose api healthcheck stays on `/health` (liveness).
 
 **Practise a restore once a month** on the rehearsal stack or a scratch server. A backup you have never restored doesn't count.
 
