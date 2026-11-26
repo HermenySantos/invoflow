@@ -8,7 +8,7 @@ failures=0
 # Fake docker. State lives in $WORK:
 #   ctr_caddyfile   what the running container sees at /etc/caddy/Caddyfile (absent = not running)
 #   calls           one line per docker invocation
-# Knobs: VALIDATE_RC, RELOAD_RC, RECREATE_RC, RECREATE_STARTS (1 = new container comes up).
+# Knobs: RUN_RC (throwaway container fails to start), VALIDATE_RC, RELOAD_RC, RECREATE_RC, RECREATE_STARTS (1 = new container comes up).
 make_fake_docker() {
   mkdir -p "$WORK/bin"
   cat > "$WORK/bin/docker" <<'FAKE'
@@ -16,6 +16,7 @@ make_fake_docker() {
 echo "$*" >> "$WORK/calls"
 args=" $* "
 case "$args" in
+  *" run --rm --no-deps -T caddy caddy version "*) exit "${RUN_RC:-0}" ;;
   *" run --rm --no-deps -T caddy caddy validate "*) exit "${VALIDATE_RC:-0}" ;;
   *" exec -T caddy sha256sum "*)
     [ -f "$WORK/ctr_caddyfile" ] || exit 1
@@ -62,6 +63,7 @@ scenario() {
 
 scenario "valid Caddyfile passes"                 validate same 0 "new Caddyfile is valid"            ""                 --
 scenario "invalid Caddyfile fails, no recreate"   validate same 1 "is invalid"                        "force-recreate"   -- VALIDATE_RC=1
+scenario "docker problem is not blamed on Caddyfile" validate same 1 "don't restart caddy until a deploy validates them" "caddy validate" -- RUN_RC=1
 scenario "same file in container: reload"         apply    same 0 "caddy reloaded"                    "force-recreate"   --
 scenario "stale file in container: recreate"      apply    stale 0 "caddy recreated"                  "caddy reload"     --
 scenario "reload fails: recreate"                 apply    same 0 "caddy recreated"                   ""                 -- RELOAD_RC=1

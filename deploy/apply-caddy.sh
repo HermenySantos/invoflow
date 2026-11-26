@@ -10,6 +10,13 @@ dc() { docker compose -f docker-compose.prod.yml --env-file .env "$@"; }
 caddy_cfg=(--config /etc/caddy/Caddyfile --adapter caddyfile)
 
 validate() {
+  # First prove a throwaway caddy container can run at all, so a docker, compose or
+  # image problem is not reported as a bad Caddyfile.
+  if ! dc run --rm --no-deps -T caddy caddy version; then
+    echo "caddy: could not start a caddy container to validate (docker, compose or image problem); the new Caddyfile was not checked and the running caddy keeps its current config." >&2
+    echo "caddy: the new files are already on disk, so don't restart caddy until a deploy validates them." >&2
+    exit 1
+  fi
   # A fresh container sees the file on disk now, even if the copy replaced its inode.
   if ! dc run --rm --no-deps -T caddy caddy validate "${caddy_cfg[@]}"; then
     echo "caddy: the new Caddyfile is invalid; the running caddy keeps its current config" >&2
