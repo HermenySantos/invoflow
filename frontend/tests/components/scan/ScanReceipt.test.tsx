@@ -91,7 +91,10 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
     expect(screen.getByRole('status')).toBe(notice);
     expect(notice).toHaveTextContent('dentro de 3 s');
 
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
+    expectCountingDown(button, 1);
+
+    act(() => vi.advanceTimersByTime(1000));
     const again = screen.getByRole('button', { name: 'Carregar' });
     expectAvailable(again);
     expect(again).toBe(button);

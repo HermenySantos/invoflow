@@ -148,16 +148,18 @@ describe('receipt page save error copy from the API', () => {
             429,
             'Too Many Requests',
             { detail: 'Demasiados pedidos. Aguarde 30 s e tente novamente.', error: { code: 'RATE_LIMITED' } },
-            { 'Retry-After': '2' },
+            { 'Retry-After': '3' },
           ),
         );
       });
       const waiting = await screen.findByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
       expect(waiting).toBe(save);
-      expectCountingDown(save, 2);
+      expectCountingDown(save, 3);
       fireEvent.click(save);
       expect(patches()).toBe(1);
 
+      act(() => vi.advanceTimersByTime(1000));
+      expectCountingDown(save, 2);
       act(() => vi.advanceTimersByTime(1000));
       expectCountingDown(save, 1);
       act(() => vi.advanceTimersByTime(1000));
@@ -175,7 +177,7 @@ describe('receipt page save error copy from the API', () => {
         429,
         'Too Many Requests',
         { detail: 'Demasiados pedidos. Aguarde 30 s e tente novamente.', error: { code: 'RATE_LIMITED' } },
-        { 'Retry-After': '2' },
+        { 'Retry-After': '3' },
       );
       localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ email: 'qa@example.com', id: 'ignored' }));
       render(
@@ -196,7 +198,7 @@ describe('receipt page save error copy from the API', () => {
       expect(region).toContainElement(notice);
       expectRegionSays(region, 'As alterações não foram guardadas.');
       expect(notice).toHaveTextContent(
-        'As alterações não foram guardadas. Aguarde um momento. Pode tentar de novo dentro de 2 s.',
+        'As alterações não foram guardadas. Aguarde um momento. Pode tentar de novo dentro de 3 s.',
       );
       expect(notice.textContent).not.toMatch(/Tente (novamente|outra vez)/i);
       expect(screen.queryByText(SAVE_GENERIC_ERROR)).not.toBeInTheDocument();
@@ -204,6 +206,8 @@ describe('receipt page save error copy from the API', () => {
 
       const button = screen.getByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
       expect(button).toBe(saveButton);
+      expectCountingDown(button, 3);
+      act(() => vi.advanceTimersByTime(1000));
       expectCountingDown(button, 2);
       act(() => vi.advanceTimersByTime(1000));
       expectCountingDown(button, 1);
