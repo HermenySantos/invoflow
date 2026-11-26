@@ -673,7 +673,7 @@ export default function SummaryPage() {
                 <span className="text-sm text-red-800">{exportError}</span>
               </div>
             )}
-            {exportWait.message && <RateLimitNotice message={exportWait.message} />}
+            <RateLimitNotice message={exportWait.message} />
 
             {/* ─── 9. Export Button ─── */}
             <div className="space-y-1.5">

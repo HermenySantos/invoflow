@@ -170,7 +170,7 @@ export function ScanReceipt() {
             </div>
           )}
 
-          {uploadWait.message && <RateLimitNotice message={uploadWait.message} />}
+          <RateLimitNotice message={uploadWait.message} />
 
           {state === 'success' && (
             <div className="card p-4 bg-green-50 border-green-200 flex items-center gap-3">

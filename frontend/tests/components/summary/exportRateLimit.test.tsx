@@ -4,6 +4,7 @@ import SummaryPage from '@/app/summary/page';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { api, Summary } from '@/lib/api';
+import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../../rateLimitRegion';
 
 vi.mock('@clerk/nextjs', () => ({
   useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
@@ -51,6 +52,8 @@ function summary(): Summary {
 const RETRY_AFTER = 42;
 
 describe('summary export when rate limited (429)', () => {
+  let regionBefore: HTMLElement;
+
   beforeEach(async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ id: 'demo', email: 'ana@empresa.pt' }));
@@ -68,7 +71,11 @@ describe('summary export when rate limited (429)', () => {
         <SummaryPage />
       </AuthProvider>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Enviar ao Contabilista' }));
+    const exportButton = await screen.findByRole('button', { name: 'Enviar ao Contabilista' });
+    // ARIA22 step 1: the status region is already there, empty, before any 429.
+    regionBefore = getRateLimitRegion();
+    expectEmptyRegion(regionBefore);
+    fireEvent.click(exportButton);
   });
 
   afterEach(() => {
@@ -79,7 +86,11 @@ describe('summary export when rate limited (429)', () => {
 
   it('says how many seconds to wait, in a calm status, with no bare "Tente novamente"', async () => {
     const notice = await screen.findByTestId('rate-limit-notice');
-    expect(notice).toHaveAttribute('role', 'status');
+    // ARIA22 step 2: the message lands in the same, already-mounted region.
+    const region = getRateLimitRegion();
+    expect(region).toBe(regionBefore);
+    expect(region).toContainElement(notice);
+    expectRegionSays(region, `Aguarde um momento. Pode tentar de novo dentro de ${RETRY_AFTER} s.`);
     expect(notice).toHaveTextContent(`Aguarde um momento. Pode tentar de novo dentro de ${RETRY_AFTER} s.`);
     expect(notice.textContent).not.toMatch(/Tente (novamente|outra vez)/i);
     expect(notice.outerHTML).not.toMatch(/red-|danger/);
@@ -102,6 +113,9 @@ describe('summary export when rate limited (429)', () => {
     const again = screen.getByRole('button', { name: 'Enviar ao Contabilista' });
     expect(again).toBeEnabled();
     expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument();
+    // The region stays mounted and empties, so nothing new is announced when the wait ends.
+    expect(getRateLimitRegion()).toBe(regionBefore);
+    expectEmptyRegion(regionBefore);
 
     fireEvent.click(again);
     await waitFor(() => expect(api.downloadExport).toHaveBeenCalledTimes(2));

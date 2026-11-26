@@ -11,6 +11,7 @@ import {
 } from '@/lib/saveError';
 import ReceiptDetailPage from '@/app/receipts/[id]/page';
 import { getUseParamsMock } from '../navigationState';
+import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../rateLimitRegion';
 
 const ENGLISH_WORDS =
   /\b(conflict|invoice|already|exists|service|unavailable|error|invalid|request|data|failed|database|constraint|violation|entity|the)\b/i;
@@ -126,10 +127,17 @@ describe('receipt page save error copy from the API', () => {
           <ReceiptDetailPage />
         </AuthProvider>,
       );
-      fireEvent.click(await screen.findByRole('button', { name: 'Está correto' }));
+      const saveButton = await screen.findByRole('button', { name: 'Está correto' });
+      // ARIA22 step 1: the status region is already there, empty, before any 429.
+      const regionBefore = getRateLimitRegion();
+      expectEmptyRegion(regionBefore);
+      fireEvent.click(saveButton);
 
       const notice = await screen.findByTestId('rate-limit-notice');
-      expect(notice).toHaveAttribute('role', 'status');
+      const region = getRateLimitRegion();
+      expect(region).toBe(regionBefore);
+      expect(region).toContainElement(notice);
+      expectRegionSays(region, 'As alterações não foram guardadas.');
       expect(notice).toHaveTextContent(
         'As alterações não foram guardadas. Aguarde um momento. Pode tentar de novo dentro de 2 s.',
       );
@@ -143,6 +151,8 @@ describe('receipt page save error copy from the API', () => {
       expect(screen.getByRole('button', { name: 'Tentar de novo em 1 s' })).toBeDisabled();
       act(() => vi.advanceTimersByTime(1000));
       expect(screen.getByRole('button', { name: 'Está correto' })).toBeEnabled();
+      expect(getRateLimitRegion()).toBe(regionBefore);
+      expectEmptyRegion(regionBefore);
     } finally {
       vi.useRealTimers();
     }

@@ -9,6 +9,7 @@ vi.mock('@/lib/api', () => ({
 
 import { ScanReceipt } from '@/components/scan/ScanReceipt';
 import { api } from '@/lib/api';
+import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../../rateLimitRegion';
 
 const FORMAT_MESSAGE =
   'Formato não suportado. Envie um JPEG, PNG, GIF, BMP, TIFF, WEBP, HEIC ou PDF.';
@@ -54,9 +55,18 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
         retryAfter: 3,
       })
       .mockResolvedValueOnce({} as never);
-    chooseFile();
+    render(<ScanReceipt />);
+    const input = document.querySelector('input[type="file"][accept="image/*,application/pdf"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array([1, 2, 3])], 'nota.heic', { type: 'image/heic' })] } });
+    // ARIA22 step 1: once a file is chosen (the only state that can upload), the region is there, empty.
+    const regionBefore = getRateLimitRegion();
+    expectEmptyRegion(regionBefore);
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar' }));
 
     const notice = await screen.findByRole('status');
+    expect(notice).toBe(regionBefore);
+    expect(notice).toHaveAttribute('aria-atomic', 'true');
+    expectRegionSays(notice, 'O ficheiro continua selecionado.');
     expect(notice).toHaveTextContent(
       'O ficheiro continua selecionado. Aguarde um momento. Pode tentar de novo dentro de 3 s.',
     );
@@ -79,7 +89,9 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
     act(() => vi.advanceTimersByTime(2000));
     const again = screen.getByRole('button', { name: 'Carregar' });
     expect(again).toBeEnabled();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // The region stays mounted and empties, so nothing new is announced when the wait ends.
+    expect(screen.getByRole('status')).toBe(regionBefore);
+    expectEmptyRegion(regionBefore);
 
     fireEvent.click(again);
     await waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(2));

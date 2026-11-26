@@ -7,6 +7,7 @@ import { DeleteAccountSheet, isDeleteConfirmed } from '@/components/settings/Del
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { hardNavigate } from '@/lib/navigate';
+import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../rateLimitRegion';
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -188,7 +189,11 @@ describe('Exportar os meus dados', () => {
     fireEvent.click(button);
     await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'));
     expect(button).toBeDisabled();
-    expect(screen.getByRole('status', { name: '' })).toHaveTextContent('A preparar o ficheiro…');
+    // Its own polite status, separate from (not nested in) the always-mounted 429 region.
+    const busyStatus = screen.getByText('A preparar o ficheiro…').closest('[role="status"]');
+    expect(busyStatus).not.toBeNull();
+    expect(busyStatus).not.toHaveAttribute('data-testid', 'rate-limit-region');
+    expect(getRateLimitRegion()).not.toContainElement(busyStatus as HTMLElement);
     const [url, init] = vi.mocked(global.fetch).mock.calls[0];
     expect(url).toBe('/api/account/export');
     expect((init as RequestInit).headers).toEqual({ 'X-Mock-User-Id': expect.stringMatching(/^demo-/) });
@@ -236,12 +241,19 @@ describe('Exportar os meus dados', () => {
       signInDemo();
       renderSettings();
 
+      const exportButton = await screen.findByRole('button', { name: 'Exportar os meus dados' });
+      // ARIA22 step 1: the status region is already there, empty, before any 429.
+      const regionBefore = getRateLimitRegion();
+      expectEmptyRegion(regionBefore);
       await act(async () => {
-        fireEvent.click(await screen.findByRole('button', { name: 'Exportar os meus dados' }));
+        fireEvent.click(exportButton);
       });
 
       const notice = await screen.findByTestId('rate-limit-notice');
-      expect(notice).toHaveAttribute('role', 'status');
+      const region = getRateLimitRegion();
+      expect(region).toBe(regionBefore);
+      expect(region).toContainElement(notice);
+      expectRegionSays(region, 'Aguarde um momento. Pode tentar de novo dentro de 3 s.');
       expect(notice).toHaveTextContent('Aguarde um momento. Pode tentar de novo dentro de 3 s.');
       expect(notice.textContent).not.toMatch(/Tente (novamente|outra vez)/i);
       expect(notice.outerHTML).not.toMatch(/red-|danger/);
@@ -260,6 +272,8 @@ describe('Exportar os meus dados', () => {
       const again = screen.getByRole('button', { name: 'Exportar os meus dados' });
       expect(again).toBeEnabled();
       expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument();
+      expect(getRateLimitRegion()).toBe(regionBefore);
+      expectEmptyRegion(regionBefore);
 
       await act(async () => {
         fireEvent.click(again);
