@@ -15,7 +15,7 @@ Files here:
 | File | What it is |
 |---|---|
 | `docker-compose.prod.yml` | The production stack. |
-| `Caddyfile` | HTTPS, routing and security headers. |
+| `Caddyfile` | HTTPS, routing and security headers. `www.<domain>` permanently redirects to the main domain. |
 | `.env.example` | Every setting the server needs. Copy it to `/opt/invoflow/.env` on the server. |
 | `backup/` | Daily `pg_dump` to R2 (`backup.sh`) and the restore script (`restore.sh`). |
 | `server-setup.sh` | One-time hardening of a fresh Ubuntu 24.04 server. |
@@ -26,7 +26,7 @@ Files here:
 Gildo creates the accounts, because they need payment or identity. Claude never handles the real keys.
 
 1. **Server:** Hetzner Cloud CX22 or similar, Ubuntu 24.04, in an EU location (Germany or Finland). Add your own SSH key when you create it.
-2. **Domain:** point it at Cloudflare DNS. Add an `A` record for the domain (and `AAAA` if the server has IPv6) to the server's IP, with **DNS only** (grey cloud), so Caddy can get its certificate.
+2. **Domain:** point it at Cloudflare DNS. Add an `A` record for the domain and for `www` (and `AAAA` records if the server has IPv6) to the server's IP, with **DNS only** (grey cloud), so Caddy can get its certificate.
 3. **Cloudflare R2:**
    - Create the buckets `invoflow-documents` and `invoflow-backups` in the **EU jurisdiction**.
    - Turn on **object versioning** for `invoflow-documents`.
@@ -60,7 +60,7 @@ Gildo creates the accounts, because they need payment or identity. Claude never 
    - **Secrets:** `DEPLOY_HOST` (the server IP), `DEPLOY_USER` = `deploy`, and `DEPLOY_SSH_KEY` (the contents of the private key `invoflow_deploy`).
    - **Variable:** `CLERK_PUBLISHABLE_KEY` = `pk_live_…`. This must be a repository variable, not a secret. The publishable key is built into the browser bundle, so it is meant to be public. The workflow treats it as set only when the value, after trimming whitespace, starts with `pk_live_` (the check is case-sensitive). The image build receives that trimmed value. A live key is required. Until it is set, the images and deploy jobs are skipped (the run itself may show as successful/green, not red). A demo bundle is a separate build with `NEXT_PUBLIC_DEMO_AUTH=1`, and production does not set that flag.
    - **Environment:** create one named `production`. You can make it require your approval before every deploy.
-5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. Images build and push to GHCR only when the repository variable `CLERK_PUBLISHABLE_KEY` is set and, after trimming whitespace, starts with `pk_live_` (a live key is required; the check is case-sensitive). The frontend image is built with that trimmed value, and only for a push in this repository (a fork pull request never builds or deploys). Deploy runs only when `DEPLOY_HOST` is set too: the workflow copies the stack files to `/opt/invoflow`, pulls the images and starts everything. The API runs `alembic upgrade head` before serving, and the workflow waits for the in-container readiness check at `http://127.0.0.1:8000/health/detailed` (5 second timeout). Caddy exposes only `/health` publicly.
+5. Run **Actions → Deploy → Run workflow**, or merge anything to `main`. Images build and push to GHCR only when the repository variable `CLERK_PUBLISHABLE_KEY` is set and, after trimming whitespace, starts with `pk_live_` (a live key is required; the check is case-sensitive). The frontend image is built with that trimmed value, and only for a push in this repository (a fork pull request never builds or deploys). Deploy runs only when `DEPLOY_HOST` is set too: the workflow copies the stack files to `/opt/invoflow`, pulls the new `api` and `web` images and runs `docker compose up -d`, which recreates only the services whose image or settings changed (usually `api` and `web`). It then applies the copied `Caddyfile` with a zero-downtime `caddy reload`. If the running container can't see the new file (the copy replaced it, and a single-file bind mount keeps the old one) or the reload fails, it recreates the `caddy` container instead, which means a second or two of downtime. Certificates survive in the `caddy_data` volume. If neither works, the deploy fails. The API runs `alembic upgrade head` before serving, and the workflow waits for the in-container readiness check at `http://127.0.0.1:8000/health/detailed` (5 second timeout). Caddy exposes only `/health` publicly.
 
 Delete `invoflow_deploy` and `my-prod.env` from your laptop once they're stored in GitHub and on the server.
 
