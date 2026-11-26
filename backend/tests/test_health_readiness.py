@@ -79,3 +79,14 @@ def test_readiness_503_when_postgres_unreachable(client: TestClient, monkeypatch
         connect_args={"connect_timeout": 2},
     )
     _assert_down(client.get("/health/detailed"))
+
+
+def test_readiness_is_rate_limited_and_liveness_is_not(client: TestClient, monkeypatch):
+    from app.core import rate_limit
+
+    if not rate_limit.limiter.enabled:
+        pytest.skip("rate limiting is off in this run (RATE_LIMIT_ENABLED=false)")
+    monkeypatch.setattr(rate_limit.settings, "rate_limit_health", "2/minute")
+    statuses = [client.get("/health/detailed").status_code for _ in range(3)]
+    assert statuses == [200, 200, 429]
+    assert client.get("/health").status_code == 200

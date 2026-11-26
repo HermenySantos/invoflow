@@ -24,7 +24,7 @@ from app.api import router as api_router
 from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, add_missing_nullable_columns, engine, get_db
 from app.core.db_errors import RETRY_AFTER_SECONDS, retryable
-from app.core.rate_limit import RATE_LIMITED_MESSAGE, limiter, retry_after_seconds
+from app.core.rate_limit import RATE_LIMITED_MESSAGE, RATE_LIMITS, limiter, retry_after_seconds
 from app.core.startup import get_environment_status, run_startup_checks
 from app.services.ocr import ocr_runtime_status, resolve_ocr_backend, tesseract_gap
 from app.services.processing import read_receipt, stuck_document_ids
@@ -335,7 +335,8 @@ def _database_reachable(db: Session) -> bool:
 
 
 @app.get("/health/detailed")
-def detailed_health_check(db: Session = Depends(get_db)):
+@limiter.limit(RATE_LIMITS["health"])
+def detailed_health_check(request: Request, db: Session = Depends(get_db)):
     """Readiness check: OCR runtime plus a database round trip. Full environment status is only returned in debug mode."""
     runtime = ocr_runtime_status()
     database_ok = _database_reachable(db)

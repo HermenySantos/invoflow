@@ -6,7 +6,9 @@
 	handle /api/* {
 		reverse_proxy api:8000
 	}
-	handle /health {
+	# /health is liveness; /health/detailed is readiness (rate limited in the API).
+	@health path /health /health/*
+	handle @health {
 		reverse_proxy api:8000
 	}
 	handle {

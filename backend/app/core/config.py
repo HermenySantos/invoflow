@@ -109,6 +109,8 @@ class Settings(BaseSettings):
     rate_limit_efatura: str = "5/minute"
     # Whole-account export reads every receipt file the user owns.
     rate_limit_account_export: str = "2/minute;10/hour"
+    # Public readiness check; it runs a database query, so cap it per IP.
+    rate_limit_health: str = "30/minute"
 
     @model_validator(mode="after")
     def enable_mock_auth_only_when_asked(self):
@@ -130,6 +132,7 @@ class Settings(BaseSettings):
         "rate_limit_export",
         "rate_limit_efatura",
         "rate_limit_account_export",
+        "rate_limit_health",
     )
     @classmethod
     def parse_rate_limit(cls, value: str):
