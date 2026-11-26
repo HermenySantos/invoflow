@@ -146,9 +146,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint the rollout scripts
-        run: shellcheck deploy/apply-caddy.sh deploy/tests/apply-caddy.test.sh
+        run: shellcheck deploy/apply-caddy.sh deploy/tests/apply-caddy.test.sh deploy/tests/deploy-wiring.test.sh
       - name: Caddy rollout logic (fake docker)
         run: bash deploy/tests/apply-caddy.test.sh
+      - name: Deploy workflow validates before it restarts anything
+        run: bash deploy/tests/deploy-wiring.test.sh
       - name: Production Caddyfile is valid
         run: |
           for domain in invoflow.pt localhost; do
