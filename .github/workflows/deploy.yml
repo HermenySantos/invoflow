@@ -107,9 +107,12 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "deploy/docker-compose.prod.yml,deploy/Caddyfile,deploy/backup"
+          source: "deploy/docker-compose.prod.yml,deploy/Caddyfile,deploy/apply-caddy.sh,deploy/backup"
           target: /opt/invoflow
           strip_components: 1
+          # Write files in place (keep the inode) so the running caddy's bind mount sees the
+          # new Caddyfile and apply-caddy.sh can use a zero-downtime reload.
+          overwrite: true
       - name: Roll out
         if: env.DEPLOY_HOST != ''
         uses: appleboy/ssh-action@v1.2.0
@@ -127,28 +130,13 @@ jobs:
             cd /opt/invoflow
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/" .env
+            # Stray spaces around DOMAIN would break the Caddy site names and redirect.
+            sed -i -E 's/^DOMAIN=[[:space:]]*([^[:space:]]*)[[:space:]]*$/DOMAIN=\1/' .env
+            # Refuse a broken Caddyfile before anything restarts; the running caddy keeps its config.
+            bash apply-caddy.sh validate
             docker compose -f docker-compose.prod.yml --env-file .env pull api web
             docker compose -f docker-compose.prod.yml --env-file .env up -d --build --remove-orphans
-            # Caddy's image and service config rarely change, so `up -d` keeps the running
-            # container and its old in-memory config. Apply the copied Caddyfile explicitly.
-            # The copy can replace the file (new inode), which a single-file bind mount does not
-            # follow, so reload only when the container sees the same file; otherwise recreate.
-            dc() { docker compose -f docker-compose.prod.yml --env-file .env "$@"; }
-            caddyfile_in_sync() {
-              [ "$(sha256sum Caddyfile | cut -d' ' -f1)" = "$(dc exec -T caddy sha256sum /etc/caddy/Caddyfile | cut -d' ' -f1)" ]
-            }
-            if caddyfile_in_sync && dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
-              echo "caddy reloaded"
-            else
-              echo "caddy reload not possible; recreating caddy" >&2
-              if dc up -d --force-recreate --no-deps caddy && sleep 3 && caddyfile_in_sync; then
-                echo "caddy recreated"
-              else
-                echo "caddy failed to apply the new Caddyfile" >&2
-                dc logs --tail 50 caddy
-                exit 1
-              fi
-            fi
+            bash apply-caddy.sh apply
             docker logout ghcr.io
             for i in $(seq 1 30); do
               if docker compose -f docker-compose.prod.yml --env-file .env exec -T api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/detailed', timeout=5)" >/dev/null; then echo "ready on $IMAGE_TAG"; exit 0; fi
