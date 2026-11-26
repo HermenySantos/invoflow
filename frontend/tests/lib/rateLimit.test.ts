@@ -88,6 +88,17 @@ describe('useRetryCountdown', () => {
     expect(result.current.seconds).toBeNull();
     expect(result.current.message).toBeNull();
   });
+
+  it('clear() ends the wait early and stops the ticking', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useRetryCountdown());
+    act(() => result.current.start(5, rateLimitStatus(5)));
+    act(() => result.current.clear());
+    expect(result.current.seconds).toBeNull();
+    expect(result.current.message).toBeNull();
+    act(() => vi.advanceTimersByTime(3000));
+    expect(result.current.seconds).toBeNull();
+  });
 });
 
 describe('API client failures carry {status, message, retryAfter}', () => {

@@ -99,6 +99,58 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
   });
 });
 
+describe('ScanReceipt keeps one 429 region on /scan (ARIA22, QA S-1)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(api.uploadFile).mockReset();
+  });
+
+  function pick(name: string) {
+    const input = document.querySelector('input[type="file"][accept="image/*,application/pdf"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array([1, 2, 3])], name, { type: 'image/heic' })] } });
+  }
+
+  it('has the empty region on the start screen, before any file is chosen', () => {
+    render(<ScanReceipt />);
+    expect(screen.getByRole('button', { name: /Fotografar/ })).toBeInTheDocument();
+    expectEmptyRegion(getRateLimitRegion());
+  });
+
+  it('keeps the same region through Cancel and a new file during a wait, with no stale wait text', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(api.uploadFile)
+      .mockReset()
+      .mockRejectedValueOnce({ status: 429, message: 'Demasiados pedidos. Aguarde 30 s e tente novamente.', retryAfter: 5 })
+      .mockRejectedValueOnce({ status: 429, message: 'Demasiados pedidos. Aguarde 30 s e tente novamente.', retryAfter: 2 });
+    render(<ScanReceipt />);
+    const region = getRateLimitRegion();
+
+    pick('nota.heic');
+    expect(getRateLimitRegion()).toBe(region);
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar' }));
+    await waitFor(() => expect(region).toHaveTextContent('dentro de 5 s'));
+
+    // Cancel during the wait: the region is not removed, and it empties (nothing new to announce).
+    act(() => vi.advanceTimersByTime(1000));
+    fireEvent.click(screen.getByRole('button', { name: /Cancelar/ }));
+    expect(getRateLimitRegion()).toBe(region);
+    expectEmptyRegion(region);
+
+    // A new file: still the same node, still empty; the old "dentro de 5 s" does not come back.
+    pick('outra.heic');
+    expect(getRateLimitRegion()).toBe(region);
+    expectEmptyRegion(region);
+    const upload = screen.getByRole('button', { name: 'Carregar' });
+    expect(upload).toBeEnabled();
+
+    // The next 429 lands in the region that was already there.
+    fireEvent.click(upload);
+    await waitFor(() => expect(region).toHaveTextContent('dentro de 2 s'));
+    expect(getRateLimitRegion()).toBe(region);
+    expectRegionSays(region, 'O ficheiro continua selecionado.');
+  });
+});
+
 describe('ScanReceipt on a phone', () => {
   it('opens the rear camera from "Fotografar" and the file picker from the other button', () => {
     render(<ScanReceipt />);
