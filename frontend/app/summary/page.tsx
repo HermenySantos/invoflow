@@ -8,11 +8,12 @@ import { api, Summary, CategoryBreakdown } from "@/lib/api";
 import { isDemoMode } from "@/lib/demoUser";
 import { rateLimitWait, useRetryCountdown } from "@/lib/rateLimit";
 import { softDisabled } from "@/lib/softDisabled";
-import { rateLimitButton, rateLimitStatus } from "@/lib/rateLimitCopy";
+import { rateLimitStatus } from "@/lib/rateLimitCopy";
 import { RateLimitNotice } from "@/components/RateLimitNotice";
 import { paymentDeadline } from "@/lib/deadlines";
 import { getExpenseCategoryInfo, getIrsSectorInfo } from "@/lib/categories";
 import { ReceiptSlipIcon } from "@/components/icons/ReceiptSlipIcon";
+import { RateLimitButtonText } from "@/components/RateLimitButtonText";
 import {
   Download,
   AlertCircle,
@@ -687,7 +688,7 @@ export default function SummaryPage() {
                 {exportWait.seconds !== null ? (
                   <>
                     <Clock className="w-5 h-5" aria-hidden="true" />
-                    {rateLimitButton(exportWait.seconds)}
+                    <RateLimitButtonText seconds={exportWait.seconds} />
                   </>
                 ) : (
                   <>

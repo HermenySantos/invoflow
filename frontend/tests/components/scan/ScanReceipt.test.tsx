@@ -10,7 +10,8 @@ vi.mock('@/lib/api', () => ({
 import { ScanReceipt } from '@/components/scan/ScanReceipt';
 import { api } from '@/lib/api';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../../rateLimitRegion';
-import { expectAvailable, expectWaiting } from '../../softDisabled';
+import { RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
+import { expectAvailable, expectCountingDown } from '../../softDisabled';
 
 const FORMAT_MESSAGE =
   'Formato não suportado. Envie um JPEG, PNG, GIF, BMP, TIFF, WEBP, HEIC ou PDF.';
@@ -62,7 +63,9 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
     // ARIA22 step 1: once a file is chosen (the only state that can upload), the region is there, empty.
     const regionBefore = getRateLimitRegion();
     expectEmptyRegion(regionBefore);
-    fireEvent.click(screen.getByRole('button', { name: 'Carregar' }));
+    const upload = screen.getByRole('button', { name: 'Carregar' });
+    upload.focus();
+    fireEvent.click(upload);
 
     const notice = await screen.findByRole('status');
     expect(notice).toBe(regionBefore);
@@ -77,17 +80,21 @@ describe('ScanReceipt when the upload is rate limited (429)', () => {
     // The file is still selected: its preview stays and no reselect is needed.
     expect(screen.getByRole('img', { name: 'Pré-visualização' })).toBeInTheDocument();
 
-    const button = screen.getByRole('button', { name: 'Tentar de novo em 3 s' });
-    expectWaiting(button);
+    const button = screen.getByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
+    expect(button).toBe(upload);
+    expectCountingDown(button, 3);
     expect(notice).not.toContainElement(button);
     expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
 
     act(() => vi.advanceTimersByTime(1000));
-    expectWaiting(screen.getByRole('button', { name: 'Tentar de novo em 2 s' }));
+    expectCountingDown(button, 2);
     expect(screen.getByRole('status')).toBe(notice);
     expect(notice).toHaveTextContent('dentro de 3 s');
 
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => vi.advanceTimersByTime(1000));
+    expectCountingDown(button, 1);
+
+    act(() => vi.advanceTimersByTime(1000));
     const again = screen.getByRole('button', { name: 'Carregar' });
     expectAvailable(again);
     expect(again).toBe(button);

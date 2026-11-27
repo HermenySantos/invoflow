@@ -11,8 +11,8 @@ import { PtDateInput } from '@/components/forms/PtDateInput';
 import { saveErrorMessage } from '@/lib/saveError';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
 import { softDisabled } from '@/lib/softDisabled';
-import { rateLimitButton } from '@/lib/rateLimitCopy';
 import { RateLimitNotice } from '@/components/RateLimitNotice';
+import { RateLimitButtonText } from '@/components/RateLimitButtonText';
 import { requestScrollRestore } from '@/lib/mainScroll';
 import { 
   getExpenseCategoryInfo,
@@ -1117,7 +1117,7 @@ export default function ReceiptDetailPage() {
                 ) : saveWait.seconds !== null ? (
                   <>
                     <Clock className="w-5 h-5" aria-hidden="true" />
-                    {rateLimitButton(saveWait.seconds)}
+                    <RateLimitButtonText seconds={saveWait.seconds} />
                   </>
                 ) : (
                   <>
@@ -1185,7 +1185,7 @@ export default function ReceiptDetailPage() {
                 ) : saveWait.seconds !== null ? (
                   <>
                     <Clock className="w-5 h-5" aria-hidden="true" />
-                    {rateLimitButton(saveWait.seconds)}
+                    <RateLimitButtonText seconds={saveWait.seconds} />
                   </>
                 ) : (
                   <>

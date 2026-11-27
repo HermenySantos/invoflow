@@ -10,7 +10,8 @@ import { RateLimitNotice } from '@/components/RateLimitNotice';
 import { api } from '@/lib/api';
 import { rateLimitWait, useRetryCountdown } from '@/lib/rateLimit';
 import { softDisabled } from '@/lib/softDisabled';
-import { rateLimitButton, rateLimitStatus } from '@/lib/rateLimitCopy';
+import { rateLimitStatus } from '@/lib/rateLimitCopy';
+import { RateLimitButtonText } from '@/components/RateLimitButtonText';
 
 const EXPORT_FAILED = 'Não foi possível exportar os seus dados. Tente novamente.';
 
@@ -109,7 +110,7 @@ function SettingsContent() {
               {exportWait.seconds !== null ? (
                 <>
                   <Clock className="w-4 h-4" aria-hidden="true" />
-                  {rateLimitButton(exportWait.seconds)}
+                  <RateLimitButtonText seconds={exportWait.seconds} />
                 </>
               ) : (
                 <>

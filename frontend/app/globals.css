@@ -35,7 +35,7 @@
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:focus-visible:opacity-75 aria-disabled:cursor-not-allowed;
     border-radius: var(--ff-radius);
   }
 
@@ -44,7 +44,7 @@
     background: var(--ff-accent);
   }
 
-  .btn-primary:hover {
+  .btn-primary:hover:not([aria-disabled="true"]) {
     background: var(--ff-accent-hover);
   }
 
@@ -54,13 +54,17 @@
     background: var(--ff-danger);
   }
 
-  .btn-danger:hover {
+  .btn-danger:hover:not([aria-disabled="true"]) {
     background: var(--ff-danger-hover);
   }
 
   .btn-secondary {
-    @apply btn bg-white text-gray-900 hover:bg-gray-50 focus:ring-gray-400;
+    @apply btn bg-white text-gray-900 focus:ring-primary-700;
     border: 1px solid var(--ff-border);
+  }
+
+  .btn-secondary:hover:not([aria-disabled="true"]) {
+    @apply bg-gray-50;
   }
 
   /* #1b4d3e on white is 9.9:1. */
@@ -70,7 +74,7 @@
     border: 1px solid var(--ff-accent);
   }
 
-  .btn-accent-outline:hover {
+  .btn-accent-outline:hover:not([aria-disabled="true"]) {
     background: color-mix(in srgb, var(--ff-accent) 6%, white);
   }
 
@@ -80,7 +84,7 @@
     color: var(--ff-danger);
   }
 
-  .btn-ghost-danger:hover {
+  .btn-ghost-danger:hover:not([aria-disabled="true"]) {
     color: var(--ff-danger-hover);
     background: color-mix(in srgb, var(--ff-danger) 6%, transparent);
   }

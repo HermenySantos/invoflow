@@ -12,7 +12,8 @@ import {
 import ReceiptDetailPage from '@/app/receipts/[id]/page';
 import { getUseParamsMock } from '../navigationState';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../rateLimitRegion';
-import { expectAvailable, expectWaiting } from '../softDisabled';
+import { RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
+import { expectAvailable, expectCountingDown, expectHeld } from '../softDisabled';
 
 const ENGLISH_WORDS =
   /\b(conflict|invoice|already|exists|service|unavailable|error|invalid|request|data|failed|database|constraint|violation|entity|the)\b/i;
@@ -113,6 +114,62 @@ describe('receipt page save error copy from the API', () => {
     expect(alert.textContent).not.toMatch(ENGLISH_WORDS);
   });
 
+  it('the edit form save button keeps focus while saving and through a 429 wait (W-14)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let answer!: (r: unknown) => void;
+      const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') return new Promise((r) => (answer = r));
+        if (url.includes('/audit')) return Promise.resolve(jsonResponse(200, 'OK', { entries: [], total: 0 }));
+        return Promise.resolve(jsonResponse(200, 'OK', receipt()));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ email: 'qa@example.com', id: 'ignored' }));
+      render(
+        <AuthProvider>
+          <ReceiptDetailPage />
+        </AuthProvider>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Editar dados' }));
+      const save = screen.getByRole('button', { name: 'Guardar e confirmar' });
+      const patches = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH').length;
+
+      // Focus first, then the state changes (W-15).
+      save.focus();
+      fireEvent.click(save);
+      await screen.findByText('A guardar...');
+      expectHeld(save);
+      fireEvent.click(save);
+      expect(patches()).toBe(1);
+
+      await act(async () => {
+        answer(
+          jsonResponse(
+            429,
+            'Too Many Requests',
+            { detail: 'Demasiados pedidos. Aguarde 30 s e tente novamente.', error: { code: 'RATE_LIMITED' } },
+            { 'Retry-After': '3' },
+          ),
+        );
+      });
+      const waiting = await screen.findByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
+      expect(waiting).toBe(save);
+      expectCountingDown(save, 3);
+      fireEvent.click(save);
+      expect(patches()).toBe(1);
+
+      act(() => vi.advanceTimersByTime(1000));
+      expectCountingDown(save, 2);
+      act(() => vi.advanceTimersByTime(1000));
+      expectCountingDown(save, 1);
+      act(() => vi.advanceTimersByTime(1000));
+      expectAvailable(screen.getByRole('button', { name: 'Guardar e confirmar' }));
+      expect(document.activeElement).toBe(save);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('on a 429 shows the save wait as a status, never SAVE_GENERIC_ERROR, and counts down on the button', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -120,7 +177,7 @@ describe('receipt page save error copy from the API', () => {
         429,
         'Too Many Requests',
         { detail: 'Demasiados pedidos. Aguarde 30 s e tente novamente.', error: { code: 'RATE_LIMITED' } },
-        { 'Retry-After': '2' },
+        { 'Retry-After': '3' },
       );
       localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify({ email: 'qa@example.com', id: 'ignored' }));
       render(
@@ -132,6 +189,7 @@ describe('receipt page save error copy from the API', () => {
       // ARIA22 step 1: the status region is already there, empty, before any 429.
       const regionBefore = getRateLimitRegion();
       expectEmptyRegion(regionBefore);
+      saveButton.focus();
       fireEvent.click(saveButton);
 
       const notice = await screen.findByTestId('rate-limit-notice');
@@ -140,17 +198,19 @@ describe('receipt page save error copy from the API', () => {
       expect(region).toContainElement(notice);
       expectRegionSays(region, 'As alterações não foram guardadas.');
       expect(notice).toHaveTextContent(
-        'As alterações não foram guardadas. Aguarde um momento. Pode tentar de novo dentro de 2 s.',
+        'As alterações não foram guardadas. Aguarde um momento. Pode tentar de novo dentro de 3 s.',
       );
       expect(notice.textContent).not.toMatch(/Tente (novamente|outra vez)/i);
       expect(screen.queryByText(SAVE_GENERIC_ERROR)).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
-      const button = screen.getByRole('button', { name: 'Tentar de novo em 2 s' });
+      const button = screen.getByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
       expect(button).toBe(saveButton);
-      expectWaiting(button);
+      expectCountingDown(button, 3);
       act(() => vi.advanceTimersByTime(1000));
-      expectWaiting(screen.getByRole('button', { name: 'Tentar de novo em 1 s' }));
+      expectCountingDown(button, 2);
+      act(() => vi.advanceTimersByTime(1000));
+      expectCountingDown(button, 1);
       act(() => vi.advanceTimersByTime(1000));
       expectAvailable(screen.getByRole('button', { name: 'Está correto' }));
       expect(document.activeElement).toBe(saveButton);

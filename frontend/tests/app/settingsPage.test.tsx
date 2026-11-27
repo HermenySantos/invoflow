@@ -8,7 +8,8 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { DEMO_AUTH_KEY } from '@/lib/demoUser';
 import { hardNavigate } from '@/lib/navigate';
 import { expectEmptyRegion, expectRegionSays, getRateLimitRegion } from '../rateLimitRegion';
-import { expectAvailable, expectWaiting } from '../softDisabled';
+import { RATE_LIMIT_BUTTON_LABEL } from '@/lib/rateLimitCopy';
+import { expectAvailable, expectCountingDown, expectHeld } from '../softDisabled';
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -187,9 +188,10 @@ describe('Exportar os meus dados', () => {
     );
     expect(screen.queryByText('Disponível em breve')).not.toBeInTheDocument();
 
+    button.focus();
     fireEvent.click(button);
     await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'));
-    expectWaiting(button);
+    expectHeld(button);
     fireEvent.click(button);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     // Its own polite status, separate from (not nested in) the always-mounted 429 region.
@@ -248,6 +250,7 @@ describe('Exportar os meus dados', () => {
       // ARIA22 step 1: the status region is already there, empty, before any 429.
       const regionBefore = getRateLimitRegion();
       expectEmptyRegion(regionBefore);
+      exportButton.focus();
       await act(async () => {
         fireEvent.click(exportButton);
       });
@@ -262,19 +265,23 @@ describe('Exportar os meus dados', () => {
       expect(notice.outerHTML).not.toMatch(/red-|danger/);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
-      const button = screen.getByRole('button', { name: 'Tentar de novo em 3 s' });
-      expectWaiting(button);
+      const button = screen.getByRole('button', { name: RATE_LIMIT_BUTTON_LABEL });
+      expect(button).toBe(exportButton);
+      expectCountingDown(button, 3);
       const callsDuringWait = vi.mocked(global.fetch).mock.calls.length;
       fireEvent.click(button);
       expect(global.fetch).toHaveBeenCalledTimes(callsDuringWait);
       expect(button.closest('[aria-live],[role="status"],[role="alert"]')).toBeNull();
 
+      // Three samples 1 s apart: the visible text ticks, the accessible name does not (UI Lead F-2).
       act(() => vi.advanceTimersByTime(1000));
-      expectWaiting(screen.getByRole('button', { name: 'Tentar de novo em 2 s' }));
+      expectCountingDown(button, 2);
+      act(() => vi.advanceTimersByTime(1000));
+      expectCountingDown(button, 1);
       expect(screen.getByTestId('rate-limit-notice')).toBe(notice);
       expect(notice).toHaveTextContent('dentro de 3 s');
 
-      act(() => vi.advanceTimersByTime(2000));
+      act(() => vi.advanceTimersByTime(1000));
       const again = screen.getByRole('button', { name: 'Exportar os meus dados' });
       expectAvailable(again);
       // The same button all along, so keyboard focus never left it.
